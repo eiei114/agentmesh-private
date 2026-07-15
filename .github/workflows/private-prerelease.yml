@@ -1,0 +1,201 @@
+name: private-prerelease
+
+# Private GitHub prerelease publisher for AgentMesh toolchains.
+# Policy:
+# - Never replace/delete existing release assets (`--clobber` forbidden).
+# - Refuse if tag or release already exists.
+# - Default is draft+prerelease; requires explicit confirm_publish=PUBLISH.
+# Gate G1: humans must approve before running this workflow for a real tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Exact immutable prerelease tag (e.g. v0.2.0-dev.1)"
+        required: true
+        type: string
+      confirm_publish:
+        description: "Type PUBLISH to create draft prerelease + upload assets (never replaces)"
+        required: true
+        default: ""
+        type: string
+      draft:
+        description: "Create release as draft (recommended until G1 verification)"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  guard:
+    name: immutable-presence-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require explicit PUBLISH confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.confirm_publish }}" != "PUBLISH" ]]; then
+            echo "Refusing publish: confirm_publish must be exactly PUBLISH (got '${{ inputs.confirm_publish }}')" >&2
+            echo "Gate G1: do not run this workflow until human approval." >&2
+            exit 2
+          fi
+
+      - name: Assert tag/release absent (no replacement)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/assert_prerelease_absent.py --tag "${{ inputs.tag }}" --json
+
+  build:
+    name: build-${{ matrix.target }}
+    needs: guard
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar
+          - os: macos-14
+            target: aarch64-apple-darwin
+            archive: tar
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.0"
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: prerelease-${{ matrix.target }}
+
+      - name: test
+        run: cargo test --workspace --target ${{ matrix.target }}
+
+      - name: release build
+        run: >
+          cargo build --release --target ${{ matrix.target }}
+          -p agentmesh-cli
+          -p agentmesh-multica-selector-shadow
+          -p agentmesh-fixture-echo
+
+      - name: package + local downloaded smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${{ matrix.target }}"
+          FULL_SHA="$(git rev-parse HEAD)"
+          OUT="dist/${TARGET}"
+          python3 scripts/package_toolchain_bundle.py \
+            --out "$OUT" \
+            --target "$TARGET" \
+            --tag "${{ inputs.tag }}" \
+            --commit "$FULL_SHA" \
+            --bin-dir "target/${TARGET}/release" \
+            --also-flat-phase0-manifest \
+            --include-echo
+          ARTIFACT_NAME="agentmesh-${{ inputs.tag }}-${TARGET}"
+          mkdir -p upload
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            python3 scripts/zipdir.py zip "$OUT" "upload/${ARTIFACT_NAME}.zip"
+            ARCHIVE="upload/${ARTIFACT_NAME}.zip"
+          else
+            tar -C "$OUT" -czf "upload/${ARTIFACT_NAME}.tar.gz" .
+            ARCHIVE="upload/${ARTIFACT_NAME}.tar.gz"
+          fi
+          WORK="$(mktemp -d)"
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            python3 scripts/zipdir.py unzip "$ARCHIVE" "$WORK"
+          else
+            tar -C "$WORK" -xzf "$ARCHIVE"
+          fi
+          python3 scripts/smoke_downloaded_bundle.py --bundle "$WORK" --target "$TARGET"
+          echo "ARCHIVE_NAME=$(basename "$ARCHIVE")" >> "$GITHUB_ENV"
+
+      - name: upload target archive (workflow artifact, not GH release yet)
+        uses: actions/upload-artifact@v4
+        with:
+          name: prerelease-${{ matrix.target }}
+          path: upload/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: publish-draft-prerelease
+    needs: [guard, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Re-assert tag/release still absent
+        shell: bash
+        run: python3 scripts/assert_prerelease_absent.py --tag "${{ inputs.tag }}" --json
+
+      - name: Download all target archives
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: prerelease-*
+          merge-multiple: true
+
+      - name: Create draft prerelease without asset replacement
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          # Refuse any clobber / delete path explicitly.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release already exists; refusing replacement" >&2
+            exit 1
+          fi
+          mapfile -t FILES < <(find release-assets -type f \( -name '*.zip' -o -name '*.tar.gz' \) | sort)
+          if [[ "${#FILES[@]}" -ne 3 ]]; then
+            echo "expected 3 target archives, found ${#FILES[@]}:" >&2
+            printf '%s\n' "${FILES[@]}" >&2
+            exit 1
+          fi
+          DRAFT_FLAG=()
+          if [[ "${{ inputs.draft }}" == "true" ]]; then
+            DRAFT_FLAG+=(--draft)
+          fi
+          # IMPORTANT: never pass --clobber. Never delete/recreate.
+          gh release create "$TAG" "${FILES[@]}" \
+            --title "$TAG" \
+            --prerelease \
+            "${DRAFT_FLAG[@]}" \
+            --target "${{ github.sha }}" \
+            --notes "Private AgentMesh toolchain prerelease ${TAG} (commit ${{ github.sha }}). Assets are immutable; do not replace."
+
+      - name: Verify release assets present and non-empty
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          COUNT="$(gh release view "$TAG" --json assets --jq '.assets | length')"
+          if [[ "$COUNT" != "3" ]]; then
+            echo "expected 3 assets, found $COUNT" >&2
+            exit 1
+          fi
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name) \(.size)"'

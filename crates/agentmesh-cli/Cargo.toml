@@ -11,6 +11,7 @@ name = "agentmesh"
 path = "src/main.rs"
 
 [dependencies]
+agentmesh-app = { workspace = true }
 agentmesh-host = { workspace = true }
 agentmesh-proto = { workspace = true }
 anyhow = { workspace = true }

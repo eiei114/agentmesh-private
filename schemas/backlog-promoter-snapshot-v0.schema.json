@@ -1,0 +1,188 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/eiei114/agentmesh-private/schemas/backlog-promoter-snapshot-v0.schema.json",
+  "title": "BacklogPromoterSnapshotV0",
+  "description": "Immutable, secret-free Multica inventory snapshot shared by Python and AgentMesh selectors. Domain-owned; not part of the host protocol envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot_schema_version",
+    "controller",
+    "captured_at_utc",
+    "captured_at_jst",
+    "now_jst",
+    "limits",
+    "managed_projects",
+    "schedule_inventory",
+    "issues",
+    "dependency_status_by_id",
+    "issue_run_presence",
+    "evidence_preflight_by_issue_id",
+    "scan_metrics",
+    "warnings",
+    "error"
+  ],
+  "properties": {
+    "snapshot_schema_version": {
+      "type": "string",
+      "const": "backlog-promoter-snapshot.v0"
+    },
+    "controller": {
+      "type": "string",
+      "const": "backlog_promoter"
+    },
+    "captured_at_utc": {
+      "type": "string",
+      "minLength": 1,
+      "description": "UTC capture timestamp (ISO-8601)."
+    },
+    "captured_at_jst": {
+      "type": "string",
+      "minLength": 1,
+      "description": "JST capture timestamp (ISO-8601)."
+    },
+    "now_jst": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Selection clock frozen into the snapshot (ISO-8601, JST preferred)."
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_issues",
+        "max_bytes",
+        "issues_truncated",
+        "bytes_truncated",
+        "truncation_reason"
+      ],
+      "properties": {
+        "max_issues": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5000
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 52428800
+        },
+        "issues_truncated": {
+          "type": "boolean"
+        },
+        "bytes_truncated": {
+          "type": "boolean"
+        },
+        "truncation_reason": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "managed_projects": {
+      "type": "array",
+      "description": "Deterministically ordered managed project identities (secret-free).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "project_key",
+          "multica_project_id",
+          "project_name",
+          "status"
+        ],
+        "properties": {
+          "project_key": { "type": "string", "minLength": 1 },
+          "multica_project_id": { "type": "string" },
+          "project_name": { "type": "string" },
+          "status": { "type": "string" },
+          "workspace_path": { "type": "string" },
+          "priority": { "type": "string" },
+          "lead": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "schedule_inventory": {
+      "type": "array",
+      "description": "Flattened autopilot inventory rows used for schedule admission. Must not contain credentials.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "issues": {
+      "type": "array",
+      "description": "Normalized Multica issue objects, deterministically ordered by (status, identifier, id).",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "identifier": { "type": ["string", "null"] },
+          "status": { "type": "string", "minLength": 1 },
+          "title": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "project_key": { "type": ["string", "null"] },
+          "assignee_type": { "type": ["string", "null"] },
+          "created_at": { "type": ["string", "null"] },
+          "metadata": { "type": ["object", "null"] }
+        }
+      }
+    },
+    "dependency_status_by_id": {
+      "type": "object",
+      "description": "Extra issue statuses required for blocked_by resolution when not present in issues[].",
+      "additionalProperties": { "type": "string" }
+    },
+    "issue_run_presence": {
+      "type": "object",
+      "description": "Keyed by issue identifier/key. Freezes running/queued presence without live Multica calls.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["has_active_or_queued_run"],
+        "properties": {
+          "has_active_or_queued_run": { "type": "boolean" },
+          "latest_run_status": { "type": ["string", "null"] },
+          "active_run_count": { "type": "integer", "minimum": 0 },
+          "queued_run_count": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "evidence_preflight_by_issue_id": {
+      "type": "object",
+      "description": "Frozen evidence preflight results keyed by issue id. Required for Multica-free parity.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["ok"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "reason_code": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "scan_metrics": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "error": {
+      "description": "Non-null when capture failed or produced an unusable truncated/error snapshot.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "required": ["code", "message"]
+    }
+  }
+}
