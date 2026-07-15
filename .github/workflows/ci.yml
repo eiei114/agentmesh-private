@@ -1,0 +1,143 @@
+name: ci
+
+on:
+  push:
+    branches: [main, phase0-contract-spike]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  check:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar
+          - os: macos-14
+            target: aarch64-apple-darwin
+            archive: tar
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97.0"
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: fmt
+        run: cargo fmt --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets --target ${{ matrix.target }} -- -D warnings
+
+      - name: test
+        run: cargo test --workspace --target ${{ matrix.target }}
+
+      - name: release build
+        run: cargo build --release --target ${{ matrix.target }} -p agentmesh-cli -p agentmesh-fixture-echo
+
+      - name: package artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${{ matrix.target }}"
+          SHA="$(git rev-parse --short=12 HEAD)"
+          FULL_SHA="$(git rev-parse HEAD)"
+          OUT="dist/${TARGET}"
+          mkdir -p "$OUT"
+          EXT=""
+          if [[ "$TARGET" == *windows* ]]; then EXT=".exe"; fi
+          BIN_DIR="target/${TARGET}/release"
+          cp "${BIN_DIR}/agentmesh${EXT}" "$OUT/"
+          cp "${BIN_DIR}/agentmesh-fixture-echo${EXT}" "$OUT/"
+          cp examples/echo-input.json "$OUT/"
+          python3 scripts/write_artifact_manifest.py \
+            --out "$OUT/manifest.json" \
+            --target "$TARGET" \
+            --commit "$FULL_SHA" \
+            --protocol-version "2026-07-15" \
+            --host-version "0.1.0" \
+            --plugin-version "0.1.0" \
+            --toolchain "1.97.0" \
+            --bin "agentmesh${EXT}" \
+            --bin "agentmesh-fixture-echo${EXT}"
+          python3 scripts/verify_artifact_manifest.py "$OUT/manifest.json"
+          ARTIFACT_NAME="agentmesh-0.1.0-${TARGET}-${SHA}"
+          echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
+          mkdir -p upload
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            python3 scripts/zipdir.py zip "$OUT" "upload/${ARTIFACT_NAME}.zip"
+          else
+            tar -C "$OUT" -czf "upload/${ARTIFACT_NAME}.tar.gz" .
+          fi
+
+      - name: downloaded artifact smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="${{ matrix.target }}"
+          WORK="$(mktemp -d)"
+          export WORK
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            python3 scripts/zipdir.py unzip "upload/${ARTIFACT_NAME}.zip" "$WORK"
+          else
+            tar -C "$WORK" -xzf "upload/${ARTIFACT_NAME}.tar.gz"
+          fi
+          python3 scripts/verify_artifact_manifest.py "$WORK/manifest.json"
+          if [[ "$TARGET" == *windows* ]]; then
+            CLI="$(ls "$WORK"/agentmesh.exe)"
+            PLUGIN="$(ls "$WORK"/agentmesh-fixture-echo.exe)"
+          else
+            CLI="$(ls "$WORK"/agentmesh)"
+            PLUGIN="$(ls "$WORK"/agentmesh-fixture-echo)"
+            chmod +x "$CLI" "$PLUGIN"
+          fi
+          CLI="$(cd "$(dirname "$CLI")" && pwd)/$(basename "$CLI")"
+          PLUGIN="$(cd "$(dirname "$PLUGIN")" && pwd)/$(basename "$PLUGIN")"
+          mkdir -p "$WORK/sidecars"
+          "$CLI" run --plugin "$PLUGIN" --input "$WORK/echo-input.json" --sidecar-dir "$WORK/sidecars" > "$WORK/out.json"
+          python3 - <<'PY'
+          import json, pathlib, os
+          work = pathlib.Path(os.environ["WORK"])
+          data = json.loads((work/"out.json").read_text(encoding="utf-8"))
+          assert data["outcome"] == "ok", data
+          assert data["schema_version"] == "2026-07-15"
+          print("smoke ok", data["run_id"])
+          PY
+
+      - name: upload immutable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: upload/*
+          if-no-files-found: error
+          retention-days: 30
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          rust-version: "1.97.0"
