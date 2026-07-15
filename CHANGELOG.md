@@ -2,6 +2,12 @@
 
 All notable changes to this private Phase 0 workspace are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Phase 0 exit review: reconcile `docs/protocol-v0.md` and `docs/threat-model-v0.md` to implementation evidence; accept ADR 0001.
+
 ## [0.1.0] — 2026-07-15
 
 ### Added

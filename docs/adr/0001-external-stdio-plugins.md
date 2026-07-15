@@ -1,7 +1,8 @@
 # ADR 0001: External stdio plugins
 
-- Status: **Proposed**
+- Status: **Accepted**
 - Date: 2026-07-15
+- Accepted-at: Phase 0 exit review (2026-07-15)
 - Deciders: Phase 0 spike authors
 
 ## Context
@@ -17,4 +18,14 @@ Communicate with plugins as **external OS processes** over **strict JSON-RPC 2.0
 - Clear crash isolation and language-neutral design path
 - Requires process supervision, framing, timeouts, and audit persistence in host
 - Phase 0 proves Rust fixtures only; polyglot evidence and protocol 1.0 remain later gates
-- ADR stays Proposed until Phase 0 exit review accepts the conformance matrix
+
+## Acceptance evidence
+
+- PR: https://github.com/eiei114/agentmesh-private/pull/1 (merged)
+- CI (merge to main): https://github.com/eiei114/agentmesh-private/actions/runs/29414883393
+  - `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`, `security`
+  - immutable artifact packaging + downloaded CLI ↔ echo smoke
+- Local: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`
+- Local release smoke: `agentmesh run` ↔ `agentmesh-fixture-echo` ⇒ `outcome=ok`, bounded sidecar under `.agentmesh/runs/`
+
+Deferred hardening explicitly does **not** reopen this ADR: quantitative coverage gate, full failure golden matrix, dedicated application-error/exit-nonzero conformance wiring, and Ctrl-C system tests.
