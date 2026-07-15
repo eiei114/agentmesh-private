@@ -86,7 +86,7 @@ jobs:
           echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
           mkdir -p upload
           if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            (cd "$OUT" && powershell.exe -NoProfile -Command "Compress-Archive -Path * -DestinationPath '../../upload/${ARTIFACT_NAME}.zip' -Force")
+            python3 scripts/zipdir.py zip "$OUT" "upload/${ARTIFACT_NAME}.zip"
           else
             tar -C "$OUT" -czf "upload/${ARTIFACT_NAME}.tar.gz" .
           fi
@@ -99,7 +99,7 @@ jobs:
           WORK="$(mktemp -d)"
           export WORK
           if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            powershell.exe -NoProfile -Command "Expand-Archive -Path 'upload/${ARTIFACT_NAME}.zip' -DestinationPath '$WORK' -Force"
+            python3 scripts/zipdir.py unzip "upload/${ARTIFACT_NAME}.zip" "$WORK"
           else
             tar -C "$WORK" -xzf "upload/${ARTIFACT_NAME}.tar.gz"
           fi
@@ -137,10 +137,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          toolchain: "1.97.0"
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
-      - name: cargo deny check
-        run: cargo deny check
+          command: check
+          rust-version: "1.97.0"
