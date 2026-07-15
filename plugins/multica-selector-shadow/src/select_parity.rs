@@ -814,12 +814,67 @@ fn issue_signatures(issue: &Value) -> Vec<String> {
 }
 
 fn project_key_for(issue: &Value) -> String {
+    // Match Python `autopilot_common.project_key_for` (default: no PR fallback).
     for key in ["project_key", "roadmap_project_slug"] {
         if let Some(value) = metadata_str(issue, key) {
             return value.to_string();
         }
     }
-    string_field(issue, "project_key")
+    if let Some(dedupe_key) = metadata_str(issue, "dedupe_key") {
+        if let Some((head, _)) = dedupe_key.split_once(':') {
+            if !head.is_empty() {
+                return head.to_string();
+            }
+        }
+    }
+    if let Some(source_path) = metadata_str(issue, "source_path") {
+        if source_path.contains("/OSS/") {
+            let parts: Vec<&str> = source_path.split('/').collect();
+            if let Some(idx) = parts.iter().position(|part| *part == "OSS") {
+                if let Some(next) = parts.get(idx + 1).copied().filter(|s| !s.is_empty()) {
+                    return next.to_string();
+                }
+            }
+        }
+    }
+    let title = string_field(issue, "title")
+        .trim()
+        .to_ascii_lowercase();
+    if let Some(key) = title_hyphenated_project_prefix(&title) {
+        return key;
+    }
+    String::new()
+}
+
+/// Python regex: `^([a-z0-9]+(?:-[a-z0-9]+)+):`
+fn title_hyphenated_project_prefix(title_lower: &str) -> Option<String> {
+    let bytes = title_lower.as_bytes();
+    let mut i = 0usize;
+    let mut hyphen_segments = 0usize;
+    while i < bytes.len() && bytes[i].is_ascii_alphanumeric() {
+        i += 1;
+    }
+    if i == 0 {
+        return None;
+    }
+    while i < bytes.len() && bytes[i] == b'-' {
+        let start = i + 1;
+        i = start;
+        while i < bytes.len() && bytes[i].is_ascii_alphanumeric() {
+            i += 1;
+        }
+        if i == start {
+            return None;
+        }
+        hyphen_segments += 1;
+    }
+    if hyphen_segments == 0 {
+        return None;
+    }
+    if i < bytes.len() && bytes[i] == b':' {
+        return Some(title_lower[..i].to_string());
+    }
+    None
 }
 
 fn backlog_age_days(issue: &Value, now: &DateTime<FixedOffset>) -> i64 {
@@ -901,15 +956,41 @@ fn metadata_i64(issue: &Value, key: &str) -> Option<i64> {
         .or_else(|| value.as_str()?.parse::<i64>().ok())
 }
 
+/// Match Python `parse_metadata_value` + `as_list` for Multica metadata fields.
+/// Importantly, Multica often stores empty lists as the JSON string `"[]"`.
+fn coerce_metadata_list(value: &Value) -> Vec<String> {
+    match value {
+        Value::Null => Vec::new(),
+        Value::Array(items) => items
+            .iter()
+            .filter_map(|v| match v {
+                Value::String(s) if !s.is_empty() => Some(s.clone()),
+                other => other.as_str().map(str::to_string).filter(|s| !s.is_empty()),
+            })
+            .collect(),
+        Value::String(raw) => {
+            let stripped = raw.trim();
+            if stripped.is_empty() || stripped == "[]" {
+                return Vec::new();
+            }
+            if stripped.starts_with('[') || stripped.starts_with('{') {
+                if let Ok(parsed) = serde_json::from_str::<Value>(stripped) {
+                    return coerce_metadata_list(&parsed);
+                }
+            }
+            vec![stripped.to_string()]
+        }
+        other => other
+            .as_str()
+            .map(|s| vec![s.to_string()])
+            .unwrap_or_default(),
+    }
+}
+
 fn metadata_list(issue: &Value, key: &str) -> Vec<String> {
     match metadata_value(issue, key) {
-        Some(Value::Array(items)) => items
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_string))
-            .filter(|s| !s.is_empty())
-            .collect(),
-        Some(Value::String(s)) if !s.is_empty() => vec![s.clone()],
-        _ => Vec::new(),
+        Some(value) => coerce_metadata_list(value),
+        None => Vec::new(),
     }
 }
 
@@ -952,5 +1033,79 @@ mod tests {
             actual["run_context"]["consumed_snapshot_hash"],
             content_hash(&snapshot)
         );
+    }
+
+    #[test]
+    fn metadata_list_treats_json_empty_array_string_as_empty() {
+        let issue = json!({
+            "metadata": {
+                "blocked_by_local": "[]",
+                "blocked_by_issue_ids": "[]",
+                "unblocks_issue_ids": "[\"x\"]"
+            }
+        });
+        assert!(metadata_list(&issue, "blocked_by_local").is_empty());
+        assert!(metadata_list(&issue, "blocked_by_issue_ids").is_empty());
+        assert_eq!(metadata_list(&issue, "unblocks_issue_ids"), vec!["x".to_string()]);
+        assert!(!unresolved_dependencies(&issue, &Map::new()));
+    }
+
+    #[test]
+    fn empty_blocked_by_local_string_does_not_skip_candidate() {
+        let raw = include_str!("../testdata/one_candidate.snapshot.json");
+        let mut snapshot: Value = serde_json::from_str(raw).unwrap();
+        // Live Multica stores empty lists as the JSON string "[]".
+        if let Some(issues) = snapshot.get_mut("issues").and_then(Value::as_array_mut) {
+            for issue in issues.iter_mut() {
+                if issue.get("identifier").and_then(Value::as_str) == Some("AM-201") {
+                    let meta = issue
+                        .as_object_mut()
+                        .unwrap()
+                        .entry("metadata")
+                        .or_insert_with(|| json!({}));
+                    meta.as_object_mut()
+                        .unwrap()
+                        .insert("blocked_by_local".to_string(), json!("[]"));
+                }
+            }
+        }
+        let actual = select_compact_from_snapshot(&snapshot).unwrap();
+        assert_eq!(actual["promotion_candidates"][0]["issue_key"], "AM-201");
+        assert!(actual
+            .get("skipped_summary")
+            .and_then(|s| s.get("blocked_dependency"))
+            .is_none());
+    }
+
+    #[test]
+    fn project_key_for_uses_dedupe_key_prefix() {
+        let issue = json!({
+            "title": "Surface masked scheduled-router slot warnings",
+            "metadata": {
+                "dedupe_key": "pi-scheduled-router:4_Project/OSS/pi-scheduled-router/Issues/08.md",
+                "blocked_by_local": "[]"
+            }
+        });
+        assert_eq!(project_key_for(&issue), "pi-scheduled-router");
+    }
+
+    #[test]
+    fn project_key_for_uses_source_path_oss_segment() {
+        let issue = json!({
+            "title": "Something",
+            "metadata": {
+                "source_path": "4_Project/OSS/agentmesh/Issues/01.md"
+            }
+        });
+        assert_eq!(project_key_for(&issue), "agentmesh");
+    }
+
+    #[test]
+    fn project_key_for_uses_hyphenated_title_prefix() {
+        let issue = json!({
+            "title": "pi-scheduled-router: polish warnings",
+            "metadata": {}
+        });
+        assert_eq!(project_key_for(&issue), "pi-scheduled-router");
     }
 }
