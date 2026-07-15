@@ -4,6 +4,10 @@ All notable changes to this private Phase 0 workspace are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Phase 1.0 shadow-mode Multica selector adapter skeleton (`plugins/multica-selector-shadow`): opaque `agentmesh.run` input/payload, recorded offline fixtures, named shadow compact-shape compare, host roundtrip with audit sidecar. No production cutover.
+
 ### Changed
 
 - Phase 0 exit review: reconcile `docs/protocol-v0.md` and `docs/threat-model-v0.md` to implementation evidence; accept ADR 0001.

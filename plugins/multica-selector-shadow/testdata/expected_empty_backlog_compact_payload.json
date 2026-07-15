@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "decision": "continue",
+  "reason": "no_candidate",
+  "fast_exit_required": false,
+  "recommended_next_action": "create_replenishment_or_final_report",
+  "run_only_result": {
+    "decision": "continue",
+    "reason": "no_candidate",
+    "selected": false,
+    "promotion_candidate_count": 0,
+    "chosen_action": "no_candidate",
+    "candidate_issue_keys": []
+  },
+  "run_context": {
+    "now": "2026-07-15T12:00:00+09:00",
+    "deterministic_mode": true
+  },
+  "cap_state": {
+    "ai_todo_cap": 30,
+    "pr_producing_todo_cap": 20,
+    "review_fix_exempt_todo_cap": 10,
+    "normal_promotion_limit": 5,
+    "special_promotion_limit": 8
+  },
+  "promotion_candidates": [],
+  "age_boost_action_count": 0,
+  "age_boost_skipped_count": 0,
+  "replenishment_candidate": {
+    "action": "create_issue",
+    "priority": 5,
+    "reason": "roadmap_context_microtask",
+    "title_stub": "Seed next bounded maintenance microtask",
+    "status": "backlog"
+  },
+  "skipped_summary": {},
+  "metrics": {
+    "backlog_count": 0,
+    "candidate_count": 0,
+    "promotion_candidate_count": 0,
+    "chosen_action": "no_candidate"
+  },
+  "warnings": []
+}
