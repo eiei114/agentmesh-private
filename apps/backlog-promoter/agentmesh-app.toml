@@ -1,0 +1,18 @@
+# AgentMesh App manifest v0 (example for Backlog Promoter dogfood)
+schema_version = "agentmesh-app.v0"
+name = "backlog-promoter"
+protocol_version = "2026-07-15"
+
+[plugin]
+logical_name = "agentmesh-multica-selector-shadow"
+
+[schemas]
+input = "schemas/backlog-promoter-snapshot-v0.schema.json"
+output = "schemas/backlog-promoter-compact-v0.schema.json"
+
+[sidecar]
+retention_class = "owner_local"
+capture_plugin_stderr = false
+
+[conformance]
+cargo_package = "agentmesh-multica-selector-shadow"

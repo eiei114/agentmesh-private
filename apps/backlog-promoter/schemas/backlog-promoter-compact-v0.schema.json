@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.dev/schemas/backlog-promoter-compact-v0.schema.json",
+  "title": "Backlog Promoter Compact Output v0",
+  "type": "object",
+  "required": ["schema_version", "decision"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "decision": { "type": "string" }
+  },
+  "additionalProperties": true
+}

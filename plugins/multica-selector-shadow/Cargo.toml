@@ -17,9 +17,16 @@ path = "src/lib.rs"
 [dependencies]
 agentmesh-fixture-support = { workspace = true }
 agentmesh-proto = { workspace = true }
+chrono = { workspace = true }
+hex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
+
+[[bin]]
+name = "agentmesh-multica-select-snapshot"
+path = "src/bin/select_snapshot.rs"
 
 [dev-dependencies]
 serde_json = { workspace = true }

@@ -1,0 +1,7 @@
+# Version-controlled AgentMesh toolchain pin (no machine-local install paths).
+schema_version = "agentmesh-toolchain-pin.v0"
+tag = "v0.0.0-campaign.placeholder"
+commit_sha = "376f849893654a8d2de868e79f0c5d0aefb4308c"
+target = "x86_64-pc-windows-msvc"
+# Placeholder digest — replace with private prerelease release-manifest SHA before G1.
+release_manifest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"

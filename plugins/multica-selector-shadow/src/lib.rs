@@ -3,6 +3,12 @@
 //! Plugin-owned types stay here. They must never move into `agentmesh-proto`
 //! or `agentmesh-host`.
 
+mod select_parity;
+
+pub use select_parity::{
+    canonical_json_bytes, content_hash, is_snapshot_v0, select_compact_from_snapshot, ParityError,
+};
+
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use thiserror::Error;
@@ -45,6 +51,15 @@ pub enum SelectError {
     InvalidInput(String),
 }
 
+/// Opaque plugin input: legacy Phase 1.0 shadow listing OR snapshot v0.
+#[derive(Debug, Clone)]
+pub enum SelectorInput {
+    /// Recorded Phase 1.0 stub listing (`controller`/`mode`/`now`/`issues`).
+    Legacy(ShadowSelectorInput),
+    /// Versioned backlog-promoter-snapshot.v0 document.
+    Snapshot(Value),
+}
+
 /// Opaque Multica-shaped issue listing used for offline shadow runs.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ShadowSelectorInput {
@@ -78,8 +93,11 @@ pub const COMPACT_REQUIRED_KEYS: &[&str] = &[
     "warnings",
 ];
 
-/// Parse and validate plugin-owned shadow input.
-pub fn parse_input(value: &Value) -> Result<ShadowSelectorInput, SelectError> {
+/// Parse and validate plugin-owned shadow / snapshot input.
+pub fn parse_input(value: &Value) -> Result<SelectorInput, SelectError> {
+    if is_snapshot_v0(value) {
+        return Ok(SelectorInput::Snapshot(value.clone()));
+    }
     let input: ShadowSelectorInput = serde_json::from_value(value.clone())
         .map_err(|e| SelectError::InvalidInput(format!("deserialize: {e}")))?;
     if input.controller != "backlog_promoter" {
@@ -97,18 +115,52 @@ pub fn parse_input(value: &Value) -> Result<ShadowSelectorInput, SelectError> {
     if input.now.trim().is_empty() {
         return Err(SelectError::InvalidInput("now is empty".into()));
     }
-    Ok(input)
+    Ok(SelectorInput::Legacy(input))
+}
+
+/// Build compact payload: snapshot v0 uses full parity; legacy keeps Phase 1.0 stub.
+pub fn select_compact_payload(input: &SelectorInput) -> Value {
+    match input {
+        SelectorInput::Snapshot(snapshot) => {
+            select_compact_from_snapshot(snapshot).unwrap_or_else(|err| {
+                json!({
+                    "schema_version": 1,
+                    "decision": "stop",
+                    "reason": "snapshot_input_invalid",
+                    "fast_exit_required": true,
+                    "recommended_next_action": "final_report_only",
+                    "run_only_result": {
+                        "decision": "stop",
+                        "reason": "snapshot_input_invalid",
+                        "selected": false,
+                        "promotion_candidate_count": 0,
+                        "chosen_action": "final_report_only",
+                        "candidate_issue_keys": []
+                    },
+                    "run_context": {
+                        "selection_input_mode": "snapshot",
+                        "deterministic_mode": true,
+                        "error": err.to_string(),
+                    },
+                    "cap_state": {},
+                    "promotion_candidates": [],
+                    "age_boost_action_count": 0,
+                    "age_boost_skipped_count": 0,
+                    "replenishment_candidate": null,
+                    "skipped_summary": {},
+                    "metrics": {"chosen_action": null},
+                    "warnings": [{"code": "snapshot_input_invalid", "message": err.to_string()}],
+                })
+            })
+        }
+        SelectorInput::Legacy(input) => select_legacy_stub(input),
+    }
 }
 
 /// Build compact payload equivalent to Python selector `compact_summary` shape.
 ///
-/// This is a **skeleton** admission path for recorded listings only:
-/// - backlog status issues become candidate rows
-/// - human-owned / member-assignee issues are counted in `skipped_summary`
-/// - at most 5 eligible backlog items are promoted with `selection_reason=shadow_stub_eligible`
-///
-/// Full parity (caps, evidence preflight, schedule admission, age boost) is deferred.
-pub fn select_compact_payload(input: &ShadowSelectorInput) -> Value {
+/// Legacy Phase 1.0 stub path for recorded listings only.
+fn select_legacy_stub(input: &ShadowSelectorInput) -> Value {
     let mut skipped_summary: Map<String, Value> = Map::new();
     let mut backlog_issues = Vec::new();
     let mut candidates = Vec::new();
@@ -306,6 +358,46 @@ pub fn compare_compact_shadow(actual: &Value, expected: &Value) -> Result<(), Sh
         }
     }
     compare_value(actual, expected, "$")
+}
+
+/// Compare compact payloads with explicit volatile JSON-pointer ignores only.
+///
+/// Default ignores cover path/file identity fields that differ across hosts while
+/// selection identity (`consumed_snapshot_hash`) remains compared.
+pub fn compare_compact_differential(
+    actual: &Value,
+    expected: &Value,
+    volatile_pointers: &[&str],
+) -> Result<(), ShadowCompareReason> {
+    let mut left = actual.clone();
+    let mut right = expected.clone();
+    for pointer in volatile_pointers {
+        prune_pointer(&mut left, pointer);
+        prune_pointer(&mut right, pointer);
+    }
+    compare_compact_shadow(&left, &right)
+}
+
+/// Default volatile pointers for Python↔Rust snapshot dual-run comparison.
+pub const DEFAULT_VOLATILE_POINTERS: &[&str] =
+    &["/run_context/snapshot_path", "/run_context/raw_file_sha256"];
+
+fn prune_pointer(value: &mut Value, pointer: &str) {
+    let Some(parent_path) = pointer.rsplit_once('/') else {
+        return;
+    };
+    let (parent, key) = parent_path;
+    if parent.is_empty() {
+        if let Some(obj) = value.as_object_mut() {
+            obj.remove(key);
+        }
+        return;
+    }
+    if let Some(node) = value.pointer_mut(parent) {
+        if let Some(obj) = node.as_object_mut() {
+            obj.remove(key);
+        }
+    }
 }
 
 fn compare_value(actual: &Value, expected: &Value, path: &str) -> Result<(), ShadowCompareReason> {
