@@ -14,11 +14,16 @@ import sys
 
 
 def run_gh(args: list[str]) -> subprocess.CompletedProcess[str]:
+    env = dict(**{k: v for k, v in __import__("os").environ.items()})
+    # Actions provides GITHUB_TOKEN; gh prefers GH_TOKEN.
+    if not env.get("GH_TOKEN") and env.get("GITHUB_TOKEN"):
+        env["GH_TOKEN"] = env["GITHUB_TOKEN"]
     return subprocess.run(
         ["gh", *args],
         check=False,
         text=True,
         capture_output=True,
+        env=env,
     )
 
 
