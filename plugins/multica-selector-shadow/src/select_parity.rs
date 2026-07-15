@@ -837,9 +837,7 @@ fn project_key_for(issue: &Value) -> String {
             }
         }
     }
-    let title = string_field(issue, "title")
-        .trim()
-        .to_ascii_lowercase();
+    let title = string_field(issue, "title").trim().to_ascii_lowercase();
     if let Some(key) = title_hyphenated_project_prefix(&title) {
         return key;
     }
@@ -1046,7 +1044,10 @@ mod tests {
         });
         assert!(metadata_list(&issue, "blocked_by_local").is_empty());
         assert!(metadata_list(&issue, "blocked_by_issue_ids").is_empty());
-        assert_eq!(metadata_list(&issue, "unblocks_issue_ids"), vec!["x".to_string()]);
+        assert_eq!(
+            metadata_list(&issue, "unblocks_issue_ids"),
+            vec!["x".to_string()]
+        );
         assert!(!unresolved_dependencies(&issue, &Map::new()));
     }
 
