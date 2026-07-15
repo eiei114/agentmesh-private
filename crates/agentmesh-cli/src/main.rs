@@ -1,8 +1,8 @@
 //! AgentMesh CLI entrypoint (Phase 0 host + App v0 validate/run).
 
 use agentmesh_app::{
-    default_toolchain_cache_root, install_toolchain_bundle, prepare_app_run,
-    validate_app_bundle, write_run_marker, AppRunMode, AppRunRequest, ResolveMode,
+    default_toolchain_cache_root, install_toolchain_bundle, prepare_app_run, validate_app_bundle,
+    write_run_marker, AppRunMode, AppRunRequest, ResolveMode,
 };
 use agentmesh_host::audit::FsAuditStore;
 use agentmesh_host::lifecycle::{CancellationToken, RunConfig};
@@ -251,10 +251,7 @@ fn toolchain_install_command(
             } else {
                 println!(
                     "ok installed tag={} target={} binaries={} release_manifest_sha256={}",
-                    report.tag,
-                    report.target,
-                    report.binary_count,
-                    report.release_manifest_sha256
+                    report.tag, report.target, report.binary_count, report.release_manifest_sha256
                 );
             }
             ExitCode::SUCCESS
@@ -406,13 +403,8 @@ async fn app_run_command(
     };
 
     let mut sink = BufferCompactSink::default();
-    let mut outcome = execute_run_with(
-        config,
-        &FsAuditStore,
-        &mut sink,
-        CancellationToken::new(),
-    )
-    .await;
+    let mut outcome =
+        execute_run_with(config, &FsAuditStore, &mut sink, CancellationToken::new()).await;
     annotate_app_run_envelope(
         &mut outcome.envelope,
         &prepared.run_marker,
@@ -426,11 +418,7 @@ async fn app_run_command(
     Ok(outcome.exit_code)
 }
 
-fn annotate_app_run_envelope(
-    envelope: &mut CompactEnvelope,
-    marker: &str,
-    mode: ResolveMode,
-) {
+fn annotate_app_run_envelope(envelope: &mut CompactEnvelope, marker: &str, mode: ResolveMode) {
     envelope.diagnostics.push(CompactDiagnostic {
         category: None,
         code: None,

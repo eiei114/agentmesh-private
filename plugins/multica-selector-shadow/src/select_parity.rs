@@ -175,13 +175,7 @@ pub fn select_compact_from_snapshot(snapshot: &Value) -> Result<Value, ParityErr
             .cloned()
             .unwrap_or_else(|| json!("schedule_collision_blocked"));
         // Match Python early-return: schedule stop happens before cap_state is computed.
-        return Ok(stop_compact(
-            &now,
-            &hash,
-            reason,
-            json!({}),
-            &warnings,
-        ));
+        return Ok(stop_compact(&now, &hash, reason, json!({}), &warnings));
     }
 
     let backlog: Vec<&Value> = issues

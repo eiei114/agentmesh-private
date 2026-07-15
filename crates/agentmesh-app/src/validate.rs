@@ -36,15 +36,13 @@ pub fn validate_app_bundle(
     manifest_path: &Path,
     pin_path: &Path,
 ) -> Result<ValidationReport, ValidationError> {
-    let manifest =
-        AppManifest::load(manifest_path).map_err(ValidationError::Invalid)?;
+    let manifest = AppManifest::load(manifest_path).map_err(ValidationError::Invalid)?;
     manifest
         .validate_structure()
         .map_err(ValidationError::Invalid)?;
 
     let pin = ToolchainPin::load(pin_path).map_err(ValidationError::Invalid)?;
-    pin.validate_structure()
-        .map_err(ValidationError::Invalid)?;
+    pin.validate_structure().map_err(ValidationError::Invalid)?;
 
     if manifest.protocol_version != PROTOCOL_VERSION {
         return Err(ValidationError::Invalid(format!(
@@ -67,7 +65,8 @@ pub fn validate_app_bundle(
     ] {
         if let Some(rel) = rel {
             let joined = app_root.join(rel);
-            let canonical_root = std::fs::canonicalize(app_root).unwrap_or_else(|_| app_root.to_path_buf());
+            let canonical_root =
+                std::fs::canonicalize(app_root).unwrap_or_else(|_| app_root.to_path_buf());
             // Soft existence check: warn-as-error for validate when file missing.
             if !joined.exists() {
                 return Err(ValidationError::Invalid(format!(

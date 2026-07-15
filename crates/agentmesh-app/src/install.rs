@@ -1,9 +1,7 @@
 //! Atomic toolchain cache install with per-tag/target lock.
 
 use crate::pin::SUPPORTED_TARGETS;
-use crate::resolve::{
-    sha256_hex, ReleaseManifest, ResolveError, RELEASE_MANIFEST_SCHEMA_VERSION,
-};
+use crate::resolve::{sha256_hex, ReleaseManifest, ResolveError, RELEASE_MANIFEST_SCHEMA_VERSION};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -65,9 +63,8 @@ pub fn install_toolchain_bundle(
             manifest_path.display()
         ))
     })?;
-    let text = String::from_utf8(manifest_bytes.clone()).map_err(|_| {
-        InstallError::Invalid("release-manifest.json is not UTF-8".into())
-    })?;
+    let text = String::from_utf8(manifest_bytes.clone())
+        .map_err(|_| InstallError::Invalid("release-manifest.json is not UTF-8".into()))?;
     let release = ReleaseManifest::parse(&text).map_err(InstallError::Invalid)?;
     if release.schema_version != RELEASE_MANIFEST_SCHEMA_VERSION {
         return Err(InstallError::Invalid(format!(
@@ -128,18 +125,15 @@ pub fn install_toolchain_bundle(
 
     // Copy release-manifest first, then each binary under its relative path.
     let staged_manifest = staging.join("release-manifest.json");
-    fs::write(&staged_manifest, &manifest_bytes).map_err(|e| {
-        InstallError::Io(format!("failed writing staged release-manifest: {e}"))
-    })?;
+    fs::write(&staged_manifest, &manifest_bytes)
+        .map_err(|e| InstallError::Io(format!("failed writing staged release-manifest: {e}")))?;
 
     for (logical, bin) in &release.binaries {
         let src = bundle_dir.join(&bin.relative_path);
         let dst = staging.join(&bin.relative_path);
         if let Some(parent) = dst.parent() {
             fs::create_dir_all(parent).map_err(|e| {
-                InstallError::Io(format!(
-                    "cannot create staged parent for `{logical}`: {e}"
-                ))
+                InstallError::Io(format!("cannot create staged parent for `{logical}`: {e}"))
             })?;
         }
         fs::copy(&src, &dst).map_err(|e| {
@@ -155,9 +149,8 @@ pub fn install_toolchain_bundle(
                 .map_err(|e| InstallError::Io(format!("stat staged `{logical}`: {e}")))?
                 .permissions();
             perms.set_mode(0o755);
-            fs::set_permissions(&dst, perms).map_err(|e| {
-                InstallError::Io(format!("chmod staged `{logical}` failed: {e}"))
-            })?;
+            fs::set_permissions(&dst, perms)
+                .map_err(|e| InstallError::Io(format!("chmod staged `{logical}` failed: {e}")))?;
         }
     }
 
@@ -177,9 +170,8 @@ pub fn install_toolchain_bundle(
 
     mark_tree_readonly(&final_dir);
 
-    let installed_manifest = fs::read(final_dir.join("release-manifest.json")).map_err(|e| {
-        InstallError::Io(format!("failed reading installed release-manifest: {e}"))
-    })?;
+    let installed_manifest = fs::read(final_dir.join("release-manifest.json"))
+        .map_err(|e| InstallError::Io(format!("failed reading installed release-manifest: {e}")))?;
 
     Ok(InstallReport {
         install_dir: final_dir,

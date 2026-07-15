@@ -110,8 +110,7 @@ impl ReleaseManifest {
             ));
         }
         for (name, bin) in &self.binaries {
-            if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..")
-            {
+            if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
                 return Err(format!("invalid binary logical name `{name}`"));
             }
             validate_relative_path(&bin.relative_path, "binaries.relative_path")?;
@@ -140,9 +139,7 @@ pub fn default_toolchain_cache_root() -> Result<PathBuf, ResolveError> {
                     .into(),
             )
         })?;
-    Ok(PathBuf::from(home)
-        .join(".agentmesh")
-        .join("toolchains"))
+    Ok(PathBuf::from(home).join(".agentmesh").join("toolchains"))
 }
 
 /// Resolve a logical plugin under a pinned local toolchain cache.
@@ -172,9 +169,8 @@ pub fn resolve_pinned_plugin(
             "release-manifest SHA-256 does not match toolchain pin".into(),
         ));
     }
-    let text = String::from_utf8(manifest_bytes).map_err(|_| {
-        ResolveError::Invalid("release-manifest is not valid UTF-8".into())
-    })?;
+    let text = String::from_utf8(manifest_bytes)
+        .map_err(|_| ResolveError::Invalid("release-manifest is not valid UTF-8".into()))?;
     let release = ReleaseManifest::parse(&text).map_err(ResolveError::Invalid)?;
     release
         .validate_against_pin(pin)
@@ -330,10 +326,7 @@ fn ensure_under_root(path: &Path, root: &Path) -> Result<(), ResolveError> {
     Ok(())
 }
 
-fn reject_windows_reparse_outside_root(
-    path: &Path,
-    root: &Path,
-) -> Result<(), ResolveError> {
+fn reject_windows_reparse_outside_root(path: &Path, root: &Path) -> Result<(), ResolveError> {
     // canonicalize() already resolved reparse points / symlinks into an absolute path.
     // Re-check containment as a defense-in-depth for Windows junction targets.
     ensure_under_root(path, root)
@@ -387,9 +380,7 @@ release_manifest_sha256 = "{manifest_sha}"
     }
 
     fn write_toolchain(cache: &Path, plugin_bytes: &[u8]) -> (ToolchainPin, PathBuf) {
-        let root = cache
-            .join("v0.2.0-dev.1")
-            .join("x86_64-pc-windows-msvc");
+        let root = cache.join("v0.2.0-dev.1").join("x86_64-pc-windows-msvc");
         let bin_dir = root.join("bin");
         fs::create_dir_all(&bin_dir).unwrap();
         let plugin_name = if cfg!(windows) {
@@ -426,7 +417,9 @@ release_manifest_sha256 = "{manifest_sha}"
         let resolved = resolve_pinned_plugin(&sample_app(), &pin, dir.path()).unwrap();
         assert_eq!(resolved.mode, ResolveMode::Pinned);
         assert_eq!(resolved.plugin_sha256, sha256_hex(b"plugin-bytes"));
-        assert!(resolved.plugin_path.starts_with(dir.path().canonicalize().unwrap()));
+        assert!(resolved
+            .plugin_path
+            .starts_with(dir.path().canonicalize().unwrap()));
     }
 
     #[test]

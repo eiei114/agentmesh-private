@@ -81,7 +81,9 @@ pub struct AppRunRequest<'a> {
 }
 
 /// Validate + resolve according to mode/policy (does not spawn the host).
-pub fn prepare_app_run(request: AppRunRequest<'_>) -> Result<(AppManifest, PreparedAppRun), AppRunError> {
+pub fn prepare_app_run(
+    request: AppRunRequest<'_>,
+) -> Result<(AppManifest, PreparedAppRun), AppRunError> {
     let _report = validate_app_bundle(request.manifest_path, request.pin_path)?;
     let manifest = AppManifest::load(request.manifest_path).map_err(AppRunError::Io)?;
     let pin = ToolchainPin::load(request.pin_path).map_err(AppRunError::Io)?;
@@ -94,7 +96,10 @@ pub fn prepare_app_run(request: AppRunRequest<'_>) -> Result<(AppManifest, Prepa
             ));
         }
         let resolved = resolve_dev_plugin(&manifest, dev)?;
-        return Ok((manifest.clone(), prepared_from_manifest(&manifest, resolved)));
+        return Ok((
+            manifest.clone(),
+            prepared_from_manifest(&manifest, resolved),
+        ));
     }
 
     let cache_root = match request.toolchain_cache {
@@ -102,7 +107,10 @@ pub fn prepare_app_run(request: AppRunRequest<'_>) -> Result<(AppManifest, Prepa
         None => default_toolchain_cache_root()?,
     };
     let resolved = resolve_pinned_plugin(&manifest, &pin, &cache_root)?;
-    Ok((manifest.clone(), prepared_from_manifest(&manifest, resolved)))
+    Ok((
+        manifest.clone(),
+        prepared_from_manifest(&manifest, resolved),
+    ))
 }
 
 fn prepared_from_manifest(manifest: &AppManifest, resolved: ResolvedPlugin) -> PreparedAppRun {
@@ -175,9 +183,7 @@ logical_name = "agentmesh-multica-selector-shadow"
         .unwrap();
 
         let cache = dir.join("cache");
-        let root = cache
-            .join("v0.2.0-dev.1")
-            .join("x86_64-pc-windows-msvc");
+        let root = cache.join("v0.2.0-dev.1").join("x86_64-pc-windows-msvc");
         let bin = root.join("bin");
         fs::create_dir_all(&bin).unwrap();
         let plugin_name = if cfg!(windows) {

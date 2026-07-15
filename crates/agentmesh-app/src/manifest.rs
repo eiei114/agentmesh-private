@@ -117,7 +117,8 @@ impl AppManifest {
 
     /// Load and parse a manifest file.
     pub fn load(path: &Path) -> Result<Self, String> {
-        let text = std::fs::read_to_string(path).map_err(|e| format!("manifest read error: {e}"))?;
+        let text =
+            std::fs::read_to_string(path).map_err(|e| format!("manifest read error: {e}"))?;
         Self::parse(&text)
     }
 
@@ -187,7 +188,10 @@ fn validate_logical_name(name: &str) -> Result<(), String> {
             return Err("plugin.logical_name contains forbidden shell metacharacters".into());
         }
     }
-    if Path::new(name).components().any(|c| matches!(c, Component::ParentDir)) {
+    if Path::new(name)
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
         return Err("plugin.logical_name path escape rejected".into());
     }
     Ok(())

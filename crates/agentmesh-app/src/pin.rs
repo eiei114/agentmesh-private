@@ -58,7 +58,8 @@ impl ToolchainPin {
 
     /// Load and parse a pin file.
     pub fn load(path: &Path) -> Result<Self, String> {
-        let text = std::fs::read_to_string(path).map_err(|e| format!("toolchain pin read error: {e}"))?;
+        let text =
+            std::fs::read_to_string(path).map_err(|e| format!("toolchain pin read error: {e}"))?;
         Self::parse(&text)
     }
 
