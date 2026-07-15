@@ -1,0 +1,40 @@
+{
+  "controller": "backlog_promoter",
+  "mode": "shadow",
+  "now": "2026-07-15T12:00:00+09:00",
+  "issues": [
+    {
+      "id": "iss_shadow_1",
+      "identifier": "AM-101",
+      "project_key": "agentmesh",
+      "title": "Recorded shadow promotion candidate",
+      "status": "backlog",
+      "assignee_type": "agent",
+      "metadata": {
+        "work_owner": "ai"
+      }
+    },
+    {
+      "id": "iss_shadow_human",
+      "identifier": "AM-102",
+      "project_key": "agentmesh",
+      "title": "Human owned backlog item",
+      "status": "backlog",
+      "assignee_type": "member",
+      "metadata": {
+        "work_owner": "human"
+      }
+    },
+    {
+      "id": "iss_shadow_todo",
+      "identifier": "AM-103",
+      "project_key": "agentmesh",
+      "title": "Already todo",
+      "status": "todo",
+      "assignee_type": "agent",
+      "metadata": {
+        "work_owner": "ai"
+      }
+    }
+  ]
+}

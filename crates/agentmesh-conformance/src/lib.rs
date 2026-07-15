@@ -40,7 +40,10 @@ pub fn assert_fixture_dependency_boundary() {
     let packages = meta["packages"].as_array().expect("packages");
     for pkg in packages {
         let name = pkg["name"].as_str().unwrap_or("");
-        if name == "agentmesh-fixture-support" || name.starts_with("agentmesh-fixture-") {
+        let is_plugin_side = name == "agentmesh-fixture-support"
+            || name.starts_with("agentmesh-fixture-")
+            || name.starts_with("agentmesh-multica-");
+        if is_plugin_side {
             let deps = pkg["dependencies"].as_array().cloned().unwrap_or_default();
             for dep in deps {
                 let dep_name = dep["name"].as_str().unwrap_or("");
@@ -232,5 +235,104 @@ mod tests {
     #[test]
     fn path_helper_smoke() {
         let _ = fixture_bin("agentmesh-fixture-echo");
+    }
+
+    #[tokio::test]
+    async fn multica_selector_shadow_empty_backlog_roundtrip() {
+        use agentmesh_multica_selector_shadow::compare_compact_shadow;
+
+        let plugin = abs_fixture("agentmesh-multica-selector-shadow");
+        if !plugin.exists() {
+            eprintln!("skip: shadow plugin not built at {}", plugin.display());
+            return;
+        }
+        let testdata = workspace_root().join("plugins/multica-selector-shadow/testdata");
+        let input = std::fs::read(testdata.join("recorded_empty_backlog_input.json")).unwrap();
+        let expected: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(testdata.join("expected_empty_backlog_compact_payload.json")).unwrap(),
+        )
+        .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = VecCompactSink::default();
+        let mut limits = Limits::default();
+        limits.run_timeout_ms = 5_000;
+        let outcome = execute_run_with(
+            RunConfig {
+                plugin,
+                input,
+                sidecar_dir: dir.path().to_path_buf(),
+                plugin_env_keys: vec![],
+                redact_pointers: vec![],
+                capture_plugin_stderr: false,
+                limits,
+                run_id: Some("test-multica-shadow-empty".into()),
+            },
+            &FsAuditStore,
+            &mut sink,
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(
+            outcome.exit_code,
+            0,
+            "stdout={}",
+            String::from_utf8_lossy(&sink.bytes)
+        );
+        assert_eq!(outcome.envelope.outcome, CompactOutcome::Ok);
+        let sidecar = outcome.sidecar_path.expect("sidecar path");
+        assert!(sidecar.is_file(), "missing sidecar {}", sidecar.display());
+        compare_compact_shadow(&outcome.envelope.payload, &expected)
+            .expect("shadow compact payload mismatch");
+    }
+
+    #[tokio::test]
+    async fn multica_selector_shadow_one_candidate_roundtrip() {
+        use agentmesh_multica_selector_shadow::compare_compact_shadow;
+
+        let plugin = abs_fixture("agentmesh-multica-selector-shadow");
+        if !plugin.exists() {
+            eprintln!("skip: shadow plugin not built at {}", plugin.display());
+            return;
+        }
+        let testdata = workspace_root().join("plugins/multica-selector-shadow/testdata");
+        let input = std::fs::read(testdata.join("recorded_one_candidate_input.json")).unwrap();
+        let expected: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(testdata.join("expected_one_candidate_compact_payload.json")).unwrap(),
+        )
+        .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = VecCompactSink::default();
+        let mut limits = Limits::default();
+        limits.run_timeout_ms = 5_000;
+        let outcome = execute_run_with(
+            RunConfig {
+                plugin,
+                input,
+                sidecar_dir: dir.path().to_path_buf(),
+                plugin_env_keys: vec![],
+                redact_pointers: vec![],
+                capture_plugin_stderr: false,
+                limits,
+                run_id: Some("test-multica-shadow-one".into()),
+            },
+            &FsAuditStore,
+            &mut sink,
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(
+            outcome.exit_code,
+            0,
+            "stdout={}",
+            String::from_utf8_lossy(&sink.bytes)
+        );
+        assert_eq!(outcome.envelope.outcome, CompactOutcome::Ok);
+        assert!(outcome.sidecar_path.expect("sidecar").is_file());
+        compare_compact_shadow(&outcome.envelope.payload, &expected)
+            .expect("shadow compact payload mismatch");
     }
 }

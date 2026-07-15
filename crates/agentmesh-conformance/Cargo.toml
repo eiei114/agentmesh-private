@@ -14,6 +14,7 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+agentmesh-multica-selector-shadow = { workspace = true }
 proptest = { workspace = true }
 
 [lints]

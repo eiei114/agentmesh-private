@@ -1,4 +1,4 @@
-# AgentMesh — Phase 0 Contract Spike
+# AgentMesh — Phase 0 Contract + Phase 1.0 Shadow Adapter
 
 Temporary private name: **agentmesh**. Final naming is deferred until the public-release gate.
 
@@ -12,7 +12,9 @@ Phase 0 proves a **stable host ↔ plugin contract**:
 - bounded, potentially-sensitive audit sidecar on the local filesystem
 - deterministic primary/secondary failure classification
 
-Phase 0 does **not** port Backlog Promoter / Todo Runner business logic, Multica credentials, daemon/TUI/SQLite, or claim polyglot evidence.
+Phase 1.0 adds a **shadow-mode Multica selector adapter skeleton** (`agentmesh-multica-selector-shadow`): recorded backlog listing → opaque plugin payload shaped like the Python compact selector contract. Sidecar remains audit evidence only; this is **not** production cutover.
+
+Still out of scope: Todo Runner parity, Multica credentials/live CLI, daemon/TUI/SQLite, WorkItem promotion into core, polyglot evidence.
 
 ## Supported targets (exact)
 
@@ -33,6 +35,17 @@ cargo build --release -p agentmesh-cli -p agentmesh-fixture-echo
 ./target/release/agentmesh run \
   --plugin "$(pwd)/target/release/agentmesh-fixture-echo.exe" \
   --input ./examples/echo-input.json \
+  --sidecar-dir ./.agentmesh/runs
+```
+
+Phase 1.0 shadow adapter (offline recorded listing; absolute plugin path required):
+
+```bash
+cargo build --release -p agentmesh-cli -p agentmesh-multica-selector-shadow
+
+./target/release/agentmesh run \
+  --plugin "$(pwd)/target/release/agentmesh-multica-selector-shadow.exe" \
+  --input ./plugins/multica-selector-shadow/testdata/recorded_empty_backlog_input.json \
   --sidecar-dir ./.agentmesh/runs
 ```
 
@@ -85,8 +98,8 @@ Rollback: choose a previous known-good workflow artifact by immutable name + man
 
 ## Explicit deferrals
 
-- Backlog Promoter / Todo Runner parity (Phase 1+)
-- Real Multica plugin
+- Backlog Promoter full parity / Todo Runner parity (later Phase 1+)
+- Live Multica credentials / production cutover (shadow skeleton only in Phase 1.0)
 - Non-Rust conformance claim
 - Protocol notifications/progress/callbacks/shutdown/streaming/batching/cancellation
 - Daemon / TUI / scheduler / production SQLite
@@ -107,8 +120,9 @@ Internal / test-only:
 - `agentmesh-conformance` — reusable host-driven contract suite
 - `agentmesh-fixture-support` — fixture lifecycle helpers (depends on `proto` only)
 - Fixture plugins under `plugins/fixtures/*`
+- `agentmesh-multica-selector-shadow` — Phase 1.0 offline Multica selector adapter (plugin-owned types only)
 
-Every crate is `publish = false` during private Phase 0.
+Every crate is `publish = false` during private Phase 0/1.0.
 
 ## Development checks
 

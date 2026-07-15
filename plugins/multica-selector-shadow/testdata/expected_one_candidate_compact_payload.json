@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "decision": "continue",
+  "reason": null,
+  "fast_exit_required": false,
+  "recommended_next_action": "apply_promotions",
+  "run_only_result": {
+    "decision": "continue",
+    "reason": null,
+    "selected": true,
+    "promotion_candidate_count": 1,
+    "chosen_action": "promote_backlog",
+    "candidate_issue_keys": ["AM-101"]
+  },
+  "run_context": {
+    "now": "2026-07-15T12:00:00+09:00",
+    "deterministic_mode": true
+  },
+  "cap_state": {
+    "ai_todo_cap": 30,
+    "pr_producing_todo_cap": 20,
+    "review_fix_exempt_todo_cap": 10,
+    "normal_promotion_limit": 5,
+    "special_promotion_limit": 8
+  },
+  "promotion_candidates": [
+    {
+      "issue_id": "iss_shadow_1",
+      "issue_key": "AM-101",
+      "project_key": "agentmesh",
+      "title": "Recorded shadow promotion candidate",
+      "selection_reason": "shadow_stub_eligible"
+    }
+  ],
+  "age_boost_action_count": 0,
+  "age_boost_skipped_count": 0,
+  "replenishment_candidate": null,
+  "skipped_summary": {
+    "human_owned": 1
+  },
+  "metrics": {
+    "backlog_count": 2,
+    "candidate_count": 1,
+    "promotion_candidate_count": 1,
+    "chosen_action": "promote_backlog"
+  },
+  "warnings": []
+}

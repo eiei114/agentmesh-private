@@ -2,15 +2,18 @@
 
 ## Scope
 
-Private Phase 0 contract spike. Do not port Multica business logic, add daemon/TUI/SQLite, or claim polyglot proof.
+Private workspace. Phase 0 host/plugin contract is Accepted. Phase 1.0 may add Multica **adapter plugins** with opaque payloads only.
+
+Do not: change host envelope ownership, promote Multica/`WorkItem` types into `agentmesh-proto`/`agentmesh-host`, add daemon/TUI/SQLite, claim production cutover, or claim polyglot proof.
 
 ## Workspace rules
 
 - Only the coordinator lane edits root `Cargo.toml` / `Cargo.lock`.
 - Every crate is `publish = false`.
 - Fixture plugins depend on `agentmesh-fixture-support` + `agentmesh-proto` only — never `agentmesh-host` or `agentmesh-conformance`.
+- Phase 1 Multica adapter plugins also must not depend on `agentmesh-host` / `agentmesh-conformance`; Multica-shaped types stay inside the plugin crate.
 - Malformed framing/JSON fixtures use independent raw writers.
-- No vault paths, Multica types, or secrets in fixtures.
+- No vault paths, Multica types, or secrets in core/fixtures; plugin testdata may use synthetic recorded Multica-shaped JSON only.
 
 ## Checks before PR
 
@@ -22,5 +25,6 @@ cargo test --workspace
 
 ## Documentation status
 
-- `docs/protocol-v0.md` is DRAFT until exit review.
-- ADR 0001 stays Proposed until Phase 0 exit review accepts evidence.
+- `docs/protocol-v0.md` / `docs/threat-model-v0.md` — Accepted for Phase 0
+- ADR 0001 — Accepted
+- `docs/phase0-exit-review.md` — PASS; Phase 1.0 first slice is shadow Multica selector skeleton
