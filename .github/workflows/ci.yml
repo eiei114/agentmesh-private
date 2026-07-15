@@ -86,7 +86,7 @@ jobs:
           echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> "$GITHUB_ENV"
           mkdir -p upload
           if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            (cd "$OUT" && zip -r "../../upload/${ARTIFACT_NAME}.zip" .)
+            (cd "$OUT" && powershell.exe -NoProfile -Command "Compress-Archive -Path * -DestinationPath '../../upload/${ARTIFACT_NAME}.zip' -Force")
           else
             tar -C "$OUT" -czf "upload/${ARTIFACT_NAME}.tar.gz" .
           fi
@@ -99,7 +99,7 @@ jobs:
           WORK="$(mktemp -d)"
           export WORK
           if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            unzip -d "$WORK" "upload/${ARTIFACT_NAME}.zip"
+            powershell.exe -NoProfile -Command "Expand-Archive -Path 'upload/${ARTIFACT_NAME}.zip' -DestinationPath '$WORK' -Force"
           else
             tar -C "$WORK" -xzf "upload/${ARTIFACT_NAME}.tar.gz"
           fi

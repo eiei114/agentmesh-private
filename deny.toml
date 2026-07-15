@@ -2,10 +2,9 @@
 # Public license/advisory policy is deferred to the publication gate.
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
 yanked = "deny"
-notice = "warn"
+# cargo-deny >=0.18 uses scoped unmaintained policy values.
+unmaintained = "workspace"
 ignore = []
 
 [licenses]
