@@ -120,6 +120,6 @@ cargo test --workspace
 
 ## Docs status
 
-- `docs/protocol-v0.md` — **DRAFT**
-- `docs/threat-model-v0.md` — draft security boundary
-- `docs/adr/0001-external-stdio-plugins.md` — **Proposed** (Accepted only after Phase 0 exit review)
+- `docs/protocol-v0.md` — **Accepted for Phase 0** (private 0.x; not protocol 1.0)
+- `docs/threat-model-v0.md` — **Accepted for Phase 0**
+- `docs/adr/0001-external-stdio-plugins.md` — **Accepted** (Phase 0 exit review)
