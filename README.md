@@ -113,7 +113,13 @@ Production (`default-members`):
 
 - `agentmesh-proto` — wire types, versions, JSON Schema
 - `agentmesh-host` — process supervision, framing, lifecycle, sidecar
-- `agentmesh-cli` — one-shot `run` command
+- `agentmesh-cli` — one-shot `run` command and `app` / `toolchain` subcommands
+- `agentmesh-app` — App manifest validation, toolchain install, and pinned run policy
+
+Apps / packaging (version-controlled, not `default-members`):
+
+- `apps/backlog-promoter/` — reference `agentmesh-app.toml` for the Multica selector App
+- `toolchains/*.toml` — consumer pins for private prereleases (see `docs/private-prerelease-v0.md`)
 
 Internal / test-only:
 
