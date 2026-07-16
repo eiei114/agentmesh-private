@@ -60,7 +60,7 @@ agentmesh app run \
   --toolchain-cache ~/.agentmesh/toolchains
 ```
 
-Development override (explicit):`--dev-plugin` is rejected unless `--mode development`:
+Development override (explicit): `--dev-plugin` is rejected unless `--mode development`:
 
 ```bash
 agentmesh app run \

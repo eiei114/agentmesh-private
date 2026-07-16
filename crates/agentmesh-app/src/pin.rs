@@ -115,6 +115,62 @@ fn validate_commit_sha(sha: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{BTreeMap, HashSet};
+    use std::path::PathBuf;
+
+    #[test]
+    fn version_controlled_consumer_pins_validate() {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let toolchains_dir = workspace_root.join("toolchains");
+        let mut by_tag: BTreeMap<String, Vec<ToolchainPin>> = BTreeMap::new();
+
+        for entry in std::fs::read_dir(&toolchains_dir).expect("toolchains directory") {
+            let path = entry.expect("toolchains entry").path();
+            if path.extension().and_then(|s| s.to_str()) != Some("toml") {
+                continue;
+            }
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if !stem.starts_with("agentmesh-v") {
+                continue;
+            }
+            let pin = ToolchainPin::load(&path).unwrap_or_else(|e| {
+                panic!("load {}: {e}", path.display());
+            });
+            pin.validate_structure().unwrap_or_else(|e| {
+                panic!("validate {}: {e}", path.display());
+            });
+            by_tag.entry(pin.tag.clone()).or_default().push(pin);
+        }
+
+        assert!(
+            !by_tag.is_empty(),
+            "expected at least one consumer pin under toolchains/"
+        );
+        for (tag, pins) in &by_tag {
+            assert_eq!(
+                pins.len(),
+                SUPPORTED_TARGETS.len(),
+                "tag {tag} should have one pin per supported target"
+            );
+            let commit = &pins[0].commit_sha;
+            assert!(
+                pins.iter().all(|p| p.commit_sha == *commit),
+                "tag {tag} pins must share commit_sha"
+            );
+            let targets: HashSet<_> = pins.iter().map(|p| p.target.as_str()).collect();
+            assert_eq!(
+                targets.len(),
+                SUPPORTED_TARGETS.len(),
+                "tag {tag} has duplicate targets"
+            );
+            for target in SUPPORTED_TARGETS {
+                assert!(
+                    targets.contains(target),
+                    "tag {tag} missing target {target}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn parses_valid_pin() {
