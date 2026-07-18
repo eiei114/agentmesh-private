@@ -1,0 +1,15 @@
+{
+  "schema_version": "markdown-request-validator-compact.v0",
+  "validator_version": "markdown-request-validator.v0",
+  "valid": true,
+  "title": "Add validator",
+  "required_sections": [
+    "What to build",
+    "Acceptance criteria",
+    "Blocked by",
+    "User stories covered",
+    "Notes"
+  ],
+  "issue_count": 0,
+  "issues": []
+}

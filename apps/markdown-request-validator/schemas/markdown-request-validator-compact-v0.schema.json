@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/markdown-request-validator-compact-v0.schema.json",
+  "title": "Markdown Request Validator Compact Output v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "validator_version", "valid", "title", "required_sections", "issue_count", "issues"],
+  "properties": {
+    "schema_version": { "const": "markdown-request-validator-compact.v0" },
+    "validator_version": { "const": "markdown-request-validator.v0" },
+    "valid": { "type": "boolean" },
+    "title": { "type": ["string", "null"] },
+    "required_sections": { "type": "array", "items": { "type": "string" } },
+    "issue_count": { "type": "integer", "minimum": 0 },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+      }
+    }
+  }
+}
