@@ -1,0 +1,22 @@
+{
+  "schema_version": "markdown-request-validator-compact.v0",
+  "validator_version": "markdown-request-validator.v0",
+  "valid": false,
+  "title": null,
+  "required_sections": [
+    "What to build",
+    "Acceptance criteria",
+    "Blocked by",
+    "User stories covered",
+    "Notes"
+  ],
+  "issue_count": 6,
+  "issues": [
+    { "code": "frontmatter_missing", "message": "YAML frontmatter block is required" },
+    { "code": "title_missing", "message": "frontmatter title is required" },
+    { "code": "required_section_missing", "message": "missing section: Acceptance criteria" },
+    { "code": "required_section_missing", "message": "missing section: Blocked by" },
+    { "code": "required_section_missing", "message": "missing section: User stories covered" },
+    { "code": "required_section_missing", "message": "missing section: Notes" }
+  ]
+}

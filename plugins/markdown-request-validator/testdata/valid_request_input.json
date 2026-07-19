@@ -1,0 +1,4 @@
+{
+  "schema_version": "markdown-request-validator-input.v0",
+  "markdown": "---\ntitle: \"Add validator\"\n---\n# Add validator\n\n## What to build\nBuild it.\n\n## Acceptance criteria\n- Pass.\n\n## Blocked by\n- None.\n\n## User stories covered\n- As a tool author, I can validate one request.\n\n## Notes\n- Tool-neutral.\n"
+}

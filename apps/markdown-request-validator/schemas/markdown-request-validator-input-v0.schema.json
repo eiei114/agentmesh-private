@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/markdown-request-validator-input-v0.schema.json",
+  "title": "Markdown Request Validator Input v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "markdown"],
+  "properties": {
+    "schema_version": { "const": "markdown-request-validator-input.v0" },
+    "markdown": { "type": "string", "minLength": 1, "maxLength": 65536 }
+  }
+}

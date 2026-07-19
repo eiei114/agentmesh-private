@@ -45,6 +45,34 @@ agentmesh app validate \
   --json
 ```
 
+## Markdown request validator App
+
+`apps/markdown-request-validator/agentmesh-app.toml` declares a non-Multica App. Its input is:
+
+```json
+{"schema_version":"markdown-request-validator-input.v0","markdown":"---\ntitle: \"Add validator\"\n---\n..."}
+```
+
+Its compact payload is adapter-neutral: `valid`, `title`, `required_sections`, and deterministic `issues[]` codes/messages. Another orchestrator can read this JSON directly and decide whether to create, route, or reject work without linking Multica credentials or types.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-markdown-request-validator
+agentmesh app validate \
+  --manifest apps/markdown-request-validator/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/markdown-request-validator/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/markdown-request-validator/testdata/valid_request_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-markdown-request-validator
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-markdown-request-validator`.
+
 ## Run
 
 Production/canary (default) resolves the logical plugin under the local toolchain cache,
@@ -102,7 +130,7 @@ python scripts/package_toolchain_bundle.py \
 ```
 
 Targets: `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`.
-Bundle always includes `agentmesh` + `agentmesh-multica-selector-shadow` + apps/docs + `release-manifest.json`.
+Bundle always includes `agentmesh` + `agentmesh-multica-selector-shadow` + `agentmesh-markdown-request-validator` + apps/docs + `release-manifest.json`.
 
 ## Install (atomic / immutable)
 

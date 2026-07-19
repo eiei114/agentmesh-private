@@ -36,6 +36,7 @@ name = "agentmesh-conformance"
 version = "0.1.0"
 dependencies = [
  "agentmesh-host",
+ "agentmesh-markdown-request-validator",
  "agentmesh-multica-selector-shadow",
  "agentmesh-proto",
  "proptest",
@@ -123,6 +124,17 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "agentmesh-markdown-request-validator"
+version = "0.1.0"
+dependencies = [
+ "agentmesh-fixture-support",
+ "agentmesh-proto",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

@@ -1,0 +1,17 @@
+schema_version = "agentmesh-app.v0"
+name = "markdown-request-validator"
+protocol_version = "2026-07-15"
+
+[plugin]
+logical_name = "agentmesh-markdown-request-validator"
+
+[schemas]
+input = "schemas/markdown-request-validator-input-v0.schema.json"
+output = "schemas/markdown-request-validator-compact-v0.schema.json"
+
+[sidecar]
+retention_class = "owner_local"
+capture_plugin_stderr = false
+
+[conformance]
+cargo_package = "agentmesh-markdown-request-validator"

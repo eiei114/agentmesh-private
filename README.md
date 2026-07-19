@@ -14,6 +14,8 @@ Phase 0 proves a **stable host ↔ plugin contract**:
 
 Phase 1.0 adds a **shadow-mode Multica selector adapter skeleton** (`agentmesh-multica-selector-shadow`): recorded backlog listing → opaque plugin payload shaped like the Python compact selector contract. Sidecar remains audit evidence only; this is **not** production cutover.
 
+The Markdown request validator App (`agentmesh-markdown-request-validator`) is tool-neutral: it accepts a bounded Markdown request document and emits compact JSON another orchestrator can consume without Multica fields, credentials, or domain types.
+
 Still out of scope: Todo Runner parity, Multica credentials/live CLI, daemon/TUI/SQLite, WorkItem promotion into core, polyglot evidence.
 
 ## Supported targets (exact)
@@ -119,6 +121,7 @@ Production (`default-members`):
 Apps / packaging (version-controlled, not `default-members`):
 
 - `apps/backlog-promoter/` — reference `agentmesh-app.toml` for the Multica selector App
+- `apps/markdown-request-validator/` — tool-neutral request validator manifest + IO schemas
 - `toolchains/*.toml` — consumer pins for private prereleases (see `docs/private-prerelease-v0.md`)
 
 Internal / test-only:
@@ -127,6 +130,7 @@ Internal / test-only:
 - `agentmesh-fixture-support` — fixture lifecycle helpers (depends on `proto` only)
 - Fixture plugins under `plugins/fixtures/*`
 - `agentmesh-multica-selector-shadow` — Phase 1.0 offline Multica selector adapter (plugin-owned types only)
+- `agentmesh-markdown-request-validator` — deterministic Markdown App request validator (plugin-owned types only)
 
 Every crate is `publish = false` during private Phase 0/1.0.
 

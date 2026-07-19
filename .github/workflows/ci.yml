@@ -58,6 +58,7 @@ jobs:
           cargo build --release --target ${{ matrix.target }}
           -p agentmesh-cli
           -p agentmesh-multica-selector-shadow
+          -p agentmesh-markdown-request-validator
           -p agentmesh-fixture-echo
 
       - name: package artifacts

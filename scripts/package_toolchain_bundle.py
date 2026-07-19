@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package AgentMesh toolchain bundle for one target (CLI + Multica plugin + docs/apps).
+"""Package AgentMesh toolchain bundle for one target (CLI + bundled plugins + docs/apps).
 
 Produces the layout consumed by `agentmesh toolchain install`:
 
@@ -7,7 +7,8 @@ Produces the layout consumed by `agentmesh toolchain install`:
     release-manifest.json          # agentmesh-release-manifest.v0
     bin/agentmesh[.exe]
     bin/agentmesh-multica-selector-shadow[.exe]
-    apps/backlog-promoter/...
+    bin/agentmesh-markdown-request-validator[.exe]
+    apps/<app>/...
     docs/agentmesh-app-v0.md
     README.bundle.md
 
@@ -100,8 +101,9 @@ def main() -> int:
     staged_bin.mkdir(parents=True)
 
     cli_name = logical_bin_name("agentmesh", args.target)
-    plugin_name = logical_bin_name("agentmesh-multica-selector-shadow", args.target)
-    required = [cli_name, plugin_name]
+    multica_plugin_name = logical_bin_name("agentmesh-multica-selector-shadow", args.target)
+    markdown_plugin_name = logical_bin_name("agentmesh-markdown-request-validator", args.target)
+    required = [cli_name, multica_plugin_name, markdown_plugin_name]
     if args.include_echo:
         required.append(logical_bin_name("agentmesh-fixture-echo", args.target))
 
@@ -124,9 +126,9 @@ def main() -> int:
         }
 
     # Apps + docs for dogfood consumers.
-    app_src = repo / "apps" / "backlog-promoter"
+    app_src = repo / "apps"
     if app_src.is_dir():
-        copy_tree(app_src, out / "apps" / "backlog-promoter")
+        copy_tree(app_src, out / "apps")
     docs_src = repo / "docs" / "agentmesh-app-v0.md"
     docs_dst = out / "docs"
     docs_dst.mkdir(parents=True, exist_ok=True)

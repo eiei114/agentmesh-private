@@ -42,7 +42,8 @@ pub fn assert_fixture_dependency_boundary() {
         let name = pkg["name"].as_str().unwrap_or("");
         let is_plugin_side = name == "agentmesh-fixture-support"
             || name.starts_with("agentmesh-fixture-")
-            || name.starts_with("agentmesh-multica-");
+            || name.starts_with("agentmesh-multica-")
+            || name.starts_with("agentmesh-markdown-");
         if is_plugin_side {
             let deps = pkg["dependencies"].as_array().cloned().unwrap_or_default();
             for dep in deps {
@@ -235,6 +236,101 @@ mod tests {
     #[test]
     fn path_helper_smoke() {
         let _ = fixture_bin("agentmesh-fixture-echo");
+    }
+
+    #[tokio::test]
+    async fn markdown_request_validator_valid_roundtrip() {
+        use agentmesh_markdown_request_validator::validate_request_input;
+
+        let plugin = abs_fixture("agentmesh-markdown-request-validator");
+        if !plugin.exists() {
+            eprintln!(
+                "skip: markdown validator plugin not built at {}",
+                plugin.display()
+            );
+            return;
+        }
+        let testdata = workspace_root().join("plugins/markdown-request-validator/testdata");
+        let input = std::fs::read(testdata.join("valid_request_input.json")).unwrap();
+        let expected: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(testdata.join("expected_valid_compact_payload.json")).unwrap(),
+        )
+        .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = VecCompactSink::default();
+        let mut limits = Limits::default();
+        limits.run_timeout_ms = 5_000;
+        let outcome = execute_run_with(
+            RunConfig {
+                plugin,
+                input,
+                sidecar_dir: dir.path().to_path_buf(),
+                plugin_env_keys: vec![],
+                redact_pointers: vec![],
+                capture_plugin_stderr: false,
+                limits,
+                run_id: Some("test-markdown-validator-valid".into()),
+            },
+            &FsAuditStore,
+            &mut sink,
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(outcome.exit_code, 0);
+        assert_eq!(outcome.envelope.outcome, CompactOutcome::Ok);
+        assert_eq!(outcome.envelope.payload, expected);
+        assert_eq!(
+            validate_request_input(
+                &serde_json::from_slice(
+                    &std::fs::read(testdata.join("valid_request_input.json")).unwrap()
+                )
+                .unwrap()
+            ),
+            expected
+        );
+    }
+
+    #[tokio::test]
+    async fn markdown_request_validator_invalid_roundtrip() {
+        let plugin = abs_fixture("agentmesh-markdown-request-validator");
+        if !plugin.exists() {
+            eprintln!(
+                "skip: markdown validator plugin not built at {}",
+                plugin.display()
+            );
+            return;
+        }
+        let testdata = workspace_root().join("plugins/markdown-request-validator/testdata");
+        let input = std::fs::read(testdata.join("invalid_request_input.json")).unwrap();
+        let expected: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(testdata.join("expected_invalid_compact_payload.json")).unwrap(),
+        )
+        .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = VecCompactSink::default();
+        let outcome = execute_run_with(
+            RunConfig {
+                plugin,
+                input,
+                sidecar_dir: dir.path().to_path_buf(),
+                plugin_env_keys: vec![],
+                redact_pointers: vec![],
+                capture_plugin_stderr: false,
+                limits: Limits::default(),
+                run_id: Some("test-markdown-validator-invalid".into()),
+            },
+            &FsAuditStore,
+            &mut sink,
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(outcome.exit_code, 0);
+        assert_eq!(outcome.envelope.outcome, CompactOutcome::Ok);
+        assert_eq!(outcome.envelope.payload, expected);
     }
 
     #[tokio::test]
