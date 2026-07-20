@@ -159,7 +159,52 @@ fn scan_forbidden(
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::tempdir;
+
+    #[test]
+    fn version_controlled_app_manifests_validate() {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let apps_dir = workspace_root.join("apps");
+        let example_pin = workspace_root.join("toolchains/agentmesh-pin.v0.example.toml");
+        assert!(
+            example_pin.is_file(),
+            "missing example toolchain pin at {}",
+            example_pin.display()
+        );
+
+        let mut manifests = Vec::new();
+        for entry in std::fs::read_dir(&apps_dir).expect("apps directory") {
+            let path = entry.expect("apps entry").path();
+            if !path.is_dir() {
+                continue;
+            }
+            let manifest = path.join("agentmesh-app.toml");
+            if manifest.is_file() {
+                manifests.push(manifest);
+            }
+        }
+
+        assert!(
+            !manifests.is_empty(),
+            "expected at least one app manifest under apps/"
+        );
+        for manifest in manifests {
+            let report = validate_app_bundle(&manifest, &example_pin).unwrap_or_else(|e| {
+                panic!("validate {}: {e}", manifest.display());
+            });
+            assert!(
+                !report.app_name.is_empty(),
+                "app name missing for {}",
+                manifest.display()
+            );
+            assert!(
+                !report.plugin_logical_name.is_empty(),
+                "plugin logical_name missing for {}",
+                manifest.display()
+            );
+        }
+    }
 
     fn write(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {
         let path = dir.join(name);

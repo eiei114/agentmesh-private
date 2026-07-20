@@ -7,6 +7,7 @@ All notable changes to this private Phase 0 workspace are documented here.
 ### Added
 
 - Phase 1.0 shadow-mode Multica selector adapter skeleton (`plugins/multica-selector-shadow`): opaque `agentmesh.run` input/payload, recorded offline fixtures, named shadow compact-shape compare, host roundtrip with audit sidecar. No production cutover.
+- Markdown request validator App (`apps/markdown-request-validator/`, `plugins/markdown-request-validator/`): tool-neutral manifest + deterministic compact payload validation without Multica credentials.
 
 ### Changed
 

@@ -11,7 +11,7 @@ Do not: change host envelope ownership, promote Multica/`WorkItem` types into `a
 - Only the coordinator lane edits root `Cargo.toml` / `Cargo.lock`.
 - Every crate is `publish = false`.
 - Fixture plugins depend on `agentmesh-fixture-support` + `agentmesh-proto` only — never `agentmesh-host` or `agentmesh-conformance`.
-- Phase 1 Multica adapter plugins also must not depend on `agentmesh-host` / `agentmesh-conformance`; Multica-shaped types stay inside the plugin crate.
+- Phase 1 adapter plugins (`agentmesh-multica-*`, `agentmesh-markdown-*`) must not depend on `agentmesh-host` / `agentmesh-conformance`; adapter-shaped types stay inside the plugin crate.
 - Malformed framing/JSON fixtures use independent raw writers.
 - No vault paths, Multica types, or secrets in core/fixtures; plugin testdata may use synthetic recorded Multica-shaped JSON only.
 
@@ -27,4 +27,4 @@ cargo test --workspace
 
 - `docs/protocol-v0.md` / `docs/threat-model-v0.md` — Accepted for Phase 0
 - ADR 0001 — Accepted
-- `docs/phase0-exit-review.md` — PASS; Phase 1.0 first slice is shadow Multica selector skeleton
+- `docs/phase0-exit-review.md` — PASS; Phase 1.0 slices include shadow Multica selector skeleton and Markdown request validator App
