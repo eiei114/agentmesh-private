@@ -1,0 +1,8 @@
+{
+  "schema_version": "non-multica-request-adapter-input.v0",
+  "request": {
+    "title": "Malformed external request",
+    "request_kind": "release",
+    "sequence_index": 1
+  }
+}

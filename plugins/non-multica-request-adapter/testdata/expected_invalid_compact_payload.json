@@ -1,0 +1,36 @@
+{
+  "adapter_version": "non-multica-request-adapter.v0",
+  "canonical": {
+    "blocked_by": [],
+    "issue_type": null,
+    "project_key": null,
+    "ready_for_multica": null,
+    "request_kind": "release",
+    "sequence_index": 1,
+    "sequence_total": null,
+    "source_design": null,
+    "source_prd": null,
+    "source_roadmap": null,
+    "status": null,
+    "title": "Malformed external request",
+    "unblocks": []
+  },
+  "issue_count": 3,
+  "issues": [
+    {
+      "code": "unsupported_request_kind",
+      "message": "request_kind must be app"
+    },
+    {
+      "code": "issue_type_missing",
+      "message": "issue_type is required"
+    },
+    {
+      "code": "sequence_incomplete",
+      "message": "sequence_index and sequence_total must be provided together"
+    }
+  ],
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "non-multica-request-adapter-compact.v0",
+  "valid": false
+}

@@ -73,6 +73,34 @@ agentmesh app run \
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-markdown-request-validator`.
 
+## Non-Multica request adapter App
+
+`apps/non-multica-request-adapter/agentmesh-app.toml` declares a tracker-neutral adapter contract for `agentmesh-request.v0` sources. Input accepts exactly one Markdown source or one Markdown-compatible JSON object:
+
+```json
+{"schema_version":"non-multica-request-adapter-input.v0","markdown":"---\ntitle: \"Add app\"\nrequest_kind: app\nissue_type: AFK\n---\n..."}
+```
+
+The compact payload is deterministic and contains `schema_version`, `adapter_version`, `request_schema_version`, `valid`, `canonical`, `issue_count`, and `issues[]`. `canonical` exposes stable fields such as `title`, `request_kind`, `issue_type`, `ready_for_multica`, `project_key`, source document paths, dependency arrays, and sequence fields. Unsupported request shapes produce deterministic `issues[].code` values such as `unsupported_request_kind`, `issue_type_missing`, and `sequence_incomplete` instead of tracker-specific exceptions.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-non-multica-request-adapter
+agentmesh app validate \
+  --manifest apps/non-multica-request-adapter/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/non-multica-request-adapter/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/non-multica-request-adapter/testdata/valid_request_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-non-multica-request-adapter
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-non-multica-request-adapter`.
+
 ## Run
 
 Production/canary (default) resolves the logical plugin under the local toolchain cache,

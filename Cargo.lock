@@ -152,6 +152,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentmesh-non-multica-request-adapter"
+version = "0.1.0"
+dependencies = [
+ "agentmesh-fixture-support",
+ "agentmesh-proto",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "agentmesh-proto"
 version = "0.1.0"
 dependencies = [
