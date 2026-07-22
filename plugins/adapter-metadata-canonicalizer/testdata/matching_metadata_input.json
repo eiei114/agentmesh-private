@@ -1,0 +1,33 @@
+{
+  "schema_version": "adapter-metadata-canonicalizer-input.v0",
+  "left": {
+    "adapter_id": "multica",
+    "request_id": "DOT-1048",
+    "metadata": {
+      "title": "Add adapter metadata comparison and canonicalization app",
+      "request_kind": "app",
+      "issue_type": "AFK",
+      "ready_for_multica": true,
+      "status": "ready",
+      "project_key": "agentmesh-private",
+      "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-07-22-add-adapter-metadata-comparison-and-canonicalization-app.md",
+      "blocked_by": [],
+      "multica_issue_id": "653c9d2c-6cf0-418a-b0be-23e0e297b7d9"
+    }
+  },
+  "right": {
+    "adapter_id": "markdown",
+    "request_id": "DOT-1048",
+    "metadata": {
+      "title": "Add adapter metadata comparison and canonicalization app",
+      "request_kind": "app",
+      "issue_type": "AFK",
+      "ready_for_multica": true,
+      "status": "ready",
+      "project_key": "agentmesh-private",
+      "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-07-22-add-adapter-metadata-comparison-and-canonicalization-app.md",
+      "blocked_by": [],
+      "frontmatter_line": 1
+    }
+  }
+}

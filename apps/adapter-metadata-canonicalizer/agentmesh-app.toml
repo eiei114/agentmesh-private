@@ -1,0 +1,17 @@
+schema_version = "agentmesh-app.v0"
+name = "adapter-metadata-canonicalizer"
+protocol_version = "2026-07-15"
+
+[plugin]
+logical_name = "agentmesh-adapter-metadata-canonicalizer"
+
+[schemas]
+input = "schemas/adapter-metadata-canonicalizer-input-v0.schema.json"
+output = "schemas/adapter-metadata-canonicalizer-compact-v0.schema.json"
+
+[sidecar]
+retention_class = "owner_local"
+capture_plugin_stderr = false
+
+[conformance]
+cargo_package = "agentmesh-adapter-metadata-canonicalizer"

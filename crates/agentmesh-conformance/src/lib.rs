@@ -334,6 +334,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn adapter_metadata_canonicalizer_matching_roundtrip() {
+        use agentmesh_adapter_metadata_canonicalizer::canonicalize_metadata_input;
+
+        let plugin = abs_fixture("agentmesh-adapter-metadata-canonicalizer");
+        if !plugin.exists() {
+            eprintln!(
+                "skip: adapter metadata canonicalizer plugin not built at {}",
+                plugin.display()
+            );
+            return;
+        }
+        let testdata = workspace_root().join("plugins/adapter-metadata-canonicalizer/testdata");
+        let input = std::fs::read(testdata.join("matching_metadata_input.json")).unwrap();
+        let expected: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(testdata.join("expected_matching_compact_payload.json")).unwrap(),
+        )
+        .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = VecCompactSink::default();
+        let mut limits = Limits::default();
+        limits.run_timeout_ms = 5_000;
+        let outcome = execute_run_with(
+            RunConfig {
+                plugin,
+                input: input.clone(),
+                sidecar_dir: dir.path().to_path_buf(),
+                plugin_env_keys: vec![],
+                redact_pointers: vec![],
+                capture_plugin_stderr: false,
+                limits,
+                run_id: Some("test-adapter-metadata-canonicalizer".into()),
+            },
+            &FsAuditStore,
+            &mut sink,
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(
+            outcome.exit_code,
+            0,
+            "stdout={}",
+            String::from_utf8_lossy(&sink.bytes)
+        );
+        assert_eq!(outcome.envelope.outcome, CompactOutcome::Ok);
+        assert_eq!(outcome.envelope.payload, expected);
+        assert_eq!(
+            canonicalize_metadata_input(&serde_json::from_slice(&input).unwrap()),
+            expected
+        );
+    }
+
+    #[tokio::test]
     async fn multica_selector_shadow_empty_backlog_roundtrip() {
         use agentmesh_multica_selector_shadow::compare_compact_shadow;
 
