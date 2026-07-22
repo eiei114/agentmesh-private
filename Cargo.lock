@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "agentmesh-adapter-metadata-canonicalizer"
+version = "0.1.0"
+dependencies = [
+ "agentmesh-fixture-support",
+ "agentmesh-proto",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "agentmesh-app"
 version = "0.1.0"
 dependencies = [
@@ -35,6 +45,7 @@ dependencies = [
 name = "agentmesh-conformance"
 version = "0.1.0"
 dependencies = [
+ "agentmesh-adapter-metadata-canonicalizer",
  "agentmesh-host",
  "agentmesh-markdown-request-validator",
  "agentmesh-multica-selector-shadow",

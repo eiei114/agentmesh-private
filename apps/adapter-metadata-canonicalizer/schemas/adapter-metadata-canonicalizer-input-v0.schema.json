@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter-metadata-canonicalizer-input.v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "left", "right"],
+  "properties": {
+    "schema_version": { "const": "adapter-metadata-canonicalizer-input.v0" },
+    "left": { "$ref": "#/$defs/adapter_payload" },
+    "right": { "$ref": "#/$defs/adapter_payload" }
+  },
+  "$defs": {
+    "adapter_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter_id", "metadata"],
+      "properties": {
+        "adapter_id": { "type": "string", "minLength": 1 },
+        "request_id": { "type": "string" },
+        "metadata": { "type": "object" }
+      }
+    }
+  }
+}

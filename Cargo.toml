@@ -16,6 +16,7 @@ members = [
     "plugins/multica-selector-shadow",
     "plugins/markdown-request-validator",
     "plugins/non-multica-request-adapter",
+    "plugins/adapter-metadata-canonicalizer",
 ]
 default-members = [
     "crates/agentmesh-proto",
@@ -38,6 +39,7 @@ agentmesh-fixture-support = { path = "test-support/agentmesh-fixture-support" }
 agentmesh-multica-selector-shadow = { path = "plugins/multica-selector-shadow" }
 agentmesh-markdown-request-validator = { path = "plugins/markdown-request-validator" }
 agentmesh-non-multica-request-adapter = { path = "plugins/non-multica-request-adapter" }
+agentmesh-adapter-metadata-canonicalizer = { path = "plugins/adapter-metadata-canonicalizer" }
 agentmesh-app = { path = "crates/agentmesh-app" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -1,0 +1,64 @@
+{
+  "adapters": [
+    {
+      "adapter_id": "multica",
+      "request_id": "DOT-1048",
+      "specific": {
+        "multica_issue_id": "653c9d2c-6cf0-418a-b0be-23e0e297b7d9"
+      }
+    },
+    {
+      "adapter_id": "markdown",
+      "request_id": "DOT-1048",
+      "specific": {
+        "frontmatter_line": 1
+      }
+    }
+  ],
+  "app_version": "adapter-metadata-canonicalizer.v0",
+  "canonical": {
+    "blocked_by": [],
+    "issue_type": "AFK",
+    "project_key": "agentmesh-private",
+    "ready_for_multica": true,
+    "request_id": "DOT-1048",
+    "request_kind": "app",
+    "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-07-22-add-adapter-metadata-comparison-and-canonicalization-app.md",
+    "status": "ready",
+    "title": "Add adapter metadata comparison and canonicalization app"
+  },
+  "issue_count": 0,
+  "issues": [],
+  "mismatch_count": 0,
+  "mismatches": [],
+  "request_schema_version": "agentmesh-request-metadata.v0",
+  "schema_drift": false,
+  "schema_version": "adapter-metadata-canonicalizer-compact.v0",
+  "stable_fields": [
+    "title",
+    "request_kind",
+    "issue_type",
+    "ready_for_multica",
+    "status",
+    "project_key",
+    "source_prd",
+    "source_design",
+    "source_roadmap",
+    "blocked_by",
+    "unblocks",
+    "sequence_index",
+    "sequence_total",
+    "pr_required",
+    "pr_allowed",
+    "pr_mode",
+    "release_allowed",
+    "production_allowed",
+    "version_bump_required",
+    "version_bump_type",
+    "package_publish_expected",
+    "route_mode",
+    "work_owner",
+    "expected_pr_count"
+  ],
+  "valid": true
+}

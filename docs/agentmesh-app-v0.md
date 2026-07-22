@@ -101,6 +101,38 @@ agentmesh app run \
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-non-multica-request-adapter`.
 
+## Adapter metadata canonicalizer App
+
+`apps/adapter-metadata-canonicalizer/agentmesh-app.toml` declares a tool-neutral App for comparing two adapter-owned request metadata payloads before downstream adapter-specific handling. Input names the two adapters and supplies each adapter's opaque metadata object:
+
+```json
+{
+  "schema_version": "adapter-metadata-canonicalizer-input.v0",
+  "left": {"adapter_id": "multica", "request_id": "DOT-1048", "metadata": {"title": "Add app", "request_kind": "app", "status": "ready"}},
+  "right": {"adapter_id": "markdown", "request_id": "DOT-1048", "metadata": {"title": "Add app", "request_kind": "app", "status": "ready"}}
+}
+```
+
+The compact payload is deterministic and contains `schema_version`, `app_version`, `request_schema_version`, `stable_fields`, `valid`, `canonical`, `schema_drift`, `mismatch_count`, `mismatches[]`, `adapters[]`, `issue_count`, and `issues[]`. The canonical contract promotes only stable fields that are present with equal JSON values in both adapter payloads; `request_id` is promoted only when both sides provide the same value. Stable fields with unequal values or one-sided presence are reported in deterministic `mismatches[]` order and remain under each adapter's `specific` object. Non-stable extension fields are never promoted; they are preserved under `adapters[].specific` so adapter-specific parsing can remain adapter-owned.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-adapter-metadata-canonicalizer
+agentmesh app validate \
+  --manifest apps/adapter-metadata-canonicalizer/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/adapter-metadata-canonicalizer/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/adapter-metadata-canonicalizer/testdata/matching_metadata_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-adapter-metadata-canonicalizer
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-adapter-metadata-canonicalizer`.
+
 ## Run
 
 Production/canary (default) resolves the logical plugin under the local toolchain cache,

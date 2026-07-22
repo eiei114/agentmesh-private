@@ -1,0 +1,28 @@
+{
+  "schema_version": "adapter-metadata-canonicalizer-input.v0",
+  "left": {
+    "adapter_id": "multica",
+    "request_id": "DOT-1048",
+    "metadata": {
+      "title": "Add adapter metadata comparison and canonicalization app",
+      "request_kind": "app",
+      "issue_type": "AFK",
+      "status": "ready",
+      "project_key": "agentmesh-private",
+      "sequence_index": 1,
+      "multica_status": "todo"
+    }
+  },
+  "right": {
+    "adapter_id": "markdown",
+    "request_id": "DOT-1048",
+    "metadata": {
+      "title": "Add adapter metadata comparison and canonicalization app",
+      "request_kind": "app",
+      "issue_type": "AFK",
+      "status": "backlog",
+      "project_key": "agentmesh-private",
+      "frontmatter_line": 1
+    }
+  }
+}
