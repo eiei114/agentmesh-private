@@ -1,0 +1,53 @@
+{
+  "adapter": {
+    "extension": {
+      "estimate_points": 2,
+      "labels": ["agentmesh", "adapter"],
+      "lane": "local-afk"
+    },
+    "local_id": "local-taskfile://agentmesh-private/add-a-local-tracker-adapter-app",
+    "state": "ready",
+    "tracker": "local-taskfile.v0"
+  },
+  "adapter_version": "local-tracker-adapter.v0",
+  "canonical": {
+    "blocked_by": [],
+    "issue_type": "AFK",
+    "project_key": "agentmesh-private",
+    "request_kind": "app",
+    "sequence_index": 1,
+    "sequence_total": 1,
+    "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+    "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-07-23-add-a-local-tracker-adapter-app.md",
+    "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+    "status": "ready",
+    "title": "Add a local tracker adapter app",
+    "unblocks": []
+  },
+  "issue_count": 0,
+  "issues": [],
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "local-tracker-adapter-compact.v0",
+  "tracker_ready_payload": {
+    "dependencies": {
+      "blocked_by": [],
+      "unblocks": []
+    },
+    "id": "local-taskfile://agentmesh-private/add-a-local-tracker-adapter-app",
+    "kind": "AFK",
+    "project": "agentmesh-private",
+    "sequence": {
+      "index": 1,
+      "total": 1
+    },
+    "source": {
+      "design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+      "prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-07-23-add-a-local-tracker-adapter-app.md",
+      "request_schema_version": "agentmesh-request.v0",
+      "roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md"
+    },
+    "state": "ready",
+    "title": "Add a local tracker adapter app"
+  },
+  "valid": true
+}

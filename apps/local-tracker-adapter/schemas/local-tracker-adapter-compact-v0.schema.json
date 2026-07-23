@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "local-tracker-adapter-compact.v0",
+  "type": "object",
+  "required": ["schema_version", "adapter_version", "request_schema_version", "valid", "canonical", "adapter", "tracker_ready_payload", "issue_count", "issues"],
+  "properties": {
+    "schema_version": { "const": "local-tracker-adapter-compact.v0" },
+    "adapter_version": { "const": "local-tracker-adapter.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "valid": { "type": "boolean" },
+    "canonical": { "type": ["object", "null"] },
+    "adapter": { "type": ["object", "null"] },
+    "tracker_ready_payload": { "type": ["object", "null"] },
+    "issue_count": { "type": "integer", "minimum": 0 },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

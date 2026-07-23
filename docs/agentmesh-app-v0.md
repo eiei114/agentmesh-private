@@ -101,6 +101,38 @@ agentmesh app run \
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-non-multica-request-adapter`.
 
+## Local tracker adapter App
+
+`apps/local-tracker-adapter/agentmesh-app.toml` declares a second concrete non-Multica request adapter for a local taskfile-style tracker. It accepts exactly one Markdown source or Markdown-compatible JSON object plus optional adapter-owned passthrough:
+
+```json
+{
+  "schema_version": "local-tracker-adapter-input.v0",
+  "markdown": "---\ntitle: \"Add app\"\nrequest_kind: app\nissue_type: AFK\nstatus: ready\n---\n...",
+  "adapter": {"passthrough": {"lane": "local-afk", "labels": ["agentmesh"]}}
+}
+```
+
+The compact payload partitions stable request data under `canonical` and local-tracker-specific wiring under `adapter`. Local runners can consume `tracker_ready_payload` directly: it contains a deterministic `local-taskfile://<project>/<title-slug>` id, title, project, kind, state, source document references, dependency arrays, and sequence fields. Multica-only metadata such as `ready_for_multica` is intentionally not emitted. Adapter extensions are preserved only under `adapter.extension` so downstream local tools can opt into them without changing the stable canonical contract. Malformed inputs return deterministic `issues[].code` values such as `title_missing`, `unsupported_request_kind`, `sequence_incomplete`, and `adapter_passthrough_not_object`.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-local-tracker-adapter
+agentmesh app validate \
+  --manifest apps/local-tracker-adapter/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/local-tracker-adapter/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/local-tracker-adapter/testdata/valid_request_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-local-tracker-adapter
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-local-tracker-adapter`.
+
 ## Adapter metadata canonicalizer App
 
 `apps/adapter-metadata-canonicalizer/agentmesh-app.toml` declares a tool-neutral App for comparing two adapter-owned request metadata payloads before downstream adapter-specific handling. Input names the two adapters and supplies each adapter's opaque metadata object:

@@ -18,6 +18,8 @@ The Markdown request validator App (`agentmesh-markdown-request-validator`) is t
 
 The adapter metadata canonicalizer App (`agentmesh-adapter-metadata-canonicalizer`) compares two adapter request metadata payloads, promotes only equal stable fields into a deterministic canonical subset, and preserves adapter-specific extensions separately.
 
+The local tracker adapter App (`agentmesh-local-tracker-adapter`) is a second concrete non-Multica request target: it maps `agentmesh-request.v0` sources into deterministic local taskfile payloads, keeps stable canonical fields separate from adapter extensions, and emits schema-stable validation errors.
+
 Still out of scope: Todo Runner parity, Multica credentials/live CLI, daemon/TUI/SQLite, WorkItem promotion into core, polyglot evidence.
 
 ## Supported targets (exact)
@@ -125,6 +127,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/backlog-promoter/` — reference `agentmesh-app.toml` for the Multica selector App
 - `apps/markdown-request-validator/` — tool-neutral request validator manifest + IO schemas
 - `apps/non-multica-request-adapter/` — tracker-neutral request adapter manifest + IO schemas
+- `apps/local-tracker-adapter/` — local taskfile tracker adapter manifest + IO schemas
 - `apps/adapter-metadata-canonicalizer/` — adapter metadata comparison/canonicalization manifest + IO schemas
 - `toolchains/*.toml` — consumer pins for private prereleases (see `docs/private-prerelease-v0.md`)
 
@@ -136,6 +139,7 @@ Internal / test-only:
 - `agentmesh-multica-selector-shadow` — Phase 1.0 offline Multica selector adapter (plugin-owned types only)
 - `agentmesh-markdown-request-validator` — deterministic Markdown App request validator (plugin-owned types only)
 - `agentmesh-non-multica-request-adapter` — tracker-neutral request adapter contract (plugin-owned types only)
+- `agentmesh-local-tracker-adapter` — local taskfile tracker adapter contract (plugin-owned types only)
 - `agentmesh-adapter-metadata-canonicalizer` — deterministic adapter metadata drift comparison and canonical subset emitter (plugin-owned types only)
 
 Every crate is `publish = false` during private Phase 0/1.0.
