@@ -1,0 +1,45 @@
+{
+  "adapter": null,
+  "adapter_version": "local-tracker-adapter.v0",
+  "canonical": {
+    "blocked_by": [],
+    "issue_type": "",
+    "project_key": null,
+    "request_kind": "task",
+    "sequence_index": 2,
+    "sequence_total": null,
+    "source_design": null,
+    "source_prd": null,
+    "source_roadmap": null,
+    "status": null,
+    "title": "",
+    "unblocks": []
+  },
+  "issue_count": 5,
+  "issues": [
+    {
+      "code": "title_missing",
+      "message": "request title is required"
+    },
+    {
+      "code": "unsupported_request_kind",
+      "message": "request_kind must be app"
+    },
+    {
+      "code": "issue_type_missing",
+      "message": "issue_type is required"
+    },
+    {
+      "code": "sequence_incomplete",
+      "message": "sequence_index and sequence_total must be provided together"
+    },
+    {
+      "code": "adapter_passthrough_not_object",
+      "message": "adapter.passthrough must be an object when provided"
+    }
+  ],
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "local-tracker-adapter-compact.v0",
+  "tracker_ready_payload": null,
+  "valid": false
+}

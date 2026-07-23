@@ -1,0 +1,12 @@
+{
+  "adapter": {
+    "passthrough": ["not", "an", "object"]
+  },
+  "request": {
+    "issue_type": "",
+    "request_kind": "task",
+    "sequence_index": 2,
+    "title": ""
+  },
+  "schema_version": "local-tracker-adapter-input.v0"
+}

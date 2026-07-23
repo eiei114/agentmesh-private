@@ -138,6 +138,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentmesh-local-tracker-adapter"
+version = "0.1.0"
+dependencies = [
+ "agentmesh-fixture-support",
+ "agentmesh-proto",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "agentmesh-markdown-request-validator"
 version = "0.1.0"
 dependencies = [

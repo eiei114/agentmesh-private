@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "local-tracker-adapter-input.v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "const": "local-tracker-adapter-input.v0" },
+    "markdown": { "type": "string" },
+    "request": { "type": "object" },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "passthrough": {}
+      }
+    }
+  },
+  "oneOf": [
+    { "required": ["markdown"], "not": { "required": ["request"] } },
+    { "required": ["request"], "not": { "required": ["markdown"] } }
+  ]
+}

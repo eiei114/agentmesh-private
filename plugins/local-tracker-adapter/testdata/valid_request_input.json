@@ -1,0 +1,11 @@
+{
+  "adapter": {
+    "passthrough": {
+      "estimate_points": 2,
+      "labels": ["agentmesh", "adapter"],
+      "lane": "local-afk"
+    }
+  },
+  "markdown": "---\ntitle: \"Add a local tracker adapter app\"\nstatus: ready\nproject_key: agentmesh-private\nissue_type: AFK\nrequest_kind: app\nsource_prd: \"4_Project/OSS/agentmesh-private/Requests/App/2026-07-23-add-a-local-tracker-adapter-app.md\"\nsource_design: 4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md\nsource_roadmap: 4_Project/OSS/agentmesh-private/ROADMAP.md\nsequence_index: 1\nsequence_total: 1\nblocked_by: []\nunblocks: []\n---\n# Add a local tracker adapter app\n\n## What to build\nBuild a local tracker adapter.\n",
+  "schema_version": "local-tracker-adapter-input.v0"
+}
