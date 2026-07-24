@@ -73,6 +73,28 @@ agentmesh app run \
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-markdown-request-validator`.
 
+## Stable request parse CLI
+
+`agentmesh request parse --input <json>` is the shared parser boundary for `agentmesh-request.v0` request sources. The input JSON accepts exactly one of:
+
+- `markdown`: a Markdown request with YAML frontmatter and required `## What to build` / `## Acceptance criteria` sections.
+- `request`: a Markdown-compatible JSON object containing the same stable frontmatter fields.
+- Direct request fields at the top level for simple non-Multica adapters that already decoded their source envelope.
+
+The parser accepts the shared `agentmesh-request-parse-input.v0` schema marker and existing adapter input schema markers (`markdown-request-validator-input.v0`, `non-multica-request-adapter-input.v0`, `local-tracker-adapter-input.v0`) so adapters can hand the same source envelope to the CLI before doing adapter-owned work.
+
+Successful output is deterministic JSON with `schema_version: agentmesh-request-parse-output.v0`, `request_schema_version: agentmesh-request.v0`, `valid`, `canonical`, `error_count`, and `errors[]`. `canonical` contains only stable request fields: `title`, `request_kind`, `issue_type`, `ready_for_multica`, `status`, `project_key`, source document paths, dependency arrays, and sequence fields. Adapter-specific passthrough/routing fields stay outside this output; markdown and non-Multica adapters consume `canonical` first, then attach tracker-specific payloads under their own adapter-owned keys.
+
+Invalid input exits with code `2` and still writes a machine-readable payload. Stable error codes include `invalid_schema`, `unsupported_request_shape`, and `missing_required_section`.
+
+Fixture smoke:
+
+```bash
+cargo test -p agentmesh-cli --test request_parse_cli
+agentmesh request parse --input crates/agentmesh-cli/testdata/valid_request_input.json
+agentmesh request parse --input crates/agentmesh-cli/testdata/invalid_request_input.json
+```
+
 ## Non-Multica request adapter App
 
 `apps/non-multica-request-adapter/agentmesh-app.toml` declares a tracker-neutral adapter contract for `agentmesh-request.v0` sources. Input accepts exactly one Markdown source or one Markdown-compatible JSON object:

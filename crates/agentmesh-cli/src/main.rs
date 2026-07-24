@@ -1,5 +1,7 @@
 //! AgentMesh CLI entrypoint (Phase 0 host + App v0 validate/run).
 
+mod request_parse;
+
 use agentmesh_app::{
     default_toolchain_cache_root, install_toolchain_bundle, prepare_app_run, validate_app_bundle,
     write_run_marker, AppRunMode, AppRunRequest, ResolveMode,
@@ -71,6 +73,11 @@ enum Commands {
         #[command(subcommand)]
         command: AppCommands,
     },
+    /// Stable request parsing commands for adapter handoff.
+    Request {
+        #[command(subcommand)]
+        command: RequestCommands,
+    },
     /// Local toolchain cache install commands.
     Toolchain {
         #[command(subcommand)]
@@ -121,6 +128,16 @@ enum AppCommands {
         /// Run timeout override in milliseconds (1000..=3600000).
         #[arg(long)]
         run_timeout_ms: Option<u64>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum RequestCommands {
+    /// Parse Markdown/JSON request input into the canonical AgentMesh request payload.
+    Parse {
+        /// Path to request parser input JSON.
+        #[arg(long)]
+        input: PathBuf,
     },
 }
 
@@ -203,6 +220,9 @@ async fn main() -> ExitCode {
                 }
             }
         },
+        Commands::Request { command } => match command {
+            RequestCommands::Parse { input } => request_parse_command(input),
+        },
         Commands::Toolchain { command } => match command {
             ToolchainCommands::Install {
                 bundle,
@@ -210,6 +230,23 @@ async fn main() -> ExitCode {
                 json,
             } => toolchain_install_command(bundle, toolchain_cache, json),
         },
+    }
+}
+
+fn request_parse_command(input: PathBuf) -> ExitCode {
+    let bytes = match std::fs::read(&input) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            eprintln!("agentmesh request parse: input read failed: {err}");
+            return ExitCode::from(2);
+        }
+    };
+    let (payload, valid) = request_parse::parse_request_input_bytes(&bytes);
+    println!("{payload}");
+    if valid {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(2)
     }
 }
 
