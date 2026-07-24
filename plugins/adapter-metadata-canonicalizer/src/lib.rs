@@ -14,6 +14,11 @@ const INPUT_SCHEMA_VERSION: &str = "adapter-metadata-canonicalizer-input.v0";
 const OUTPUT_SCHEMA_VERSION: &str = "adapter-metadata-canonicalizer-compact.v0";
 const REQUEST_SCHEMA_VERSION: &str = "agentmesh-request-metadata.v0";
 
+/// Plugin/schema version exposed by the public 0.x readiness gate binary.
+pub const PUBLIC_0X_READINESS_VERSION: &str = "public-0x-readiness.v0";
+const READINESS_INPUT_SCHEMA_VERSION: &str = "public-0x-readiness-input.v0";
+const READINESS_OUTPUT_SCHEMA_VERSION: &str = "public-0x-readiness-compact.v0";
+
 const STABLE_FIELDS: &[&str] = &[
     "title",
     "request_kind",
@@ -230,6 +235,188 @@ fn issue(code: &str, message: impl Into<String>) -> Value {
     json!({"code": code, "message": message.into()})
 }
 
+/// Evaluate deterministic public 0.x readiness evidence.
+///
+/// The gate intentionally consumes compact outputs produced by the Markdown
+/// validator and non-Multica request adapter instead of reparsing source
+/// documents. This keeps the public-readiness claim tied to adapter evidence
+/// that operators can retain and replay.
+pub fn evaluate_public_0x_readiness_input(value: &Value) -> Value {
+    let mut issues = Vec::new();
+    let Some(object) = value.as_object() else {
+        return readiness_compact(
+            false,
+            Vec::new(),
+            vec![issue("input_invalid", "input must be a JSON object")],
+        );
+    };
+
+    if object.get("schema_version").and_then(Value::as_str) != Some(READINESS_INPUT_SCHEMA_VERSION)
+    {
+        issues.push(issue(
+            "unsupported_schema_version",
+            format!("schema_version must be {READINESS_INPUT_SCHEMA_VERSION}"),
+        ));
+    }
+
+    let checklist_paths = [
+        ("protocol", "protocol_checkpoint_missing"),
+        (
+            "adapter_compatibility",
+            "adapter_compatibility_checkpoint_missing",
+        ),
+        ("rollback", "rollback_checkpoint_missing"),
+        (
+            "evidence_retention",
+            "evidence_retention_checkpoint_missing",
+        ),
+    ];
+    for (field, code) in checklist_paths {
+        if !bool_at(object.get("checklist"), field) {
+            issues.push(issue(code, format!("checklist.{field} must be true")));
+        }
+    }
+
+    let artifact_paths = [
+        ("parser_snapshot", "parser_snapshot_missing"),
+        ("adapter_parity", "adapter_parity_missing"),
+        ("rollback_notes", "rollback_notes_missing"),
+    ];
+    for (field, code) in artifact_paths {
+        if !bool_at(object.get("artifacts"), field) {
+            issues.push(issue(code, format!("artifacts.{field} must be true")));
+        }
+    }
+
+    let markdown = object.get("markdown_validator").unwrap_or(&Value::Null);
+    let adapter = object.get("non_multica_adapter").unwrap_or(&Value::Null);
+    if markdown.get("valid").and_then(Value::as_bool) != Some(true) {
+        issues.push(issue(
+            "markdown_validator_invalid",
+            "markdown validator compact output must be valid",
+        ));
+    }
+    if adapter.get("valid").and_then(Value::as_bool) != Some(true) {
+        issues.push(issue(
+            "non_multica_adapter_invalid",
+            "non-Multica adapter compact output must be valid",
+        ));
+    }
+    if adapter
+        .get("request_schema_version")
+        .and_then(Value::as_str)
+        != Some("agentmesh-request.v0")
+    {
+        issues.push(issue(
+            "request_schema_mismatch",
+            "non-Multica adapter must emit agentmesh-request.v0",
+        ));
+    }
+
+    let markdown_title = markdown.get("title").and_then(Value::as_str);
+    let adapter_title = adapter.pointer("/canonical/title").and_then(Value::as_str);
+    if markdown_title.is_none() || adapter_title.is_none() || markdown_title != adapter_title {
+        issues.push(issue(
+            "adapter_title_mismatch",
+            "Markdown and non-Multica adapter titles must match",
+        ));
+    }
+
+    for field in ["source_prd", "source_design", "source_roadmap"] {
+        if adapter
+            .pointer(&format!("/canonical/{field}"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            issues.push(issue(
+                "source_reference_missing",
+                format!("canonical.{field} must be retained"),
+            ));
+        }
+    }
+
+    let rollback = object.get("rollback").unwrap_or(&Value::Null);
+    for field in [
+        "verification_command",
+        "evidence_note",
+        "previous_good_artifact",
+    ] {
+        if rollback
+            .get(field)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            issues.push(issue(
+                "rollback_proof_missing",
+                format!("rollback.{field} must be provided"),
+            ));
+        }
+    }
+
+    let retention = object.get("evidence_retention").unwrap_or(&Value::Null);
+    if retention
+        .get("location")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .is_empty()
+    {
+        issues.push(issue(
+            "evidence_retention_location_missing",
+            "evidence_retention.location must be provided",
+        ));
+    }
+    if retention
+        .get("retention_days")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        < 30
+    {
+        issues.push(issue(
+            "evidence_retention_window_too_short",
+            "evidence_retention.retention_days must be at least 30",
+        ));
+    }
+
+    let assertions = vec![
+        "protocol_checkpoint",
+        "adapter_compatibility_checkpoint",
+        "rollback_checkpoint",
+        "evidence_retention_checkpoint",
+        "parser_snapshot_artifact",
+        "adapter_parity_artifact",
+        "rollback_notes_artifact",
+        "markdown_validator_valid",
+        "non_multica_adapter_valid",
+        "adapter_titles_aligned",
+        "source_references_retained",
+    ];
+    readiness_compact(issues.is_empty(), assertions, issues)
+}
+
+fn bool_at(parent: Option<&Value>, field: &str) -> bool {
+    parent
+        .and_then(|value| value.get(field))
+        .and_then(Value::as_bool)
+        == Some(true)
+}
+
+fn readiness_compact(valid: bool, assertions: Vec<&str>, issues: Vec<Value>) -> Value {
+    json!({
+        "schema_version": READINESS_OUTPUT_SCHEMA_VERSION,
+        "app_version": PUBLIC_0X_READINESS_VERSION,
+        "readiness_target": "public-0.x",
+        "valid": valid,
+        "assertions": assertions,
+        "issue_count": issues.len(),
+        "issues": issues,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,5 +530,19 @@ mod tests {
                 "{input_name} should match {expected_name}"
             );
         }
+    }
+
+    #[test]
+    fn recorded_public_readiness_fixture_matches_expected_payload() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        let input: Value = serde_json::from_slice(
+            &std::fs::read(root.join("public_0x_readiness_input.json")).unwrap(),
+        )
+        .unwrap();
+        let expected: Value = serde_json::from_slice(
+            &std::fs::read(root.join("expected_public_0x_readiness_compact_payload.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(evaluate_public_0x_readiness_input(&input), expected);
     }
 }

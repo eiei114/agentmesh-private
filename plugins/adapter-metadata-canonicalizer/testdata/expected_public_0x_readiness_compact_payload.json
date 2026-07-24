@@ -1,0 +1,21 @@
+{
+  "app_version": "public-0x-readiness.v0",
+  "assertions": [
+    "protocol_checkpoint",
+    "adapter_compatibility_checkpoint",
+    "rollback_checkpoint",
+    "evidence_retention_checkpoint",
+    "parser_snapshot_artifact",
+    "adapter_parity_artifact",
+    "rollback_notes_artifact",
+    "markdown_validator_valid",
+    "non_multica_adapter_valid",
+    "adapter_titles_aligned",
+    "source_references_retained"
+  ],
+  "issue_count": 0,
+  "issues": [],
+  "readiness_target": "public-0.x",
+  "schema_version": "public-0x-readiness-compact.v0",
+  "valid": true
+}
