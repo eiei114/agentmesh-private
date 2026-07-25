@@ -1,0 +1,4 @@
+{
+  "schema_version": "agentmesh-request-parse-input.v9",
+  "markdown": "---\ntitle: \"Unsupported tracker request\"\nrequest_kind: repair\nsequence_index: 1\n---\n# Unsupported tracker request\n\nBody without required sections.\n"
+}
