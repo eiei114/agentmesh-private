@@ -1,0 +1,2 @@
+# Keep CLI JSON snapshots byte-stable across Windows/macOS/Linux checkouts.
+crates/agentmesh-cli/testdata/*.json text eol=lf
