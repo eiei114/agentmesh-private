@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/public-0x-readiness-input-v0.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "checklist", "artifacts", "markdown_validator", "non_multica_adapter", "rollback", "evidence_retention"],
+  "properties": {
+    "schema_version": { "const": "public-0x-readiness-input.v0" },
+    "checklist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "adapter_compatibility", "rollback", "evidence_retention"],
+      "properties": {
+        "protocol": { "type": "boolean" },
+        "adapter_compatibility": { "type": "boolean" },
+        "rollback": { "type": "boolean" },
+        "evidence_retention": { "type": "boolean" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parser_snapshot", "adapter_parity", "rollback_notes"],
+      "properties": {
+        "parser_snapshot": { "type": "boolean" },
+        "adapter_parity": { "type": "boolean" },
+        "rollback_notes": { "type": "boolean" }
+      }
+    },
+    "markdown_validator": { "type": "object" },
+    "non_multica_adapter": { "type": "object" },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verification_command", "evidence_note", "previous_good_artifact"],
+      "properties": {
+        "verification_command": { "type": "string", "minLength": 1 },
+        "evidence_note": { "type": "string", "minLength": 1 },
+        "previous_good_artifact": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence_retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["location", "retention_days"],
+      "properties": {
+        "location": { "type": "string", "minLength": 1 },
+        "retention_days": { "type": "integer", "minimum": 30 }
+      }
+    }
+  }
+}

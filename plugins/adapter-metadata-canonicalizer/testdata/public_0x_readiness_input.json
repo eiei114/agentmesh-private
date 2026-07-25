@@ -1,0 +1,61 @@
+{
+  "schema_version": "public-0x-readiness-input.v0",
+  "checklist": {
+    "protocol": true,
+    "adapter_compatibility": true,
+    "rollback": true,
+    "evidence_retention": true
+  },
+  "artifacts": {
+    "parser_snapshot": true,
+    "adapter_parity": true,
+    "rollback_notes": true
+  },
+  "markdown_validator": {
+    "schema_version": "markdown-request-validator-compact.v0",
+    "validator_version": "markdown-request-validator.v0",
+    "valid": true,
+    "title": "Add public 0.x readiness evidence gates",
+    "required_sections": [
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "issue_count": 0,
+    "issues": []
+  },
+  "non_multica_adapter": {
+    "adapter_version": "non-multica-request-adapter.v0",
+    "canonical": {
+      "blocked_by": [],
+      "issue_type": "AFK",
+      "project_key": "agentmesh-private",
+      "ready_for_multica": true,
+      "request_kind": "app",
+      "sequence_index": 1,
+      "sequence_total": 1,
+      "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+      "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-07-25-add-public-0-x-readiness-evidence-gates.md",
+      "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+      "status": "ready",
+      "title": "Add public 0.x readiness evidence gates",
+      "unblocks": []
+    },
+    "issue_count": 0,
+    "issues": [],
+    "request_schema_version": "agentmesh-request.v0",
+    "schema_version": "non-multica-request-adapter-compact.v0",
+    "valid": true
+  },
+  "rollback": {
+    "verification_command": "git revert --no-commit <readiness-change-sha> && cargo test --workspace",
+    "evidence_note": "Rollback proof must name the reverted SHA, preserved artifact hashes, and the successful test command output.",
+    "previous_good_artifact": "immutable workflow artifact name plus release-manifest SHA-256"
+  },
+  "evidence_retention": {
+    "location": "docs/public-0x-readiness-gate.md",
+    "retention_days": 90
+  }
+}

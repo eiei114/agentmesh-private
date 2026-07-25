@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/public-0x-readiness-compact-v0.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "app_version", "readiness_target", "valid", "assertions", "issue_count", "issues"],
+  "properties": {
+    "schema_version": { "const": "public-0x-readiness-compact.v0" },
+    "app_version": { "const": "public-0x-readiness.v0" },
+    "readiness_target": { "const": "public-0.x" },
+    "valid": { "type": "boolean" },
+    "assertions": { "type": "array", "items": { "type": "string" } },
+    "issue_count": { "type": "integer", "minimum": 0 },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}

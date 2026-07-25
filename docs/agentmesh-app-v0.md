@@ -165,6 +165,28 @@ agentmesh app run \
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-adapter-metadata-canonicalizer`.
 
+## Public 0.x readiness gate App
+
+`apps/public-0x-readiness/agentmesh-app.toml` declares an evidence-only readiness-capability App. It consumes retained compact outputs from the Markdown request validator and non-Multica request adapter, plus an explicit checklist for protocol acceptance, adapter compatibility, rollback proof, and evidence retention. It emits deterministic `public-0x-readiness-compact.v0` JSON with `valid`, `assertions[]`, and `issues[]` so public readiness claims can be reviewed without live Multica credentials or production authority.
+
+Run it only after generating and retaining the parser snapshot and adapter parity outputs for the request under review:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-markdown-request-validator -p agentmesh-non-multica-request-adapter -p agentmesh-adapter-metadata-canonicalizer
+agentmesh app validate \
+  --manifest apps/public-0x-readiness/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/public-0x-readiness/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/adapter-metadata-canonicalizer/testdata/public_0x_readiness_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-public-0x-readiness
+```
+
+See `docs/public-0x-readiness-gate.md` for the checklist, required artifacts, rollback proof, and retention rules. The gate must not be used to tag, publish, upload assets, mutate Multica authority, or perform production cutover.
+
 ## Run
 
 Production/canary (default) resolves the logical plugin under the local toolchain cache,
