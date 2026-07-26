@@ -3,6 +3,7 @@
 //! Converts agentmesh-request.v0 Markdown or JSON-compatible request sources into
 //! compact canonical fields for tracker-neutral runners.
 
+use agentmesh_request_evidence::{adapter_evidence_digest, RequestEvidenceFields};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -124,6 +125,10 @@ fn validate_fields(fields: &RequestFields, issues: &mut Vec<Value>) {
 
 fn compact(fields: Option<RequestFields>, issues: Vec<Value>) -> Value {
     let valid = issues.is_empty();
+    let evidence_digest = fields
+        .as_ref()
+        .map(evidence_fields)
+        .map(|fields| adapter_evidence_digest(&fields));
     let canonical = fields.map(|f| {
         json!({
             "title": f.title,
@@ -147,6 +152,7 @@ fn compact(fields: Option<RequestFields>, issues: Vec<Value>) -> Value {
         "request_schema_version": REQUEST_SCHEMA_VERSION,
         "valid": valid,
         "canonical": canonical,
+        "evidence_digest": evidence_digest,
         "issue_count": issues.len(),
         "issues": issues,
     })
@@ -154,6 +160,24 @@ fn compact(fields: Option<RequestFields>, issues: Vec<Value>) -> Value {
 
 fn issue(code: &str, message: impl Into<String>) -> Value {
     json!({"code": code, "message": message.into()})
+}
+
+fn evidence_fields(fields: &RequestFields) -> RequestEvidenceFields {
+    RequestEvidenceFields {
+        title: fields.title.clone(),
+        request_kind: fields.request_kind.clone(),
+        issue_type: fields.issue_type.clone(),
+        ready_for_multica: fields.ready_for_multica,
+        status: fields.status.clone(),
+        project_key: fields.project_key.clone(),
+        source_prd: fields.source_prd.clone(),
+        source_design: fields.source_design.clone(),
+        source_roadmap: fields.source_roadmap.clone(),
+        blocked_by: fields.blocked_by.clone(),
+        unblocks: fields.unblocks.clone(),
+        sequence_index: fields.sequence_index,
+        sequence_total: fields.sequence_total,
+    }
 }
 
 fn parse_frontmatter(markdown: &str) -> Option<&str> {
@@ -183,10 +207,13 @@ fn fields_from_object(object: &Map<String, Value>) -> RequestFields {
 
 fn scalar(raw: &str) -> Value {
     let trimmed = raw.trim().trim_matches('"');
+    if trimmed.starts_with('[') {
+        return serde_json::from_str(trimmed)
+            .unwrap_or_else(|_| Value::String(trimmed.to_string()));
+    }
     match trimmed {
         "true" => Value::Bool(true),
         "false" => Value::Bool(false),
-        "[]" => Value::Array(Vec::new()),
         _ => trimmed
             .parse::<u64>()
             .map_or_else(|_| Value::String(trimmed.to_string()), |n| json!(n)),

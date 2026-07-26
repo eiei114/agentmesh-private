@@ -32,5 +32,105 @@
   ],
   "request_schema_version": "agentmesh-request.v0",
   "schema_version": "non-multica-request-adapter-compact.v0",
-  "valid": false
+  "valid": false,
+  "evidence_digest": {
+    "schema_version": "agentmesh-adapter-evidence-digest.v0",
+    "request_schema_version": "agentmesh-request.v0",
+    "serialization": {
+      "format": "json",
+      "object_key_order": "lexicographic",
+      "array_order": "contract-defined",
+      "null_policy": "missing optional scalar fields serialize as null; dependency fields serialize as arrays"
+    },
+    "section_order": [
+      "identity",
+      "sources",
+      "routing"
+    ],
+    "sections": [
+      {
+        "key": "identity",
+        "rationale": "Fields that identify the request independently of any tracker adapter.",
+        "fields": [
+          {
+            "key": "title",
+            "value": "Malformed external request",
+            "rationale": "Primary human-readable request identifier."
+          },
+          {
+            "key": "request_kind",
+            "value": "release",
+            "rationale": "Stable AgentMesh request kind used for adapter routing."
+          },
+          {
+            "key": "issue_type",
+            "value": null,
+            "rationale": "Work classification retained from the request contract."
+          },
+          {
+            "key": "status",
+            "value": null,
+            "rationale": "Source lifecycle status before adapter materialization."
+          },
+          {
+            "key": "project_key",
+            "value": null,
+            "rationale": "Owning project key used to compare adapter parity."
+          }
+        ]
+      },
+      {
+        "key": "sources",
+        "rationale": "Document references that let reviewers trace the request contract.",
+        "fields": [
+          {
+            "key": "source_prd",
+            "value": null,
+            "rationale": "PRD path captured from stable request metadata."
+          },
+          {
+            "key": "source_design",
+            "value": null,
+            "rationale": "Design document path captured from stable request metadata."
+          },
+          {
+            "key": "source_roadmap",
+            "value": null,
+            "rationale": "Roadmap path captured from stable request metadata."
+          }
+        ]
+      },
+      {
+        "key": "routing",
+        "rationale": "Adapter-neutral scheduling and dependency facts.",
+        "fields": [
+          {
+            "key": "ready_for_multica",
+            "value": null,
+            "rationale": "Readiness flag preserved as evidence, not as adapter authority."
+          },
+          {
+            "key": "sequence_index",
+            "value": 1,
+            "rationale": "1-based order inside a request sequence when provided."
+          },
+          {
+            "key": "sequence_total",
+            "value": null,
+            "rationale": "Total requests in the sequence when provided."
+          },
+          {
+            "key": "blocked_by",
+            "value": [],
+            "rationale": "Stable upstream dependency identifiers in source order."
+          },
+          {
+            "key": "unblocks",
+            "value": [],
+            "rationale": "Stable downstream dependency identifiers in source order."
+          }
+        ]
+      }
+    ]
+  }
 }

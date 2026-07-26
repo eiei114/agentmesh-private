@@ -6,6 +6,7 @@ members = [
     "crates/agentmesh-cli",
     "crates/agentmesh-app",
     "crates/agentmesh-conformance",
+    "crates/agentmesh-request-evidence",
     "test-support/agentmesh-fixture-support",
     "plugins/fixtures/echo",
     "plugins/fixtures/bad-json",
@@ -43,6 +44,7 @@ agentmesh-non-multica-request-adapter = { path = "plugins/non-multica-request-ad
 agentmesh-local-tracker-adapter = { path = "plugins/local-tracker-adapter" }
 agentmesh-adapter-metadata-canonicalizer = { path = "plugins/adapter-metadata-canonicalizer" }
 agentmesh-app = { path = "crates/agentmesh-app" }
+agentmesh-request-evidence = { path = "crates/agentmesh-request-evidence" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"

@@ -19,5 +19,105 @@
   "issues": [],
   "request_schema_version": "agentmesh-request.v0",
   "schema_version": "non-multica-request-adapter-compact.v0",
-  "valid": true
+  "valid": true,
+  "evidence_digest": {
+    "schema_version": "agentmesh-adapter-evidence-digest.v0",
+    "request_schema_version": "agentmesh-request.v0",
+    "serialization": {
+      "format": "json",
+      "object_key_order": "lexicographic",
+      "array_order": "contract-defined",
+      "null_policy": "missing optional scalar fields serialize as null; dependency fields serialize as arrays"
+    },
+    "section_order": [
+      "identity",
+      "sources",
+      "routing"
+    ],
+    "sections": [
+      {
+        "key": "identity",
+        "rationale": "Fields that identify the request independently of any tracker adapter.",
+        "fields": [
+          {
+            "key": "title",
+            "value": "Add a non-Multica request adapter contract app",
+            "rationale": "Primary human-readable request identifier."
+          },
+          {
+            "key": "request_kind",
+            "value": "app",
+            "rationale": "Stable AgentMesh request kind used for adapter routing."
+          },
+          {
+            "key": "issue_type",
+            "value": "AFK",
+            "rationale": "Work classification retained from the request contract."
+          },
+          {
+            "key": "status",
+            "value": "ready",
+            "rationale": "Source lifecycle status before adapter materialization."
+          },
+          {
+            "key": "project_key",
+            "value": "agentmesh-private",
+            "rationale": "Owning project key used to compare adapter parity."
+          }
+        ]
+      },
+      {
+        "key": "sources",
+        "rationale": "Document references that let reviewers trace the request contract.",
+        "fields": [
+          {
+            "key": "source_prd",
+            "value": "4_Project/OSS/agentmesh-private/Requests/App/2026-07-21-add-a-non-multica-request-adapter-contract-app.md",
+            "rationale": "PRD path captured from stable request metadata."
+          },
+          {
+            "key": "source_design",
+            "value": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+            "rationale": "Design document path captured from stable request metadata."
+          },
+          {
+            "key": "source_roadmap",
+            "value": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+            "rationale": "Roadmap path captured from stable request metadata."
+          }
+        ]
+      },
+      {
+        "key": "routing",
+        "rationale": "Adapter-neutral scheduling and dependency facts.",
+        "fields": [
+          {
+            "key": "ready_for_multica",
+            "value": true,
+            "rationale": "Readiness flag preserved as evidence, not as adapter authority."
+          },
+          {
+            "key": "sequence_index",
+            "value": 1,
+            "rationale": "1-based order inside a request sequence when provided."
+          },
+          {
+            "key": "sequence_total",
+            "value": 1,
+            "rationale": "Total requests in the sequence when provided."
+          },
+          {
+            "key": "blocked_by",
+            "value": [],
+            "rationale": "Stable upstream dependency identifiers in source order."
+          },
+          {
+            "key": "unblocks",
+            "value": [],
+            "rationale": "Stable downstream dependency identifiers in source order."
+          }
+        ]
+      }
+    ]
+  }
 }

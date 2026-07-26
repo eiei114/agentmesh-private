@@ -5,6 +5,7 @@
 //! Stable request fields stay under `canonical`; adapter-owned routing fields and
 //! passthrough extensions stay under `adapter`.
 
+use agentmesh_request_evidence::{adapter_evidence_digest, RequestEvidenceFields};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -38,6 +39,7 @@ struct RequestFields {
     title: Option<String>,
     request_kind: Option<String>,
     issue_type: Option<String>,
+    ready_for_multica: Option<bool>,
     status: Option<String>,
     project_key: Option<String>,
     source_prd: Option<String>,
@@ -63,6 +65,7 @@ pub fn adapt_request_input(value: &Value) -> Value {
                     "input_invalid",
                     format!("input must match schema: {err}"),
                 )],
+                None,
             )
         }
     };
@@ -79,7 +82,7 @@ pub fn adapt_request_input(value: &Value) -> Value {
             "source_shape_invalid",
             "provide exactly one of markdown or request",
         ));
-        return compact(None, None, None, issues);
+        return compact(None, None, None, issues, None);
     }
 
     let fields = if let Some(markdown) = input.markdown {
@@ -97,14 +100,14 @@ pub fn adapt_request_input(value: &Value) -> Value {
                 "frontmatter_missing",
                 "YAML frontmatter block is required for markdown sources",
             ));
-            return compact(None, None, None, issues);
+            return compact(None, None, None, issues, None);
         };
         fields_from_frontmatter(frontmatter)
     } else {
         let request = input.request.unwrap_or(Value::Null);
         let Some(object) = request.as_object() else {
             issues.push(issue("request_not_object", "request must be a JSON object"));
-            return compact(None, None, None, issues);
+            return compact(None, None, None, issues, None);
         };
         fields_from_object(object)
     };
@@ -112,12 +115,19 @@ pub fn adapt_request_input(value: &Value) -> Value {
     validate_fields(&fields, &mut issues);
     let extension = adapter_extension(&input.adapter, &mut issues);
     let canonical = canonical_payload(&fields);
+    let evidence_digest = Some(adapter_evidence_digest(&evidence_fields(&fields)));
     if issues.is_empty() {
         let adapter = adapter_payload(&fields, &extension);
         let tracker = tracker_ready_payload(&fields);
-        compact(Some(canonical), Some(adapter), Some(tracker), issues)
+        compact(
+            Some(canonical),
+            Some(adapter),
+            Some(tracker),
+            issues,
+            evidence_digest,
+        )
     } else {
-        compact(Some(canonical), None, None, issues)
+        compact(Some(canonical), None, None, issues, evidence_digest)
     }
 }
 
@@ -161,6 +171,7 @@ fn compact(
     adapter: Option<Value>,
     tracker_ready_payload: Option<Value>,
     issues: Vec<Value>,
+    evidence_digest: Option<Value>,
 ) -> Value {
     json!({
         "schema_version": OUTPUT_SCHEMA_VERSION,
@@ -168,6 +179,7 @@ fn compact(
         "request_schema_version": REQUEST_SCHEMA_VERSION,
         "valid": issues.is_empty(),
         "canonical": canonical,
+        "evidence_digest": evidence_digest,
         "adapter": adapter,
         "tracker_ready_payload": tracker_ready_payload,
         "issue_count": issues.len(),
@@ -233,6 +245,24 @@ fn issue(code: &str, message: impl Into<String>) -> Value {
     json!({"code": code, "message": message.into()})
 }
 
+fn evidence_fields(fields: &RequestFields) -> RequestEvidenceFields {
+    RequestEvidenceFields {
+        title: fields.title.clone(),
+        request_kind: fields.request_kind.clone(),
+        issue_type: fields.issue_type.clone(),
+        ready_for_multica: fields.ready_for_multica,
+        status: fields.status.clone(),
+        project_key: fields.project_key.clone(),
+        source_prd: fields.source_prd.clone(),
+        source_design: fields.source_design.clone(),
+        source_roadmap: fields.source_roadmap.clone(),
+        blocked_by: fields.blocked_by.clone(),
+        unblocks: fields.unblocks.clone(),
+        sequence_index: fields.sequence_index,
+        sequence_total: fields.sequence_total,
+    }
+}
+
 fn parse_frontmatter(markdown: &str) -> Option<&str> {
     let rest = markdown.strip_prefix("---\n")?;
     let end = rest.find("\n---\n")?;
@@ -278,6 +308,7 @@ fn set_field(fields: &mut RequestFields, key: &str, value: Value) {
         "title" => fields.title = value.as_str().map(ToString::to_string),
         "request_kind" => fields.request_kind = value.as_str().map(ToString::to_string),
         "issue_type" => fields.issue_type = value.as_str().map(ToString::to_string),
+        "ready_for_multica" => fields.ready_for_multica = value.as_bool(),
         "status" => fields.status = value.as_str().map(ToString::to_string),
         "project_key" => fields.project_key = value.as_str().map(ToString::to_string),
         "source_prd" => fields.source_prd = value.as_str().map(ToString::to_string),

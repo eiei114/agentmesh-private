@@ -85,6 +85,8 @@ The parser accepts the shared `agentmesh-request-parse-input.v0` schema marker a
 
 Successful output is deterministic JSON with `schema_version: agentmesh-request-parse-output.v0`, `request_schema_version: agentmesh-request.v0`, `valid`, `canonical`, `error_count`, and `errors[]`. `canonical` contains only stable request fields: `title`, `request_kind`, `issue_type`, `ready_for_multica`, `status`, `project_key`, source document paths, dependency arrays, and sequence fields. Adapter-specific passthrough/routing fields stay outside this output; markdown and non-Multica adapters consume `canonical` first, then attach tracker-specific payloads under their own adapter-owned keys.
 
+Request materializers also emit an adapter-neutral `evidence_digest` using `schema_version: agentmesh-adapter-evidence-digest.v0`. The digest serializes deterministic `sections[]` in the contract order `identity`, `sources`, then `routing`; each section contains ordered `fields[]` with `key`, `value`, and a human-readable `rationale`. Optional scalar values are serialized as `null`, dependency fields as arrays, and adapter-owned routing/passthrough values are excluded. Debug digest mismatches by comparing `section_order`, then each `sections[].fields[].key` and `value`; a mismatch means an adapter changed stable request parsing, not merely compact-output formatting.
+
 Invalid input exits with code `2` and still writes a machine-readable payload. Stable error codes include `invalid_schema`, `unsupported_request_shape`, and `missing_required_section`.
 
 Fixture smoke:
@@ -103,7 +105,7 @@ agentmesh request parse --input crates/agentmesh-cli/testdata/invalid_request_in
 {"schema_version":"non-multica-request-adapter-input.v0","markdown":"---\ntitle: \"Add app\"\nrequest_kind: app\nissue_type: AFK\n---\n..."}
 ```
 
-The compact payload is deterministic and contains `schema_version`, `adapter_version`, `request_schema_version`, `valid`, `canonical`, `issue_count`, and `issues[]`. `canonical` exposes stable fields such as `title`, `request_kind`, `issue_type`, `ready_for_multica`, `project_key`, source document paths, dependency arrays, and sequence fields. Unsupported request shapes produce deterministic `issues[].code` values such as `unsupported_request_kind`, `issue_type_missing`, and `sequence_incomplete` instead of tracker-specific exceptions.
+The compact payload is deterministic and contains `schema_version`, `adapter_version`, `request_schema_version`, `valid`, `canonical`, `evidence_digest`, `issue_count`, and `issues[]`. `canonical` exposes stable fields such as `title`, `request_kind`, `issue_type`, `ready_for_multica`, `project_key`, source document paths, dependency arrays, and sequence fields. `evidence_digest` uses the shared adapter evidence digest contract above so fixtures can compare Markdown and non-Multica materialization without duplicating parser-specific formatting logic. Unsupported request shapes produce deterministic `issues[].code` values such as `unsupported_request_kind`, `issue_type_missing`, and `sequence_incomplete` instead of tracker-specific exceptions.
 
 Development smoke:
 
@@ -135,7 +137,7 @@ Pinned production smoke uses the same manifest/input without `--mode development
 }
 ```
 
-The compact payload partitions stable request data under `canonical` and local-tracker-specific wiring under `adapter`. Local runners can consume `tracker_ready_payload` directly: it contains a deterministic `local-taskfile://<project>/<title-slug>` id, title, project, kind, state, source document references, dependency arrays, and sequence fields. Multica-only metadata such as `ready_for_multica` is intentionally not emitted. Adapter extensions are preserved only under `adapter.extension` so downstream local tools can opt into them without changing the stable canonical contract. Malformed inputs return deterministic `issues[].code` values such as `title_missing`, `unsupported_request_kind`, `sequence_incomplete`, and `adapter_passthrough_not_object`.
+The compact payload partitions stable request data under `canonical`, adapter-neutral review facts under `evidence_digest`, and local-tracker-specific wiring under `adapter`. Local runners can consume `tracker_ready_payload` directly: it contains a deterministic `local-taskfile://<project>/<title-slug>` id, title, project, kind, state, source document references, dependency arrays, and sequence fields. Multica-only metadata such as `ready_for_multica` is intentionally not emitted in `canonical` or tracker payloads, but it is retained inside `evidence_digest` when present so parity fixtures can compare local and non-Multica materialization evidence. Adapter extensions are preserved only under `adapter.extension` so downstream local tools can opt into them without changing the stable canonical contract. Malformed inputs return deterministic `issues[].code` values such as `title_missing`, `unsupported_request_kind`, `sequence_incomplete`, and `adapter_passthrough_not_object`.
 
 Development smoke:
 

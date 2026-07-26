@@ -12,11 +12,30 @@
   ],
   "issue_count": 6,
   "issues": [
-    { "code": "frontmatter_missing", "message": "YAML frontmatter block is required" },
-    { "code": "title_missing", "message": "frontmatter title is required" },
-    { "code": "required_section_missing", "message": "missing section: Acceptance criteria" },
-    { "code": "required_section_missing", "message": "missing section: Blocked by" },
-    { "code": "required_section_missing", "message": "missing section: User stories covered" },
-    { "code": "required_section_missing", "message": "missing section: Notes" }
-  ]
+    {
+      "code": "frontmatter_missing",
+      "message": "YAML frontmatter block is required"
+    },
+    {
+      "code": "title_missing",
+      "message": "frontmatter title is required"
+    },
+    {
+      "code": "required_section_missing",
+      "message": "missing section: Acceptance criteria"
+    },
+    {
+      "code": "required_section_missing",
+      "message": "missing section: Blocked by"
+    },
+    {
+      "code": "required_section_missing",
+      "message": "missing section: User stories covered"
+    },
+    {
+      "code": "required_section_missing",
+      "message": "missing section: Notes"
+    }
+  ],
+  "evidence_digest": null
 }
