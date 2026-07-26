@@ -3,6 +3,7 @@
 //! This plugin accepts one Markdown request document as JSON, validates the
 //! deterministic request contract, and emits a compact adapter-neutral result.
 
+use agentmesh_request_evidence::{adapter_evidence_digest, RequestEvidenceFields};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -33,6 +34,7 @@ pub fn validate_request_input(value: &Value) -> Value {
         Err(err) => {
             return compact(
                 false,
+                None,
                 None,
                 vec![issue(
                     "input_invalid",
@@ -67,7 +69,8 @@ pub fn validate_request_input(value: &Value) -> Value {
             "YAML frontmatter block is required",
         ));
     }
-    let title = frontmatter.and_then(|fm| frontmatter_value(fm, "title"));
+    let fields = frontmatter.map(fields_from_frontmatter);
+    let title = fields.as_ref().and_then(|fields| fields.title.clone());
     if title.as_deref().unwrap_or("").trim().is_empty() {
         issues.push(issue("title_missing", "frontmatter title is required"));
     }
@@ -82,17 +85,24 @@ pub fn validate_request_input(value: &Value) -> Value {
         }
     }
 
+    let evidence_digest = fields.as_ref().map(adapter_evidence_digest);
     let valid = issues.is_empty();
-    compact(valid, title, issues)
+    compact(valid, title, evidence_digest, issues)
 }
 
-fn compact(valid: bool, title: Option<String>, issues: Vec<Value>) -> Value {
+fn compact(
+    valid: bool,
+    title: Option<String>,
+    evidence_digest: Option<Value>,
+    issues: Vec<Value>,
+) -> Value {
     json!({
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "validator_version": VALIDATOR_VERSION,
         "valid": valid,
         "title": title,
         "required_sections": REQUIRED_SECTIONS,
+        "evidence_digest": evidence_digest,
         "issue_count": issues.len(),
         "issues": issues,
     })
@@ -108,11 +118,57 @@ fn parse_frontmatter(markdown: &str) -> Option<&str> {
     Some(&rest[..end])
 }
 
-fn frontmatter_value(frontmatter: &str, key: &str) -> Option<String> {
-    let prefix = format!("{key}:");
-    frontmatter.lines().find_map(|line| {
-        let rest = line.trim_start().strip_prefix(&prefix)?;
-        Some(rest.trim().trim_matches('"').to_string())
+fn fields_from_frontmatter(frontmatter: &str) -> RequestEvidenceFields {
+    let mut fields = RequestEvidenceFields::default();
+    for line in frontmatter.lines() {
+        let Some((key, raw)) = line.split_once(':') else {
+            continue;
+        };
+        set_field(&mut fields, key.trim(), scalar(raw.trim()));
+    }
+    fields
+}
+
+fn scalar(raw: &str) -> Value {
+    let trimmed = raw.trim().trim_matches('"');
+    if trimmed.starts_with('[') {
+        return serde_json::from_str(trimmed)
+            .unwrap_or_else(|_| Value::String(trimmed.to_string()));
+    }
+    match trimmed {
+        "true" => Value::Bool(true),
+        "false" => Value::Bool(false),
+        _ => trimmed
+            .parse::<u64>()
+            .map_or_else(|_| Value::String(trimmed.to_string()), |n| json!(n)),
+    }
+}
+
+fn set_field(fields: &mut RequestEvidenceFields, key: &str, value: Value) {
+    match key {
+        "title" => fields.title = value.as_str().map(ToString::to_string),
+        "request_kind" => fields.request_kind = value.as_str().map(ToString::to_string),
+        "issue_type" => fields.issue_type = value.as_str().map(ToString::to_string),
+        "ready_for_multica" => fields.ready_for_multica = value.as_bool(),
+        "status" => fields.status = value.as_str().map(ToString::to_string),
+        "project_key" => fields.project_key = value.as_str().map(ToString::to_string),
+        "source_prd" => fields.source_prd = value.as_str().map(ToString::to_string),
+        "source_design" => fields.source_design = value.as_str().map(ToString::to_string),
+        "source_roadmap" => fields.source_roadmap = value.as_str().map(ToString::to_string),
+        "blocked_by" => fields.blocked_by = strings(value),
+        "unblocks" => fields.unblocks = strings(value),
+        "sequence_index" => fields.sequence_index = value.as_u64(),
+        "sequence_total" => fields.sequence_total = value.as_u64(),
+        _ => {}
+    }
+}
+
+fn strings(value: Value) -> Vec<String> {
+    value.as_array().map_or_else(Vec::new, |items| {
+        items
+            .iter()
+            .filter_map(|value| value.as_str().map(ToString::to_string))
+            .collect()
     })
 }
 

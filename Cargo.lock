@@ -143,6 +143,7 @@ version = "0.1.0"
 dependencies = [
  "agentmesh-fixture-support",
  "agentmesh-proto",
+ "agentmesh-request-evidence",
  "serde",
  "serde_json",
  "thiserror",
@@ -154,6 +155,7 @@ version = "0.1.0"
 dependencies = [
  "agentmesh-fixture-support",
  "agentmesh-proto",
+ "agentmesh-request-evidence",
  "serde",
  "serde_json",
  "thiserror",
@@ -178,7 +180,10 @@ name = "agentmesh-non-multica-request-adapter"
 version = "0.1.0"
 dependencies = [
  "agentmesh-fixture-support",
+ "agentmesh-local-tracker-adapter",
+ "agentmesh-markdown-request-validator",
  "agentmesh-proto",
+ "agentmesh-request-evidence",
  "serde",
  "serde_json",
  "thiserror",
@@ -193,6 +198,13 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "agentmesh-request-evidence"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

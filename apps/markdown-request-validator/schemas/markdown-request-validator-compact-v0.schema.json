@@ -4,13 +4,14 @@
   "title": "Markdown Request Validator Compact Output v0",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "validator_version", "valid", "title", "required_sections", "issue_count", "issues"],
+  "required": ["schema_version", "validator_version", "valid", "title", "required_sections", "evidence_digest", "issue_count", "issues"],
   "properties": {
     "schema_version": { "const": "markdown-request-validator-compact.v0" },
     "validator_version": { "const": "markdown-request-validator.v0" },
     "valid": { "type": "boolean" },
     "title": { "type": ["string", "null"] },
     "required_sections": { "type": "array", "items": { "type": "string" } },
+    "evidence_digest": { "$ref": "#/$defs/evidence_digest" },
     "issue_count": { "type": "integer", "minimum": 0 },
     "issues": {
       "type": "array",
@@ -19,6 +20,19 @@
         "additionalProperties": false,
         "required": ["code", "message"],
         "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "evidence_digest": {
+      "type": ["object", "null"],
+      "required": ["schema_version", "request_schema_version", "serialization", "section_order", "sections"],
+      "properties": {
+        "schema_version": { "const": "agentmesh-adapter-evidence-digest.v0" },
+        "request_schema_version": { "const": "agentmesh-request.v0" },
+        "serialization": { "type": "object" },
+        "section_order": { "const": ["identity", "sources", "routing"] },
+        "sections": { "type": "array" }
       }
     }
   }
