@@ -3,6 +3,8 @@
 //! This plugin accepts one Markdown request document as JSON, validates the
 //! deterministic request contract, and emits a compact adapter-neutral result.
 
+pub mod adapter_error_contract;
+
 use agentmesh_request_evidence::{adapter_evidence_digest, RequestEvidenceFields};
 use serde::Deserialize;
 use serde_json::{json, Value};

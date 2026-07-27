@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/adapter-error-contract-input-v0.schema.json",
+  "title": "Adapter Error Contract Input v0",
+  "description": "Tool-neutral Markdown request and native adapter failure input for deterministic AgentMesh adapter error normalization. The contract intentionally excludes Multica-only metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "markdown"],
+  "properties": {
+    "schema_version": { "const": "adapter-error-contract-input.v0" },
+    "markdown": { "type": "string", "maxLength": 65536 },
+    "max_markdown_bytes": { "type": "integer", "minimum": 1, "maximum": 65536 },
+    "requested_capabilities": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "available_capabilities": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "source_adapter": { "type": "string", "minLength": 1 },
+    "adapter_failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "message"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["auth", "rate_limit", "timeout", "transport", "unknown"]
+        },
+        "native_code": { "type": "string" },
+        "message": { "type": "string", "minLength": 1 },
+        "retryable": { "type": "boolean" }
+      }
+    }
+  }
+}
