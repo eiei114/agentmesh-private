@@ -1,0 +1,92 @@
+{
+  "schema_version": "adapter-error-contract-compact.v0",
+  "contract_version": "adapter-error-contract.v0",
+  "taxonomy_version": "agentmesh-adapter-error-taxonomy.v0",
+  "valid": false,
+  "error_count": 1,
+  "errors": [
+    {
+      "code": "AGENTMESH_EXTERNAL_ADAPTER_FAILURE",
+      "taxonomy_code": "adapter.timeout",
+      "severity": "error",
+      "source": "adapter_execution",
+      "path": "$.adapter_failure",
+      "message": "adapter timed out after 1000ms",
+      "remediation_hint": "Inspect the native adapter failure, then retry only when retryable is true.",
+      "native": {
+        "adapter": "agentmesh-markdown-request-validator",
+        "kind": "timeout",
+        "native_code": "ETIMEDOUT",
+        "retryable": true
+      }
+    }
+  ],
+  "error_schema": {
+    "schema_version": "agentmesh-adapter-error-schema.v0",
+    "code_namespace": "agentmesh.adapter_error",
+    "stable_codes": [
+      {
+        "code": "AGENTMESH_INPUT_SCHEMA_INVALID",
+        "taxonomy_code": "request.input_schema_invalid",
+        "severity": "error",
+        "source": "request_validation",
+        "remediation_hint": "Match adapter-error-contract-input.v0 and keep adapter details in adapter_failure."
+      },
+      {
+        "code": "AGENTMESH_MARKDOWN_INVALID",
+        "taxonomy_code": "request.markdown_invalid",
+        "severity": "error",
+        "source": "request_validation",
+        "remediation_hint": "Provide Markdown with YAML frontmatter and the required request sections."
+      },
+      {
+        "code": "AGENTMESH_FIELD_REQUIRED",
+        "taxonomy_code": "request.field_required",
+        "severity": "error",
+        "source": "request_validation",
+        "remediation_hint": "Add the missing request field to the Markdown frontmatter before adapter handoff."
+      },
+      {
+        "code": "AGENTMESH_CAPABILITY_UNKNOWN",
+        "taxonomy_code": "request.capability_unknown",
+        "severity": "error",
+        "source": "request_validation",
+        "remediation_hint": "Route to an adapter that advertises the requested capability or remove it."
+      },
+      {
+        "code": "AGENTMESH_BOUNDARY_EXCEEDED",
+        "taxonomy_code": "request.boundary_exceeded",
+        "severity": "error",
+        "source": "request_validation",
+        "remediation_hint": "Reduce the request payload below the documented byte limit."
+      },
+      {
+        "code": "AGENTMESH_EXTERNAL_ADAPTER_FAILURE",
+        "taxonomy_code": "adapter.external_failure",
+        "severity": "error",
+        "source": "adapter_execution",
+        "remediation_hint": "Inspect the native adapter failure, then retry only when retryable is true."
+      }
+    ],
+    "supported_taxonomy_codes": [
+      "request.input_schema_invalid",
+      "request.markdown_invalid",
+      "request.field_required",
+      "request.capability_unknown",
+      "request.boundary_exceeded",
+      "adapter.external_failure",
+      "adapter.auth_failed",
+      "adapter.rate_limited",
+      "adapter.timeout",
+      "adapter.transport_failed"
+    ],
+    "required_record_fields": [
+      "code",
+      "taxonomy_code",
+      "severity",
+      "source",
+      "message",
+      "remediation_hint"
+    ]
+  }
+}

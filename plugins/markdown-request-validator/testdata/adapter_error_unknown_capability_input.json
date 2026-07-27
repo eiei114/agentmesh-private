@@ -1,0 +1,6 @@
+{
+  "schema_version": "adapter-error-contract-input.v0",
+  "markdown": "---\ntitle: \"Add app\"\nrequest_kind: app\nissue_type: AFK\n---\n# Add app\n\n## What to build\nBuild it.\n\n## Acceptance criteria\n- Pass.\n",
+  "requested_capabilities": ["markdown_request_validation", "unknown_capability"],
+  "available_capabilities": ["markdown_request_validation"]
+}

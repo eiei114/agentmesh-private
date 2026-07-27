@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/adapter-error-contract-compact-v0.schema.json",
+  "title": "Adapter Error Contract Compact Output v0",
+  "description": "Deterministic normalized adapter error records with stable taxonomy codes, severity, source, remediation hints, and optional native failure context.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contract_version", "taxonomy_version", "valid", "error_count", "errors", "error_schema"],
+  "properties": {
+    "schema_version": { "const": "adapter-error-contract-compact.v0" },
+    "contract_version": { "const": "adapter-error-contract.v0" },
+    "taxonomy_version": { "const": "agentmesh-adapter-error-taxonomy.v0" },
+    "valid": { "type": "boolean" },
+    "error_count": { "type": "integer", "minimum": 0 },
+    "errors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/normalized_error" }
+    },
+    "error_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "code_namespace", "stable_codes", "supported_taxonomy_codes", "required_record_fields"],
+      "properties": {
+        "schema_version": { "const": "agentmesh-adapter-error-schema.v0" },
+        "code_namespace": { "const": "agentmesh.adapter_error" },
+        "stable_codes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "taxonomy_code", "severity", "source", "remediation_hint"],
+            "properties": {
+              "code": { "$ref": "#/$defs/stable_code" },
+              "taxonomy_code": { "type": "string" },
+              "severity": { "$ref": "#/$defs/severity" },
+              "source": { "$ref": "#/$defs/source" },
+              "remediation_hint": { "type": "string" }
+            }
+          }
+        },
+        "supported_taxonomy_codes": {
+          "const": [
+            "request.input_schema_invalid",
+            "request.markdown_invalid",
+            "request.field_required",
+            "request.capability_unknown",
+            "request.boundary_exceeded",
+            "adapter.external_failure",
+            "adapter.auth_failed",
+            "adapter.rate_limited",
+            "adapter.timeout",
+            "adapter.transport_failed"
+          ]
+        },
+        "required_record_fields": {
+          "const": ["code", "taxonomy_code", "severity", "source", "message", "remediation_hint"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stable_code": {
+      "type": "string",
+      "enum": [
+        "AGENTMESH_INPUT_SCHEMA_INVALID",
+        "AGENTMESH_MARKDOWN_INVALID",
+        "AGENTMESH_FIELD_REQUIRED",
+        "AGENTMESH_CAPABILITY_UNKNOWN",
+        "AGENTMESH_BOUNDARY_EXCEEDED",
+        "AGENTMESH_EXTERNAL_ADAPTER_FAILURE"
+      ]
+    },
+    "severity": { "type": "string", "enum": ["error", "warning"] },
+    "source": { "type": "string", "enum": ["request_validation", "adapter_execution"] },
+    "normalized_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "taxonomy_code", "severity", "source", "path", "message", "remediation_hint", "native"],
+      "properties": {
+        "code": { "$ref": "#/$defs/stable_code" },
+        "taxonomy_code": { "type": "string" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "source": { "$ref": "#/$defs/source" },
+        "path": { "type": ["string", "null"] },
+        "message": { "type": "string" },
+        "remediation_hint": { "type": "string" },
+        "native": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["adapter", "kind", "native_code", "retryable"],
+          "properties": {
+            "adapter": { "type": "string" },
+            "kind": { "type": "string" },
+            "native_code": { "type": "string" },
+            "retryable": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

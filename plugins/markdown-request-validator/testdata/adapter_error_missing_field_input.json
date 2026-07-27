@@ -1,0 +1,4 @@
+{
+  "schema_version": "adapter-error-contract-input.v0",
+  "markdown": "---\ntitle: \"Add app\"\n---\n# Add app\n\n## What to build\nBuild it.\n\n## Acceptance criteria\n- Pass.\n"
+}
