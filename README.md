@@ -129,6 +129,8 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/non-multica-request-adapter/` — tracker-neutral request adapter manifest + IO schemas
 - `apps/local-tracker-adapter/` — local taskfile tracker adapter manifest + IO schemas
 - `apps/adapter-metadata-canonicalizer/` — adapter metadata comparison/canonicalization manifest + IO schemas
+- `apps/adapter-error-contract/` — shared adapter error boundary contract manifest + IO schemas
+- `apps/public-0x-readiness/` — public 0.x readiness evidence gate manifest + IO schemas
 - `toolchains/*.toml` — consumer pins for private prereleases (see `docs/private-prerelease-v0.md`)
 
 Internal / test-only:
@@ -141,6 +143,8 @@ Internal / test-only:
 - `agentmesh-non-multica-request-adapter` — tracker-neutral request adapter contract (plugin-owned types only)
 - `agentmesh-local-tracker-adapter` — local taskfile tracker adapter contract (plugin-owned types only)
 - `agentmesh-adapter-metadata-canonicalizer` — deterministic adapter metadata drift comparison and canonical subset emitter (plugin-owned types only)
+- `agentmesh-adapter-error-contract` — shared adapter error boundary contract binary (`markdown-request-validator` package)
+- `agentmesh-public-0x-readiness` — public 0.x readiness evidence gate binary (`adapter-metadata-canonicalizer` package)
 
 Every crate is `publish = false` during private Phase 0/1.0.
 

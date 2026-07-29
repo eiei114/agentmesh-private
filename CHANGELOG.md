@@ -12,6 +12,8 @@ All notable changes to this private Phase 0 workspace are documented here.
 
 ### Changed
 
+- README workspace list: document `apps/adapter-error-contract`, `apps/public-0x-readiness`, and their plugin binaries to match the current `apps/` layout.
+
 - Phase 0 exit review: reconcile `docs/protocol-v0.md` and `docs/threat-model-v0.md` to implementation evidence; accept ADR 0001.
 - README workspace crate list: document `agentmesh-app`, `apps/backlog-promoter`, and `toolchains/` consumer pins to match the current workspace layout.
 
