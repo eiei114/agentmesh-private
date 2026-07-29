@@ -206,6 +206,38 @@ mod tests {
         }
     }
 
+    #[test]
+    fn readme_lists_all_version_controlled_apps() {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let readme =
+            std::fs::read_to_string(workspace_root.join("README.md")).expect("README.md readable");
+        let apps_dir = workspace_root.join("apps");
+
+        let mut listed = 0;
+        for entry in std::fs::read_dir(&apps_dir).expect("apps directory") {
+            let path = entry.expect("apps entry").path();
+            if !path.is_dir() {
+                continue;
+            }
+            let manifest = path.join("agentmesh-app.toml");
+            if !manifest.is_file() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .expect("app directory name")
+                .to_string_lossy();
+            let expected = format!("apps/{name}/");
+            assert!(
+                readme.contains(&expected),
+                "README.md missing workspace app entry for `{expected}`"
+            );
+            listed += 1;
+        }
+
+        assert!(listed > 0, "expected at least one app manifest under apps/");
+    }
+
     fn write(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {
         let path = dir.join(name);
         fs::write(&path, body).unwrap();
