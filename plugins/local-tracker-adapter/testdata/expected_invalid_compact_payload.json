@@ -23,7 +23,7 @@
     },
     {
       "code": "unsupported_request_kind",
-      "message": "request_kind must be app"
+      "message": "request_kind must be one of app, repair"
     },
     {
       "code": "issue_type_missing",

@@ -16,6 +16,7 @@ const OUTPUT_SCHEMA_VERSION: &str = "local-tracker-adapter-compact.v0";
 const REQUEST_SCHEMA_VERSION: &str = "agentmesh-request.v0";
 const LOCAL_TRACKER_VERSION: &str = "local-taskfile.v0";
 const MAX_SOURCE_BYTES: usize = 64 * 1024;
+const ACCEPTED_REQUEST_KINDS: &[&str] = &["app", "repair"];
 
 #[derive(Debug, Deserialize)]
 struct AdapterInput {
@@ -135,10 +136,14 @@ fn validate_fields(fields: &RequestFields, issues: &mut Vec<Value>) {
     if fields.title.as_deref().unwrap_or("").trim().is_empty() {
         issues.push(issue("title_missing", "request title is required"));
     }
-    if fields.request_kind.as_deref() != Some("app") {
+    if !fields
+        .request_kind
+        .as_deref()
+        .is_some_and(|kind| ACCEPTED_REQUEST_KINDS.contains(&kind))
+    {
         issues.push(issue(
             "unsupported_request_kind",
-            "request_kind must be app",
+            "request_kind must be one of app, repair",
         ));
     }
     if fields.issue_type.as_deref().unwrap_or("").trim().is_empty() {
@@ -359,6 +364,46 @@ fn slug(title: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn repair_requests_include_tracker_follow_up_payload() {
+        let output = adapt_request_input(&json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "request": {
+                "title": "Repair daily AgentMesh autopilot failure",
+                "request_kind": "repair",
+                "issue_type": "AFK",
+                "ready_for_multica": true,
+                "status": "ready",
+                "project_key": "agentmesh-private",
+                "source_prd": "4_Project/OSS/agentmesh-private/Requests/Repair/2026-07-28-repair-daily-agentmesh-autopilot-failure.md",
+                "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+                "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+                "blocked_by": [],
+                "unblocks": [],
+                "sequence_index": 1,
+                "sequence_total": 1
+            },
+            "adapter": {
+                "passthrough": {
+                    "failure_run_id": "42405989-ccd4-40b0-a291-2ecc3007c752",
+                    "same_scope_key": "agentmesh:repair:daily_autopilot_failed"
+                }
+            }
+        }));
+
+        assert_eq!(output["valid"], true);
+        assert_eq!(output["canonical"]["request_kind"], "repair");
+        assert_eq!(
+            output["tracker_ready_payload"]["id"],
+            "local-taskfile://agentmesh-private/repair-daily-agentmesh-autopilot-failure"
+        );
+        assert_eq!(
+            output["adapter"]["extension"]["same_scope_key"],
+            "agentmesh:repair:daily_autopilot_failed"
+        );
+    }
 
     #[test]
     fn recorded_fixtures_match_expected_payloads() {

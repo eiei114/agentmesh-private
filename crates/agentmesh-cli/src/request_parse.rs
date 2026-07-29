@@ -15,6 +15,7 @@ const ACCEPTED_INPUT_SCHEMA_VERSIONS: &[&str] = &[
 ];
 
 const REQUIRED_MARKDOWN_SECTIONS: &[&str] = &["What to build", "Acceptance criteria"];
+const ACCEPTED_REQUEST_KINDS: &[&str] = &["app", "repair"];
 
 #[derive(Debug, Default)]
 struct RequestFields {
@@ -192,10 +193,14 @@ fn validate_fields(fields: &RequestFields, errors: &mut Vec<Value>) {
             None,
         ));
     }
-    if fields.request_kind.as_deref() != Some("app") {
+    if !fields
+        .request_kind
+        .as_deref()
+        .is_some_and(|kind| ACCEPTED_REQUEST_KINDS.contains(&kind))
+    {
         errors.push(error(
             "unsupported_request_shape",
-            "request_kind must be app",
+            "request_kind must be one of app, repair",
             Some("$.canonical.request_kind"),
             None,
         ));
@@ -343,4 +348,40 @@ fn strings(value: Value) -> Vec<String> {
             .filter_map(|value| value.as_str().map(ToString::to_string))
             .collect()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repair_requests_are_valid_for_maintenance_follow_up() {
+        let input = json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "request": {
+                "title": "Repair daily AgentMesh autopilot failure",
+                "request_kind": "repair",
+                "issue_type": "AFK",
+                "ready_for_multica": true,
+                "status": "ready",
+                "project_key": "agentmesh-private",
+                "source_prd": "4_Project/OSS/agentmesh-private/Requests/Repair/2026-07-28-repair-daily-agentmesh-autopilot-failure.md",
+                "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+                "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+                "blocked_by": [],
+                "unblocks": [],
+                "sequence_index": 1,
+                "sequence_total": 1
+            }
+        });
+
+        let (payload, valid) = parse_request_input_value(&input);
+
+        assert!(valid, "{payload}");
+        assert_eq!(payload["canonical"]["request_kind"], "repair");
+        assert_eq!(
+            payload["canonical"]["title"],
+            "Repair daily AgentMesh autopilot failure"
+        );
+    }
 }

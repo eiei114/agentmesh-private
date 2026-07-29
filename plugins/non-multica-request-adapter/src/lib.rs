@@ -13,6 +13,7 @@ const INPUT_SCHEMA_VERSION: &str = "non-multica-request-adapter-input.v0";
 const OUTPUT_SCHEMA_VERSION: &str = "non-multica-request-adapter-compact.v0";
 const REQUEST_SCHEMA_VERSION: &str = "agentmesh-request.v0";
 const MAX_SOURCE_BYTES: usize = 64 * 1024;
+const ACCEPTED_REQUEST_KINDS: &[&str] = &["app", "repair"];
 
 #[derive(Debug, Deserialize)]
 struct AdapterInput {
@@ -106,10 +107,14 @@ fn validate_fields(fields: &RequestFields, issues: &mut Vec<Value>) {
     if fields.title.as_deref().unwrap_or("").trim().is_empty() {
         issues.push(issue("title_missing", "request title is required"));
     }
-    if fields.request_kind.as_deref() != Some("app") {
+    if !fields
+        .request_kind
+        .as_deref()
+        .is_some_and(|kind| ACCEPTED_REQUEST_KINDS.contains(&kind))
+    {
         issues.push(issue(
             "unsupported_request_kind",
-            "request_kind must be app",
+            "request_kind must be one of app, repair",
         ));
     }
     if fields.issue_type.as_deref().unwrap_or("").trim().is_empty() {
@@ -251,6 +256,37 @@ fn strings(value: Value) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn repair_requests_are_valid_materialization_inputs() {
+        let output = adapt_request_input(&json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "request": {
+                "title": "Repair daily AgentMesh autopilot failure",
+                "request_kind": "repair",
+                "issue_type": "AFK",
+                "ready_for_multica": true,
+                "status": "ready",
+                "project_key": "agentmesh-private",
+                "source_prd": "4_Project/OSS/agentmesh-private/Requests/Repair/2026-07-28-repair-daily-agentmesh-autopilot-failure.md",
+                "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+                "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+                "blocked_by": [],
+                "unblocks": [],
+                "sequence_index": 1,
+                "sequence_total": 1
+            }
+        }));
+
+        assert_eq!(output["valid"], true);
+        assert_eq!(output["canonical"]["request_kind"], "repair");
+        assert_eq!(output["issue_count"], 0);
+        assert_eq!(
+            output["evidence_digest"]["sections"][0]["fields"][1]["value"],
+            "repair"
+        );
+    }
 
     #[test]
     fn recorded_fixtures_match_expected_payloads() {

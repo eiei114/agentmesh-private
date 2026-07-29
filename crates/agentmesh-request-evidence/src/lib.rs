@@ -16,7 +16,7 @@ pub const REQUEST_SCHEMA_VERSION: &str = "agentmesh-request.v0";
 pub struct RequestEvidenceFields {
     /// Request title.
     pub title: Option<String>,
-    /// Stable request kind, currently `app` for App requests.
+    /// Stable request kind, such as `app` for App supply or `repair` for maintenance follow-up.
     pub request_kind: Option<String>,
     /// Work item issue type such as `AFK`.
     pub issue_type: Option<String>,
