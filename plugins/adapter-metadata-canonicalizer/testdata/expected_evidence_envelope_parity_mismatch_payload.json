@@ -1,0 +1,57 @@
+{
+  "adapter": {
+    "capabilities": [
+      "adapter_metadata_canonicalizer",
+      "adapter_parity_evidence"
+    ],
+    "id": "adapter-metadata-canonicalizer",
+    "version": "adapter-metadata-canonicalizer.v0"
+  },
+  "app_version": "adapter-evidence-envelope.v0",
+  "capability_hash": {
+    "algorithm": "sha256",
+    "value": "1ae22fb82487f80f5fb3e3921b69dc2d8ba41c34a52b554314282769c51c95b2"
+  },
+  "deterministic_diagnostics": {
+    "items": [
+      {
+        "code": "adapter_status_mismatch",
+        "field": "/canonical/status",
+        "message": "left and right adapter statuses differ",
+        "severity": "warning"
+      },
+      {
+        "code": "adapter_title_mismatch",
+        "field": "/canonical/title",
+        "message": "left and right adapter titles differ",
+        "severity": "error"
+      }
+    ],
+    "ordering": [
+      "code",
+      "field",
+      "severity",
+      "message"
+    ]
+  },
+  "phase": "validation",
+  "replay_transcript_digest": {
+    "algorithm": "sha256",
+    "source": "canonical JSON transcript array",
+    "value": "0b16094b21f4eb279544d6a061282d03ae7d89c9c51869af1f6d03b912b8566d"
+  },
+  "request_id": "DOT-1279",
+  "result_class": "adapter_parity_mismatch",
+  "retention": {
+    "class": "owner_local",
+    "path_policy": "agentmesh app run writes host sidecars under --sidecar-dir/YYYY-MM-DD/<run-id>/full.json; this compact payload retains only transcript digests, not raw transcripts"
+  },
+  "schema_version": "adapter-evidence-envelope-compact.v0",
+  "serialization": {
+    "array_order": "contract-defined; diagnostics sorted by code/field/severity/message; adapter capabilities preserve supplied order",
+    "format": "json",
+    "null_policy": "missing optional scalar fields serialize as null; malformed inputs retain a deterministic envelope",
+    "object_key_order": "lexicographic"
+  },
+  "valid": false
+}

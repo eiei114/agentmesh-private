@@ -1,0 +1,34 @@
+{
+  "schema_version": "adapter-evidence-envelope-input.v0",
+  "request_id": "DOT-1279",
+  "phase": "execution",
+  "adapter": {
+    "id": "local-tracker-adapter",
+    "version": "local-tracker-adapter.v0",
+    "capabilities": ["request_materialize"]
+  },
+  "capability": {
+    "name": "agentmesh-request-execution",
+    "schema_version": "agentmesh-request.v0",
+    "operation": "execute"
+  },
+  "result": {
+    "class": "malformed_input"
+  },
+  "diagnostics": [
+    {
+      "code": "request_kind_missing",
+      "severity": "error",
+      "field": "/canonical/request_kind",
+      "message": "request_kind is required before execution"
+    }
+  ],
+  "transcript": [
+    {
+      "step": "input",
+      "canonical": {
+        "title": "Broken request"
+      }
+    }
+  ]
+}

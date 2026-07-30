@@ -1,0 +1,44 @@
+{
+  "schema_version": "adapter-evidence-envelope-input.v0",
+  "request_id": "DOT-1279",
+  "phase": "validation",
+  "adapter": {
+    "id": "adapter-metadata-canonicalizer",
+    "version": "adapter-metadata-canonicalizer.v0",
+    "capabilities": ["adapter_metadata_canonicalizer", "adapter_parity_evidence"]
+  },
+  "capability": {
+    "name": "adapter-parity-compare",
+    "schema_version": "agentmesh-request-metadata.v0",
+    "operation": "compare"
+  },
+  "result": {
+    "class": "adapter_parity_mismatch"
+  },
+  "diagnostics": [
+    {
+      "code": "adapter_title_mismatch",
+      "severity": "error",
+      "field": "/canonical/title",
+      "message": "left and right adapter titles differ"
+    },
+    {
+      "code": "adapter_status_mismatch",
+      "severity": "warning",
+      "field": "/canonical/status",
+      "message": "left and right adapter statuses differ"
+    }
+  ],
+  "transcript": [
+    {
+      "step": "left",
+      "adapter_id": "multica",
+      "title": "Add deterministic envelope"
+    },
+    {
+      "step": "right",
+      "adapter_id": "markdown",
+      "title": "Add deterministic evidence envelope"
+    }
+  ]
+}

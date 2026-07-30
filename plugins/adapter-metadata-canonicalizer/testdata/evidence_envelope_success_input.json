@@ -1,0 +1,29 @@
+{
+  "schema_version": "adapter-evidence-envelope-input.v0",
+  "request_id": "DOT-1279",
+  "phase": "validation",
+  "adapter": {
+    "id": "markdown-request-validator",
+    "version": "markdown-request-validator.v0",
+    "capabilities": ["request_parse", "evidence_digest"]
+  },
+  "capability": {
+    "name": "agentmesh-request-validation",
+    "schema_version": "agentmesh-request.v0",
+    "operation": "validate"
+  },
+  "result": {
+    "class": "success"
+  },
+  "diagnostics": [],
+  "transcript": [
+    {
+      "step": "input",
+      "digest": "sha256:request-fixture"
+    },
+    {
+      "step": "output",
+      "valid": true
+    }
+  ]
+}

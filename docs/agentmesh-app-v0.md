@@ -189,6 +189,45 @@ agentmesh app run \
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-adapter-metadata-canonicalizer`.
 
+## Adapter evidence envelope App
+
+`apps/adapter-evidence-envelope/agentmesh-app.toml` declares an adapter-neutral App for normalizing validation and execution evidence. It consumes a request id, phase (`validation` or `execution`), adapter identity, capability descriptor, result class, deterministic diagnostics, and replay transcript facts:
+
+```json
+{
+  "schema_version": "adapter-evidence-envelope-input.v0",
+  "request_id": "DOT-1279",
+  "phase": "validation",
+  "adapter": {"id": "markdown-request-validator", "version": "markdown-request-validator.v0", "capabilities": ["request_parse"]},
+  "capability": {"name": "agentmesh-request-validation", "schema_version": "agentmesh-request.v0", "operation": "validate"},
+  "result": {"class": "success"},
+  "diagnostics": [],
+  "transcript": [{"step": "input", "digest": "sha256:request-fixture"}]
+}
+```
+
+The compact payload is deterministic and contains `schema_version`, `app_version`, `valid`, `request_id`, `phase`, `capability_hash`, `adapter`, `result_class`, `deterministic_diagnostics`, `replay_transcript_digest`, `serialization`, and `retention`. Diagnostics are normalized to `code`, `field`, `severity`, and `message`, then sorted by `code`, `field`, `severity`, and `message`; replay transcripts are not copied into compact output, only hashed as canonical JSON. Result classes include `success`, `malformed_input`, `adapter_parity_mismatch`, `adapter_error`, and `execution_error`, so adapters can compare success, malformed input, and parity-mismatch evidence without adapter-specific keys.
+
+Evidence retention is `owner_local`: `agentmesh app run` writes host sidecars below the caller-provided `--sidecar-dir/YYYY-MM-DD/<run-id>/full.json`. Adapter-facing tooling should retain the compact envelope and the sidecar reference; raw replay transcript material remains outside the compact payload unless separately retained by the owner.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-adapter-metadata-canonicalizer
+agentmesh app validate \
+  --manifest apps/adapter-evidence-envelope/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/adapter-evidence-envelope/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/adapter-metadata-canonicalizer/testdata/evidence_envelope_success_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-adapter-evidence-envelope
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-adapter-evidence-envelope`.
+
 ## Public 0.x readiness gate App
 
 `apps/public-0x-readiness/agentmesh-app.toml` declares an evidence-only readiness-capability App. It consumes retained compact outputs from the Markdown request validator and non-Multica request adapter, plus an explicit checklist for protocol acceptance, adapter compatibility, rollback proof, and evidence retention. It emits deterministic `public-0x-readiness-compact.v0` JSON with `valid`, `assertions[]`, and `issues[]` so public readiness claims can be reviewed without live Multica credentials or production authority.
