@@ -250,6 +250,36 @@ agentmesh app run \
 
 See `docs/public-0x-readiness-gate.md` for the checklist, required artifacts, rollback proof, and retention rules. The gate must not be used to tag, publish, upload assets, mutate Multica authority, or perform production cutover.
 
+## Public 0.x rollback replay App
+
+`apps/public-0x-rollback-replay/agentmesh-app.toml` declares a deterministic rollback evidence App for public 0.x readiness rehearsals. It accepts only retained output from the shared parser where `request_schema_version` is `agentmesh-request.v0` and `valid` is true; malformed input fails fast with the normalized adapter error contract embedded under `adapter_error`.
+
+The input also carries the retained App manifest hash, adapter evidence digest, protocol replay artifact list, rollback commands, and retention policy. The compact output is `public-0x-rollback-replay-compact.v0` and contains a stable `rollback_bundle` with:
+
+- `manifest_hash` — caller-retained hash of the App manifest/release manifest under review.
+- `adapter_digest_hash` — SHA-256 over the canonicalized adapter evidence digest.
+- `replay_transcript_hash` — SHA-256 over the canonicalized protocol replay transcript artifacts.
+- `request_hash` — SHA-256 over the canonical shared-parser request payload.
+- `protocol_replay`, `rollback`, and `evidence_retention` — retained artifact names, rollback commands, and minimum 30-day retention location.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-adapter-metadata-canonicalizer
+agentmesh app validate \
+  --manifest apps/public-0x-rollback-replay/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/public-0x-rollback-replay/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/adapter-metadata-canonicalizer/testdata/public_0x_rollback_replay_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-public-0x-rollback-replay
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-public-0x-rollback-replay`.
+
 ## Run
 
 Production/canary (default) resolves the logical plugin under the local toolchain cache,

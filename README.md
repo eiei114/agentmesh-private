@@ -22,6 +22,8 @@ The adapter evidence envelope App (`agentmesh-adapter-evidence-envelope`) normal
 
 The local tracker adapter App (`agentmesh-local-tracker-adapter`) is a second concrete non-Multica request target: it maps `agentmesh-request.v0` sources into deterministic local taskfile payloads, keeps stable canonical fields separate from adapter extensions, and emits schema-stable validation errors.
 
+The public 0.x rollback replay App (`agentmesh-public-0x-rollback-replay`) consumes shared parser output plus retained adapter/protocol artifacts and emits a stable rollback evidence bundle for non-Multica runners.
+
 Still out of scope: Todo Runner parity, Multica credentials/live CLI, daemon/TUI/SQLite, WorkItem promotion into core, polyglot evidence.
 
 ## Supported targets (exact)
@@ -134,6 +136,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/adapter-evidence-envelope/` — deterministic adapter evidence envelope manifest + IO schemas
 - `apps/adapter-error-contract/` — shared adapter error boundary contract manifest + IO schemas
 - `apps/public-0x-readiness/` — public 0.x readiness evidence gate manifest + IO schemas
+- `apps/public-0x-rollback-replay/` — deterministic rollback replay evidence manifest + IO schemas
 - `toolchains/*.toml` — consumer pins for private prereleases (see `docs/private-prerelease-v0.md`)
 
 Internal / test-only:
@@ -149,6 +152,7 @@ Internal / test-only:
 - `agentmesh-adapter-evidence-envelope` — deterministic adapter evidence envelope binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-adapter-error-contract` — shared adapter error boundary contract binary (`markdown-request-validator` package)
 - `agentmesh-public-0x-readiness` — public 0.x readiness evidence gate binary (`adapter-metadata-canonicalizer` package)
+- `agentmesh-public-0x-rollback-replay` — deterministic public 0.x rollback evidence bundle binary (`adapter-metadata-canonicalizer` package)
 
 Every crate is `publish = false` during private Phase 0/1.0.
 

@@ -1,0 +1,49 @@
+{
+  "schema_version": "public-0x-rollback-replay-input.v0",
+  "request_parse": {
+    "schema_version": "agentmesh-request-parse-output.v0",
+    "request_schema_version": "agentmesh-request.v0",
+    "valid": true,
+    "canonical": {
+      "title": "Add rollback replay App",
+      "request_kind": "app",
+      "issue_type": "AFK",
+      "ready_for_multica": true,
+      "status": "ready",
+      "project_key": "agentmesh-private",
+      "source_prd": "Requests/App/public-0x-rollback-replay.md",
+      "source_design": "Docs/agentmesh-request-operations-v1.md",
+      "source_roadmap": "ROADMAP.md",
+      "blocked_by": [],
+      "unblocks": [],
+      "sequence_index": 1,
+      "sequence_total": 1
+    },
+    "error_count": 0,
+    "errors": []
+  },
+  "manifest_hash": "sha256:agentmesh-app-manifest-fixture",
+  "adapter_digest": {
+    "schema_version": "agentmesh-adapter-evidence-digest.v0",
+    "request_schema_version": "agentmesh-request.v0",
+    "sections": [
+      {"key": "identity", "fields": [{"key": "title", "value": "Add rollback replay App"}]},
+      {"key": "sources", "fields": [{"key": "source_prd", "value": "Requests/App/public-0x-rollback-replay.md"}]},
+      {"key": "routing", "fields": [{"key": "blocked_by", "value": []}]}
+    ]
+  },
+  "protocol_replay": [
+    {"step": "parse", "status": "ok", "artifact": "request-parse-output.json"},
+    {"step": "adapter-digest", "status": "ok", "artifact": "non-multica-adapter-output.json"},
+    {"step": "rollback-verify", "status": "ok", "artifact": "rollback-verification.log"}
+  ],
+  "rollback": {
+    "previous_good_artifact": "agentmesh-v0.2.0-dev.1.x86_64-unknown-linux-gnu",
+    "rollback_command": "git revert <public-readiness-change>",
+    "verification_command": "cargo test --workspace"
+  },
+  "evidence_retention": {
+    "location": "durable-review/public-0x-rollback-replay/DOT-1285",
+    "retention_days": 30
+  }
+}

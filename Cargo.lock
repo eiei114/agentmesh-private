@@ -7,9 +7,12 @@ name = "agentmesh-adapter-metadata-canonicalizer"
 version = "0.1.0"
 dependencies = [
  "agentmesh-fixture-support",
+ "agentmesh-markdown-request-validator",
  "agentmesh-proto",
+ "hex",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

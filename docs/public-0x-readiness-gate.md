@@ -18,6 +18,7 @@ A readiness packet must show all of the following:
 - Deterministic parser output snapshot: compact JSON from `agentmesh-markdown-request-validator`.
 - Adapter parity evidence: compact JSON from `agentmesh-non-multica-request-adapter` showing `agentmesh-request.v0`, retained source document references, and matching request title.
 - Readiness gate compact output: compact JSON from `agentmesh-public-0x-readiness` with `valid: true` and zero issues.
+- Rollback replay bundle: compact JSON from `agentmesh-public-0x-rollback-replay` with `valid: true`, retained `manifest_hash`, deterministic `adapter_digest_hash`, `replay_transcript_hash`, `request_hash`, rollback commands, and at least 30-day `evidence_retention`.
 - Rollback verification notes: previous good artifact name, release-manifest SHA-256, rollback/revert command, and the exact post-rollback test command output.
 
 ## Operating steps
@@ -34,6 +35,16 @@ cargo run -p agentmesh-cli -- app run \
   --sidecar-dir .agentmesh/runs \
   --mode development \
   --dev-plugin "$(pwd)/target/debug/agentmesh-public-0x-readiness"
+cargo run -p agentmesh-cli -- app validate \
+  --manifest apps/public-0x-rollback-replay/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+cargo run -p agentmesh-cli -- app run \
+  --manifest apps/public-0x-rollback-replay/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/adapter-metadata-canonicalizer/testdata/public_0x_rollback_replay_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin "$(pwd)/target/debug/agentmesh-public-0x-rollback-replay"
 ```
 
 Before replacing the fixture input with live evidence, preserve the markdown-validator and non-Multica adapter compact outputs exactly as generated. If any assertion fails, do not make a public readiness claim; repair the missing evidence or document the rollback blocker first.
