@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter-evidence-envelope-input.v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "phase", "adapter", "capability", "result"],
+  "properties": {
+    "schema_version": { "const": "adapter-evidence-envelope-input.v0" },
+    "request_id": { "type": "string", "minLength": 1 },
+    "phase": { "enum": ["validation", "execution"] },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string" },
+        "capabilities": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "schema_version", "operation"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "schema_version": { "type": "string", "minLength": 1 },
+        "operation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class"],
+      "properties": {
+        "class": {
+          "enum": [
+            "success",
+            "malformed_input",
+            "adapter_parity_mismatch",
+            "adapter_error",
+            "execution_error"
+          ]
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "transcript": { "type": "array", "items": true }
+  },
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "field": { "type": "string" },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

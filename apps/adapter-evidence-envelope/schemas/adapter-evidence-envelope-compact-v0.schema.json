@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter-evidence-envelope-compact.v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "app_version",
+    "valid",
+    "request_id",
+    "phase",
+    "capability_hash",
+    "adapter",
+    "result_class",
+    "deterministic_diagnostics",
+    "replay_transcript_digest",
+    "serialization",
+    "retention"
+  ],
+  "properties": {
+    "schema_version": { "const": "adapter-evidence-envelope-compact.v0" },
+    "app_version": { "const": "adapter-evidence-envelope.v0" },
+    "valid": { "type": "boolean" },
+    "request_id": { "type": ["string", "null"] },
+    "phase": { "type": ["string", "null"], "enum": ["validation", "execution", null] },
+    "capability_hash": { "$ref": "#/$defs/sha256_digest" },
+    "adapter": {
+      "type": "object",
+      "required": ["id", "version", "capabilities"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "version": { "type": ["string", "null"] },
+        "capabilities": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "result_class": {
+      "enum": [
+        "success",
+        "malformed_input",
+        "adapter_parity_mismatch",
+        "adapter_error",
+        "execution_error"
+      ]
+    },
+    "deterministic_diagnostics": {
+      "type": "object",
+      "required": ["ordering", "items"],
+      "properties": {
+        "ordering": { "const": ["code", "field", "severity", "message"] },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+      }
+    },
+    "replay_transcript_digest": { "$ref": "#/$defs/transcript_digest" },
+    "serialization": { "type": "object" },
+    "retention": { "type": "object" }
+  },
+  "$defs": {
+    "sha256_digest": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "transcript_digest": {
+      "type": "object",
+      "required": ["algorithm", "source", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "source": { "const": "canonical JSON transcript array" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "field", "severity", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "field": { "type": ["string", "null"] },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

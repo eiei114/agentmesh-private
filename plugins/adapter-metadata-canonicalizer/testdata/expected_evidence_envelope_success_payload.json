@@ -1,0 +1,44 @@
+{
+  "adapter": {
+    "capabilities": [
+      "request_parse",
+      "evidence_digest"
+    ],
+    "id": "markdown-request-validator",
+    "version": "markdown-request-validator.v0"
+  },
+  "app_version": "adapter-evidence-envelope.v0",
+  "capability_hash": {
+    "algorithm": "sha256",
+    "value": "7de09c8387e8b89467e1017c4291330af386ccde2007f21a8bb3789137b73756"
+  },
+  "deterministic_diagnostics": {
+    "items": [],
+    "ordering": [
+      "code",
+      "field",
+      "severity",
+      "message"
+    ]
+  },
+  "phase": "validation",
+  "replay_transcript_digest": {
+    "algorithm": "sha256",
+    "source": "canonical JSON transcript array",
+    "value": "35bdaaf126baf55b1b6907036229c292e27a7d6cc1b1e4dc3854763c5733a4f8"
+  },
+  "request_id": "DOT-1279",
+  "result_class": "success",
+  "retention": {
+    "class": "owner_local",
+    "path_policy": "agentmesh app run writes host sidecars under --sidecar-dir/YYYY-MM-DD/<run-id>/full.json; this compact payload retains only transcript digests, not raw transcripts"
+  },
+  "schema_version": "adapter-evidence-envelope-compact.v0",
+  "serialization": {
+    "array_order": "contract-defined; diagnostics sorted by code/field/severity/message; adapter capabilities preserve supplied order",
+    "format": "json",
+    "null_policy": "missing optional scalar fields serialize as null; malformed inputs retain a deterministic envelope",
+    "object_key_order": "lexicographic"
+  },
+  "valid": true
+}

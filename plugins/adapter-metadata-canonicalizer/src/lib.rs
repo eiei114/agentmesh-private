@@ -19,6 +19,19 @@ pub const PUBLIC_0X_READINESS_VERSION: &str = "public-0x-readiness.v0";
 const READINESS_INPUT_SCHEMA_VERSION: &str = "public-0x-readiness-input.v0";
 const READINESS_OUTPUT_SCHEMA_VERSION: &str = "public-0x-readiness-compact.v0";
 
+/// Plugin/schema version exposed by the adapter evidence envelope binary.
+pub const ADAPTER_EVIDENCE_ENVELOPE_VERSION: &str = "adapter-evidence-envelope.v0";
+const EVIDENCE_ENVELOPE_INPUT_SCHEMA_VERSION: &str = "adapter-evidence-envelope-input.v0";
+const EVIDENCE_ENVELOPE_OUTPUT_SCHEMA_VERSION: &str = "adapter-evidence-envelope-compact.v0";
+const EVIDENCE_ENVELOPE_ALLOWED_PHASES: &[&str] = &["validation", "execution"];
+const EVIDENCE_ENVELOPE_ALLOWED_RESULT_CLASSES: &[&str] = &[
+    "success",
+    "malformed_input",
+    "adapter_parity_mismatch",
+    "adapter_error",
+    "execution_error",
+];
+
 const STABLE_FIELDS: &[&str] = &[
     "title",
     "request_kind",
@@ -398,6 +411,487 @@ pub fn evaluate_public_0x_readiness_input(value: &Value) -> Value {
     readiness_compact(issues.is_empty(), assertions, issues)
 }
 
+/// Build a deterministic adapter evidence envelope for validation/execution evidence.
+///
+/// The envelope intentionally normalizes adapter identity, capability facts,
+/// result class, diagnostics, and replay transcript digest into one stable shape
+/// so downstream adapters can compare parity without adapter-specific keys.
+pub fn build_adapter_evidence_envelope_input(value: &Value) -> Value {
+    let mut diagnostics = Vec::new();
+    let Some(object) = value.as_object() else {
+        push_diag(
+            &mut diagnostics,
+            "input_invalid",
+            "input must be a JSON object",
+            "error",
+            Some("/"),
+        );
+        return evidence_envelope_compact(None, None, None, None, Vec::new(), diagnostics, None);
+    };
+
+    if object.get("schema_version").and_then(Value::as_str)
+        != Some(EVIDENCE_ENVELOPE_INPUT_SCHEMA_VERSION)
+    {
+        push_diag(
+            &mut diagnostics,
+            "unsupported_schema_version",
+            format!("schema_version must be {EVIDENCE_ENVELOPE_INPUT_SCHEMA_VERSION}"),
+            "error",
+            Some("/schema_version"),
+        );
+    }
+
+    let request_id = required_string(object, "request_id", &mut diagnostics);
+    let phase = required_string(object, "phase", &mut diagnostics).filter(|phase| {
+        if EVIDENCE_ENVELOPE_ALLOWED_PHASES.contains(&phase.as_str()) {
+            true
+        } else {
+            push_diag(
+                &mut diagnostics,
+                "phase_unsupported",
+                "phase must be validation or execution",
+                "error",
+                Some("/phase"),
+            );
+            false
+        }
+    });
+
+    let adapter_object = object.get("adapter").and_then(Value::as_object);
+    if adapter_object.is_none() {
+        push_diag(
+            &mut diagnostics,
+            "adapter_missing",
+            "adapter object is required",
+            "error",
+            Some("/adapter"),
+        );
+    }
+    let adapter_id = adapter_object
+        .and_then(|adapter| required_string_at(adapter, "id", "/adapter/id", &mut diagnostics));
+    let adapter_version = adapter_object
+        .and_then(|adapter| adapter.get("version"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let adapter_capabilities = adapter_object
+        .and_then(|adapter| adapter.get("capabilities"))
+        .map_or_else(Vec::new, |value| {
+            string_array(value, "/adapter/capabilities", &mut diagnostics)
+        });
+
+    let capability_object = object.get("capability").and_then(Value::as_object);
+    if capability_object.is_none() {
+        push_diag(
+            &mut diagnostics,
+            "capability_missing",
+            "capability object is required",
+            "error",
+            Some("/capability"),
+        );
+    }
+    let capability_name = capability_object.and_then(|capability| {
+        required_string_at(capability, "name", "/capability/name", &mut diagnostics)
+    });
+    let capability_schema_version = capability_object.and_then(|capability| {
+        required_string_at(
+            capability,
+            "schema_version",
+            "/capability/schema_version",
+            &mut diagnostics,
+        )
+    });
+    let capability_operation = capability_object.and_then(|capability| {
+        required_string_at(
+            capability,
+            "operation",
+            "/capability/operation",
+            &mut diagnostics,
+        )
+    });
+
+    let result_class = object
+        .get("result")
+        .and_then(Value::as_object)
+        .and_then(|result| required_string_at(result, "class", "/result/class", &mut diagnostics))
+        .filter(|class| {
+            if EVIDENCE_ENVELOPE_ALLOWED_RESULT_CLASSES.contains(&class.as_str()) {
+                true
+            } else {
+                push_diag(
+                    &mut diagnostics,
+                    "result_class_unsupported",
+                    "result.class must be one of success, malformed_input, adapter_parity_mismatch, adapter_error, execution_error",
+                    "error",
+                    Some("/result/class"),
+                );
+                false
+            }
+        });
+
+    if !object.contains_key("result") {
+        push_diag(
+            &mut diagnostics,
+            "result_missing",
+            "result object is required",
+            "error",
+            Some("/result"),
+        );
+    }
+
+    append_input_diagnostics(object.get("diagnostics"), &mut diagnostics);
+    let transcript = match object.get("transcript") {
+        Some(value @ Value::Array(_)) => Some(value.clone()),
+        Some(_) => {
+            push_diag(
+                &mut diagnostics,
+                "transcript_invalid",
+                "transcript must be an array when provided",
+                "error",
+                Some("/transcript"),
+            );
+            None
+        }
+        None => Some(json!([])),
+    };
+
+    diagnostics.sort_by_key(diagnostic_sort_key);
+
+    let capability = json!({
+        "adapter_capabilities": adapter_capabilities,
+        "name": capability_name,
+        "operation": capability_operation,
+        "schema_version": capability_schema_version,
+    });
+    let adapter = json!({
+        "id": adapter_id,
+        "version": adapter_version,
+        "capabilities": capability["adapter_capabilities"].clone(),
+    });
+
+    evidence_envelope_compact(
+        request_id,
+        phase,
+        Some(adapter),
+        result_class,
+        diagnostics,
+        Vec::new(),
+        transcript.map(|transcript| (capability, transcript)),
+    )
+}
+
+fn evidence_envelope_compact(
+    request_id: Option<String>,
+    phase: Option<String>,
+    adapter: Option<Value>,
+    result_class: Option<String>,
+    mut diagnostics: Vec<Value>,
+    additional_diagnostics: Vec<Value>,
+    capability_and_transcript: Option<(Value, Value)>,
+) -> Value {
+    diagnostics.extend(additional_diagnostics);
+    diagnostics.sort_by_key(diagnostic_sort_key);
+    let result_class = if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.get("severity").and_then(Value::as_str) == Some("error"))
+    {
+        result_class.unwrap_or_else(|| "malformed_input".to_string())
+    } else {
+        result_class.unwrap_or_else(|| "success".to_string())
+    };
+    let (capability_hash, transcript_digest) = capability_and_transcript.map_or_else(
+        || (digest_value(&json!({})), digest_value(&json!([]))),
+        |(capability, transcript)| (digest_value(&capability), digest_value(&transcript)),
+    );
+    json!({
+        "schema_version": EVIDENCE_ENVELOPE_OUTPUT_SCHEMA_VERSION,
+        "app_version": ADAPTER_EVIDENCE_ENVELOPE_VERSION,
+        "valid": diagnostics.is_empty() && result_class == "success",
+        "request_id": request_id,
+        "phase": phase,
+        "capability_hash": {
+            "algorithm": "sha256",
+            "value": capability_hash,
+        },
+        "adapter": adapter.unwrap_or_else(|| json!({
+            "id": Value::Null,
+            "version": Value::Null,
+            "capabilities": [],
+        })),
+        "result_class": result_class,
+        "deterministic_diagnostics": {
+            "ordering": ["code", "field", "severity", "message"],
+            "items": diagnostics,
+        },
+        "replay_transcript_digest": {
+            "algorithm": "sha256",
+            "source": "canonical JSON transcript array",
+            "value": transcript_digest,
+        },
+        "serialization": {
+            "format": "json",
+            "object_key_order": "lexicographic",
+            "array_order": "contract-defined; diagnostics sorted by code/field/severity/message; adapter capabilities preserve supplied order",
+            "null_policy": "missing optional scalar fields serialize as null; malformed inputs retain a deterministic envelope"
+        },
+        "retention": {
+            "class": "owner_local",
+            "path_policy": "agentmesh app run writes host sidecars under --sidecar-dir/YYYY-MM-DD/<run-id>/full.json; this compact payload retains only transcript digests, not raw transcripts",
+        },
+    })
+}
+
+fn required_string(
+    object: &Map<String, Value>,
+    field: &str,
+    diagnostics: &mut Vec<Value>,
+) -> Option<String> {
+    required_string_at(object, field, &format!("/{field}"), diagnostics)
+}
+
+fn required_string_at(
+    object: &Map<String, Value>,
+    field: &str,
+    pointer: &str,
+    diagnostics: &mut Vec<Value>,
+) -> Option<String> {
+    match object.get(field).and_then(Value::as_str) {
+        Some(value) if !value.trim().is_empty() => Some(value.to_string()),
+        _ => {
+            push_diag(
+                diagnostics,
+                format!("{}_missing", field.replace('-', "_")),
+                format!("{pointer} must be a non-empty string"),
+                "error",
+                Some(pointer),
+            );
+            None
+        }
+    }
+}
+
+fn string_array(value: &Value, pointer: &str, diagnostics: &mut Vec<Value>) -> Vec<String> {
+    let Some(items) = value.as_array() else {
+        push_diag(
+            diagnostics,
+            "string_array_invalid",
+            format!("{pointer} must be an array of strings"),
+            "error",
+            Some(pointer),
+        );
+        return Vec::new();
+    };
+    let mut strings = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        if let Some(value) = item.as_str() {
+            strings.push(value.to_string());
+        } else {
+            push_diag(
+                diagnostics,
+                "string_array_item_invalid",
+                format!("{pointer}/{index} must be a string"),
+                "error",
+                Some(&format!("{pointer}/{index}")),
+            );
+        }
+    }
+    strings
+}
+
+fn append_input_diagnostics(value: Option<&Value>, diagnostics: &mut Vec<Value>) {
+    let Some(value) = value else {
+        return;
+    };
+    let Some(items) = value.as_array() else {
+        push_diag(
+            diagnostics,
+            "diagnostics_invalid",
+            "diagnostics must be an array when provided",
+            "error",
+            Some("/diagnostics"),
+        );
+        return;
+    };
+    for (index, item) in items.iter().enumerate() {
+        let Some(object) = item.as_object() else {
+            push_diag(
+                diagnostics,
+                "diagnostic_invalid",
+                format!("/diagnostics/{index} must be an object"),
+                "error",
+                Some(&format!("/diagnostics/{index}")),
+            );
+            continue;
+        };
+        let code = object
+            .get("code")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("diagnostic_code_missing");
+        let message = object
+            .get("message")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("diagnostic message missing");
+        let severity = object
+            .get("severity")
+            .and_then(Value::as_str)
+            .filter(|value| ["error", "warning", "info"].contains(value))
+            .unwrap_or("error");
+        let field = object.get("field").and_then(Value::as_str);
+        push_diag(diagnostics, code, message, severity, field);
+    }
+}
+
+fn push_diag(
+    diagnostics: &mut Vec<Value>,
+    code: impl Into<String>,
+    message: impl Into<String>,
+    severity: &str,
+    field: Option<&str>,
+) {
+    diagnostics.push(json!({
+        "code": code.into(),
+        "field": field,
+        "severity": severity,
+        "message": message.into(),
+    }));
+}
+
+fn diagnostic_sort_key(value: &Value) -> (String, String, String, String) {
+    (
+        value
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        value
+            .get("field")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        value
+            .get("severity")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        value
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    )
+}
+
+fn digest_value(value: &Value) -> String {
+    let bytes = serde_json::to_vec(value).expect("canonical digest input serializes");
+    sha256_hex(&bytes)
+}
+
+fn sha256_hex(input: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+
+    let mut hash = [
+        0x6a09e667u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
+        0x5be0cd19,
+    ];
+    let bit_len = (input.len() as u64) * 8;
+    let mut message = input.to_vec();
+    message.push(0x80);
+    while (message.len() + 8) % 64 != 0 {
+        message.push(0);
+    }
+    message.extend_from_slice(&bit_len.to_be_bytes());
+
+    for chunk in message.chunks_exact(64) {
+        let mut words = [0u32; 64];
+        for (index, word) in words.iter_mut().take(16).enumerate() {
+            let start = index * 4;
+            *word = u32::from_be_bytes([
+                chunk[start],
+                chunk[start + 1],
+                chunk[start + 2],
+                chunk[start + 3],
+            ]);
+        }
+        for index in 16..64 {
+            words[index] = small_sigma1(words[index - 2])
+                .wrapping_add(words[index - 7])
+                .wrapping_add(small_sigma0(words[index - 15]))
+                .wrapping_add(words[index - 16]);
+        }
+
+        let mut a = hash[0];
+        let mut b = hash[1];
+        let mut c = hash[2];
+        let mut d = hash[3];
+        let mut e = hash[4];
+        let mut f = hash[5];
+        let mut g = hash[6];
+        let mut h = hash[7];
+
+        for index in 0..64 {
+            let t1 = h
+                .wrapping_add(big_sigma1(e))
+                .wrapping_add((e & f) ^ ((!e) & g))
+                .wrapping_add(K[index])
+                .wrapping_add(words[index]);
+            let t2 = big_sigma0(a).wrapping_add((a & b) ^ (a & c) ^ (b & c));
+            h = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(t1);
+            d = c;
+            c = b;
+            b = a;
+            a = t1.wrapping_add(t2);
+        }
+
+        for (slot, value) in hash.iter_mut().zip([a, b, c, d, e, f, g, h]) {
+            *slot = slot.wrapping_add(value);
+        }
+    }
+
+    let mut out = String::with_capacity(64);
+    for word in hash {
+        use std::fmt::Write as _;
+        write!(&mut out, "{word:08x}").expect("writing to string cannot fail");
+    }
+    out
+}
+
+fn big_sigma0(value: u32) -> u32 {
+    value.rotate_right(2) ^ value.rotate_right(13) ^ value.rotate_right(22)
+}
+
+fn big_sigma1(value: u32) -> u32 {
+    value.rotate_right(6) ^ value.rotate_right(11) ^ value.rotate_right(25)
+}
+
+fn small_sigma0(value: u32) -> u32 {
+    value.rotate_right(7) ^ value.rotate_right(18) ^ (value >> 3)
+}
+
+fn small_sigma1(value: u32) -> u32 {
+    value.rotate_right(17) ^ value.rotate_right(19) ^ (value >> 10)
+}
+
 fn bool_at(parent: Option<&Value>, field: &str) -> bool {
     parent
         .and_then(|value| value.get(field))
@@ -544,5 +1038,62 @@ mod tests {
         )
         .unwrap();
         assert_eq!(evaluate_public_0x_readiness_input(&input), expected);
+    }
+
+    #[test]
+    fn adapter_evidence_envelope_fixtures_are_deterministic() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        for (input_name, expected_name) in [
+            (
+                "evidence_envelope_success_input.json",
+                "expected_evidence_envelope_success_payload.json",
+            ),
+            (
+                "evidence_envelope_malformed_input.json",
+                "expected_evidence_envelope_malformed_payload.json",
+            ),
+            (
+                "evidence_envelope_parity_mismatch_input.json",
+                "expected_evidence_envelope_parity_mismatch_payload.json",
+            ),
+        ] {
+            let input: Value =
+                serde_json::from_slice(&std::fs::read(root.join(input_name)).unwrap()).unwrap();
+            let expected: Value =
+                serde_json::from_slice(&std::fs::read(root.join(expected_name)).unwrap()).unwrap();
+            assert_eq!(
+                build_adapter_evidence_envelope_input(&input),
+                expected,
+                "{input_name} should match {expected_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn adapter_evidence_envelope_covers_validation_and_execution_phases() {
+        let validation = build_adapter_evidence_envelope_input(&json!({
+            "schema_version": EVIDENCE_ENVELOPE_INPUT_SCHEMA_VERSION,
+            "request_id": "DOT-1279",
+            "phase": "validation",
+            "adapter": {"id": "a", "capabilities": []},
+            "capability": {"name": "cap", "schema_version": "cap.v0", "operation": "validate"},
+            "result": {"class": "success"},
+            "transcript": []
+        }));
+        let execution = build_adapter_evidence_envelope_input(&json!({
+            "schema_version": EVIDENCE_ENVELOPE_INPUT_SCHEMA_VERSION,
+            "request_id": "DOT-1279",
+            "phase": "execution",
+            "adapter": {"id": "a", "capabilities": []},
+            "capability": {"name": "cap", "schema_version": "cap.v0", "operation": "execute"},
+            "result": {"class": "success"},
+            "transcript": []
+        }));
+
+        assert_eq!(validation["valid"], true);
+        assert_eq!(execution["valid"], true);
+        assert_eq!(validation["phase"], "validation");
+        assert_eq!(execution["phase"], "execution");
+        assert_ne!(validation["capability_hash"], execution["capability_hash"]);
     }
 }
