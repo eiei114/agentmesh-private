@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/public-0x-rollback-replay-compact-v0.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "app_version", "request_schema_version", "valid", "rollback_bundle", "issue_count", "issues", "adapter_error"],
+  "properties": {
+    "schema_version": { "const": "public-0x-rollback-replay-compact.v0" },
+    "app_version": { "const": "public-0x-rollback-replay.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "valid": { "type": "boolean" },
+    "rollback_bundle": {
+      "type": ["object", "null"],
+      "properties": {
+        "manifest_hash": { "type": ["string", "null"] },
+        "adapter_digest_hash": { "type": "string" },
+        "replay_transcript_hash": { "type": "string" },
+        "request_hash": { "type": "string" },
+        "protocol_replay": { "type": "array" },
+        "rollback": { "type": "object" },
+        "evidence_retention": { "type": "object" }
+      }
+    },
+    "issue_count": { "type": "integer", "minimum": 0 },
+    "issues": { "type": "array" },
+    "adapter_error": { "type": ["object", "null"] }
+  }
+}

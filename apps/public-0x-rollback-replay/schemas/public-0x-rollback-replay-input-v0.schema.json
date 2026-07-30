@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/public-0x-rollback-replay-input-v0.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_parse", "manifest_hash", "adapter_digest", "protocol_replay", "rollback", "evidence_retention"],
+  "properties": {
+    "schema_version": { "const": "public-0x-rollback-replay-input.v0" },
+    "request_parse": {
+      "type": "object",
+      "required": ["request_schema_version", "valid", "canonical"],
+      "properties": {
+        "request_schema_version": { "const": "agentmesh-request.v0" },
+        "valid": { "const": true },
+        "canonical": { "type": "object" }
+      }
+    },
+    "manifest_hash": { "type": "string", "minLength": 1 },
+    "adapter_digest": {
+      "type": "object",
+      "required": ["request_schema_version", "sections"],
+      "properties": {
+        "request_schema_version": { "const": "agentmesh-request.v0" },
+        "sections": { "type": "array", "minItems": 1 }
+      }
+    },
+    "protocol_replay": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["step", "artifact"],
+        "properties": {
+          "step": { "type": "string", "minLength": 1 },
+          "status": { "type": "string" },
+          "artifact": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["previous_good_artifact", "rollback_command", "verification_command"],
+      "properties": {
+        "previous_good_artifact": { "type": "string", "minLength": 1 },
+        "rollback_command": { "type": "string", "minLength": 1 },
+        "verification_command": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence_retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["location", "retention_days"],
+      "properties": {
+        "location": { "type": "string", "minLength": 1 },
+        "retention_days": { "type": "integer", "minimum": 30 }
+      }
+    }
+  }
+}

@@ -5,8 +5,10 @@
 //! adapter-specific or drifting fields separately for downstream adapter-owned
 //! handling.
 
+use agentmesh_markdown_request_validator::adapter_error_contract::normalize_adapter_errors;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 
 /// Plugin/schema version exposed in compact output.
 pub const APP_VERSION: &str = "adapter-metadata-canonicalizer.v0";
@@ -31,6 +33,11 @@ const EVIDENCE_ENVELOPE_ALLOWED_RESULT_CLASSES: &[&str] = &[
     "adapter_error",
     "execution_error",
 ];
+
+/// Plugin/schema version exposed by the deterministic rollback replay gate binary.
+pub const PUBLIC_0X_ROLLBACK_REPLAY_VERSION: &str = "public-0x-rollback-replay.v0";
+const ROLLBACK_REPLAY_INPUT_SCHEMA_VERSION: &str = "public-0x-rollback-replay-input.v0";
+const ROLLBACK_REPLAY_OUTPUT_SCHEMA_VERSION: &str = "public-0x-rollback-replay-compact.v0";
 
 const STABLE_FIELDS: &[&str] = &[
     "title",
@@ -783,7 +790,8 @@ fn diagnostic_sort_key(value: &Value) -> (String, String, String, String) {
 }
 
 fn digest_value(value: &Value) -> String {
-    let bytes = serde_json::to_vec(value).expect("canonical digest input serializes");
+    let bytes =
+        serde_json::to_vec(&canonical_json(value)).expect("canonical digest input serializes");
     sha256_hex(&bytes)
 }
 
@@ -909,6 +917,240 @@ fn readiness_compact(valid: bool, assertions: Vec<&str>, issues: Vec<Value>) -> 
         "issue_count": issues.len(),
         "issues": issues,
     })
+}
+
+/// Build a deterministic rollback replay evidence bundle from a shared parser payload.
+///
+/// The App intentionally accepts only `agentmesh request parse` compact output for
+/// `agentmesh-request.v0` plus already-retained adapter/protocol artifacts. It does
+/// not reparse Markdown or call Multica, so the same input can be replayed by any
+/// adapter runner and compared by hash.
+pub fn evaluate_public_0x_rollback_replay_input(value: &Value) -> Value {
+    let mut issues = Vec::new();
+    let Some(object) = value.as_object() else {
+        return rollback_replay_compact(
+            None,
+            vec![issue("input_invalid", "input must be a JSON object")],
+        );
+    };
+
+    if object.get("schema_version").and_then(Value::as_str)
+        != Some(ROLLBACK_REPLAY_INPUT_SCHEMA_VERSION)
+    {
+        issues.push(issue(
+            "unsupported_schema_version",
+            format!("schema_version must be {ROLLBACK_REPLAY_INPUT_SCHEMA_VERSION}"),
+        ));
+    }
+
+    let request_parse = object.get("request_parse").unwrap_or(&Value::Null);
+    if request_parse
+        .get("request_schema_version")
+        .and_then(Value::as_str)
+        != Some("agentmesh-request.v0")
+    {
+        issues.push(issue(
+            "request_schema_mismatch",
+            "request_parse.request_schema_version must be agentmesh-request.v0",
+        ));
+    }
+    if request_parse.get("valid").and_then(Value::as_bool) != Some(true) {
+        issues.push(issue(
+            "request_parse_invalid",
+            "request_parse must be a valid shared parser output",
+        ));
+    }
+    let canonical = request_parse.get("canonical").unwrap_or(&Value::Null);
+    if canonical.get("request_kind").and_then(Value::as_str) != Some("app") {
+        issues.push(issue(
+            "request_kind_unsupported",
+            "rollback replay accepts only request.v0 app payloads",
+        ));
+    }
+
+    let manifest_hash = required_rollback_string(object, "manifest_hash", &mut issues);
+    let adapter_digest = object.get("adapter_digest").unwrap_or(&Value::Null);
+    if adapter_digest
+        .get("request_schema_version")
+        .and_then(Value::as_str)
+        != Some("agentmesh-request.v0")
+    {
+        issues.push(issue(
+            "adapter_digest_schema_mismatch",
+            "adapter_digest must cover agentmesh-request.v0",
+        ));
+    }
+    match adapter_digest.get("sections").and_then(Value::as_array) {
+        Some(sections) if !sections.is_empty() => {}
+        _ => issues.push(issue(
+            "adapter_digest_missing",
+            "adapter_digest.sections must be a non-empty array for parity replay",
+        )),
+    }
+
+    let protocol_replay = object.get("protocol_replay").unwrap_or(&Value::Null);
+    match protocol_replay.as_array() {
+        Some(steps) if !steps.is_empty() => {
+            for (index, step) in steps.iter().enumerate() {
+                if step
+                    .get("step")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .is_empty()
+                {
+                    issues.push(issue(
+                        "protocol_replay_step_missing",
+                        format!("protocol_replay[{index}].step must be provided"),
+                    ));
+                }
+                if step
+                    .get("artifact")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .is_empty()
+                {
+                    issues.push(issue(
+                        "protocol_replay_artifact_missing",
+                        format!("protocol_replay[{index}].artifact must be provided"),
+                    ));
+                }
+            }
+        }
+        _ => issues.push(issue(
+            "protocol_replay_missing",
+            "protocol_replay must contain at least one retained replay artifact",
+        )),
+    }
+
+    let rollback = object.get("rollback").unwrap_or(&Value::Null);
+    for field in [
+        "previous_good_artifact",
+        "rollback_command",
+        "verification_command",
+    ] {
+        if rollback
+            .get(field)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+        {
+            issues.push(issue(
+                "rollback_field_missing",
+                format!("rollback.{field} must be provided"),
+            ));
+        }
+    }
+
+    let retention = object.get("evidence_retention").unwrap_or(&Value::Null);
+    if retention
+        .get("location")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .is_empty()
+    {
+        issues.push(issue(
+            "evidence_retention_location_missing",
+            "evidence_retention.location must be provided",
+        ));
+    }
+    if retention
+        .get("retention_days")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        < 30
+    {
+        issues.push(issue(
+            "evidence_retention_window_too_short",
+            "evidence_retention.retention_days must be at least 30",
+        ));
+    }
+
+    if !issues.is_empty() {
+        return rollback_replay_compact(None, issues);
+    }
+
+    let bundle = json!({
+        "manifest_hash": manifest_hash,
+        "adapter_digest_hash": sha256_json(adapter_digest),
+        "replay_transcript_hash": sha256_json(protocol_replay),
+        "request_hash": sha256_json(canonical),
+        "protocol_replay": protocol_replay,
+        "rollback": rollback,
+        "evidence_retention": retention,
+    });
+    rollback_replay_compact(Some(bundle), Vec::new())
+}
+
+fn required_rollback_string(
+    object: &Map<String, Value>,
+    field: &str,
+    issues: &mut Vec<Value>,
+) -> Option<String> {
+    let value = object
+        .get(field)
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if value.is_empty() {
+        issues.push(issue(
+            "required_field_missing",
+            format!("{field} must be provided"),
+        ));
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn rollback_replay_compact(bundle: Option<Value>, issues: Vec<Value>) -> Value {
+    let valid = issues.is_empty();
+    let adapter_error = (!valid).then(|| {
+        normalize_adapter_errors(&json!({
+            "schema_version": "adapter-error-contract-input.v0",
+            "source_adapter": PUBLIC_0X_ROLLBACK_REPLAY_VERSION,
+            "adapter_failure": {
+                "kind": "contract",
+                "native_code": "rollback_replay_input_invalid",
+                "message": "rollback replay input failed deterministic contract validation",
+                "retryable": false
+            }
+        }))
+    });
+    json!({
+        "schema_version": ROLLBACK_REPLAY_OUTPUT_SCHEMA_VERSION,
+        "app_version": PUBLIC_0X_ROLLBACK_REPLAY_VERSION,
+        "request_schema_version": "agentmesh-request.v0",
+        "valid": valid,
+        "rollback_bundle": bundle,
+        "issue_count": issues.len(),
+        "issues": issues,
+        "adapter_error": adapter_error,
+    })
+}
+
+fn sha256_json(value: &Value) -> String {
+    let bytes = serde_json::to_vec(&canonical_json(value)).expect("canonical JSON serializes");
+    hex::encode(Sha256::digest(bytes))
+}
+
+fn canonical_json(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<_> = map.iter().collect();
+            entries.sort_by_key(|(key, _)| *key);
+            let mut sorted = Map::new();
+            for (key, value) in entries {
+                sorted.insert(key.clone(), canonical_json(value));
+            }
+            Value::Object(sorted)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonical_json).collect()),
+        _ => value.clone(),
+    }
 }
 
 #[cfg(test)]
@@ -1070,6 +1312,14 @@ mod tests {
     }
 
     #[test]
+    fn adapter_evidence_digest_uses_canonical_object_order() {
+        assert_eq!(
+            digest_value(&json!({"b": 1, "a": {"d": 2, "c": 3}})),
+            digest_value(&json!({"a": {"c": 3, "d": 2}, "b": 1}))
+        );
+    }
+
+    #[test]
     fn adapter_evidence_envelope_covers_validation_and_execution_phases() {
         let validation = build_adapter_evidence_envelope_input(&json!({
             "schema_version": EVIDENCE_ENVELOPE_INPUT_SCHEMA_VERSION,
@@ -1095,5 +1345,79 @@ mod tests {
         assert_eq!(validation["phase"], "validation");
         assert_eq!(execution["phase"], "execution");
         assert_ne!(validation["capability_hash"], execution["capability_hash"]);
+    }
+
+    #[test]
+    fn rollback_replay_fixture_is_stable_and_hashes_expected_artifacts() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        let input: Value = serde_json::from_slice(
+            &std::fs::read(root.join("public_0x_rollback_replay_input.json")).unwrap(),
+        )
+        .unwrap();
+        let output = evaluate_public_0x_rollback_replay_input(&input);
+
+        assert_eq!(output["valid"], true);
+        assert_eq!(output["issue_count"], 0);
+        assert_eq!(output["adapter_error"], Value::Null);
+        assert_eq!(
+            output["rollback_bundle"]["manifest_hash"],
+            "sha256:agentmesh-app-manifest-fixture"
+        );
+        assert_eq!(
+            output["rollback_bundle"]["adapter_digest_hash"],
+            "4e400b93bdf59876ee0eadf5df12ca3a830e7040484bf4db3087785500dd5259"
+        );
+        assert_eq!(
+            output["rollback_bundle"]["replay_transcript_hash"],
+            "705bb873f99257f8951ec72d2a0767811a8dd346fb42da7ca1d92bb6eb1a63eb"
+        );
+        assert_eq!(
+            output["rollback_bundle"]["request_hash"],
+            "f9ca45f75596bb88bc8d3dee0ded3b2cd3e94575838539aec2de9023a108e868"
+        );
+    }
+
+    #[test]
+    fn rollback_replay_rejects_empty_digest_sections_and_missing_step() {
+        let output = evaluate_public_0x_rollback_replay_input(&json!({
+            "schema_version": "public-0x-rollback-replay-input.v0",
+            "request_parse": {"request_schema_version": "agentmesh-request.v0", "valid": true, "canonical": {"request_kind": "app"}},
+            "manifest_hash": "sha256:manifest",
+            "adapter_digest": {"request_schema_version": "agentmesh-request.v0", "sections": []},
+            "protocol_replay": [{"artifact": "rollback.log"}],
+            "rollback": {
+                "previous_good_artifact": "agentmesh-v0.2.0-dev.1",
+                "rollback_command": "git revert <sha>",
+                "verification_command": "cargo test --workspace"
+            },
+            "evidence_retention": {"location": "durable-review", "retention_days": 30}
+        }));
+
+        assert_eq!(output["valid"], false);
+        assert_eq!(output["issues"][0]["code"], "adapter_digest_missing");
+        assert_eq!(output["issues"][1]["code"], "protocol_replay_step_missing");
+    }
+
+    #[test]
+    fn rollback_replay_rejects_non_request_v0_with_normalized_adapter_error() {
+        let output = evaluate_public_0x_rollback_replay_input(&json!({
+            "schema_version": "public-0x-rollback-replay-input.v0",
+            "request_parse": {"request_schema_version": "agentmesh-request.v1", "valid": true, "canonical": {"request_kind": "app"}},
+            "manifest_hash": "sha256:manifest",
+            "adapter_digest": {"request_schema_version": "agentmesh-request.v1"},
+            "protocol_replay": [],
+            "rollback": {},
+            "evidence_retention": {"retention_days": 7}
+        }));
+
+        assert_eq!(output["valid"], false);
+        assert_eq!(
+            output["adapter_error"]["schema_version"],
+            "adapter-error-contract-compact.v0"
+        );
+        assert_eq!(
+            output["adapter_error"]["errors"][0]["taxonomy_code"],
+            "request.field_required"
+        );
     }
 }

@@ -59,6 +59,7 @@ jobs:
           -p agentmesh-cli
           -p agentmesh-multica-selector-shadow
           -p agentmesh-markdown-request-validator
+          -p agentmesh-adapter-metadata-canonicalizer
           -p agentmesh-fixture-echo
 
       - name: package artifacts

@@ -8,6 +8,7 @@ Produces the layout consumed by `agentmesh toolchain install`:
     bin/agentmesh[.exe]
     bin/agentmesh-multica-selector-shadow[.exe]
     bin/agentmesh-markdown-request-validator[.exe]
+    bin/agentmesh-public-0x-rollback-replay[.exe]
     apps/<app>/...
     docs/agentmesh-app-v0.md
     README.bundle.md
@@ -103,7 +104,8 @@ def main() -> int:
     cli_name = logical_bin_name("agentmesh", args.target)
     multica_plugin_name = logical_bin_name("agentmesh-multica-selector-shadow", args.target)
     markdown_plugin_name = logical_bin_name("agentmesh-markdown-request-validator", args.target)
-    required = [cli_name, multica_plugin_name, markdown_plugin_name]
+    rollback_replay_plugin_name = logical_bin_name("agentmesh-public-0x-rollback-replay", args.target)
+    required = [cli_name, multica_plugin_name, markdown_plugin_name, rollback_replay_plugin_name]
     if args.include_echo:
         required.append(logical_bin_name("agentmesh-fixture-echo", args.target))
 
