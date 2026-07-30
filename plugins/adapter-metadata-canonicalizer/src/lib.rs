@@ -790,7 +790,8 @@ fn diagnostic_sort_key(value: &Value) -> (String, String, String, String) {
 }
 
 fn digest_value(value: &Value) -> String {
-    let bytes = serde_json::to_vec(value).expect("canonical digest input serializes");
+    let bytes =
+        serde_json::to_vec(&canonical_json(value)).expect("canonical digest input serializes");
     sha256_hex(&bytes)
 }
 
@@ -979,21 +980,30 @@ pub fn evaluate_public_0x_rollback_replay_input(value: &Value) -> Value {
             "adapter_digest must cover agentmesh-request.v0",
         ));
     }
-    if adapter_digest
-        .get("sections")
-        .and_then(Value::as_array)
-        .is_none()
-    {
-        issues.push(issue(
+    match adapter_digest.get("sections").and_then(Value::as_array) {
+        Some(sections) if !sections.is_empty() => {}
+        _ => issues.push(issue(
             "adapter_digest_missing",
-            "adapter_digest.sections must be present for parity replay",
-        ));
+            "adapter_digest.sections must be a non-empty array for parity replay",
+        )),
     }
 
     let protocol_replay = object.get("protocol_replay").unwrap_or(&Value::Null);
     match protocol_replay.as_array() {
         Some(steps) if !steps.is_empty() => {
             for (index, step) in steps.iter().enumerate() {
+                if step
+                    .get("step")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .trim()
+                    .is_empty()
+                {
+                    issues.push(issue(
+                        "protocol_replay_step_missing",
+                        format!("protocol_replay[{index}].step must be provided"),
+                    ));
+                }
                 if step
                     .get("artifact")
                     .and_then(Value::as_str)
@@ -1302,6 +1312,14 @@ mod tests {
     }
 
     #[test]
+    fn adapter_evidence_digest_uses_canonical_object_order() {
+        assert_eq!(
+            digest_value(&json!({"b": 1, "a": {"d": 2, "c": 3}})),
+            digest_value(&json!({"a": {"c": 3, "d": 2}, "b": 1}))
+        );
+    }
+
+    #[test]
     fn adapter_evidence_envelope_covers_validation_and_execution_phases() {
         let validation = build_adapter_evidence_envelope_input(&json!({
             "schema_version": EVIDENCE_ENVELOPE_INPUT_SCHEMA_VERSION,
@@ -1357,6 +1375,27 @@ mod tests {
             output["rollback_bundle"]["request_hash"],
             "f9ca45f75596bb88bc8d3dee0ded3b2cd3e94575838539aec2de9023a108e868"
         );
+    }
+
+    #[test]
+    fn rollback_replay_rejects_empty_digest_sections_and_missing_step() {
+        let output = evaluate_public_0x_rollback_replay_input(&json!({
+            "schema_version": "public-0x-rollback-replay-input.v0",
+            "request_parse": {"request_schema_version": "agentmesh-request.v0", "valid": true, "canonical": {"request_kind": "app"}},
+            "manifest_hash": "sha256:manifest",
+            "adapter_digest": {"request_schema_version": "agentmesh-request.v0", "sections": []},
+            "protocol_replay": [{"artifact": "rollback.log"}],
+            "rollback": {
+                "previous_good_artifact": "agentmesh-v0.2.0-dev.1",
+                "rollback_command": "git revert <sha>",
+                "verification_command": "cargo test --workspace"
+            },
+            "evidence_retention": {"location": "durable-review", "retention_days": 30}
+        }));
+
+        assert_eq!(output["valid"], false);
+        assert_eq!(output["issues"][0]["code"], "adapter_digest_missing");
+        assert_eq!(output["issues"][1]["code"], "protocol_replay_step_missing");
     }
 
     #[test]
