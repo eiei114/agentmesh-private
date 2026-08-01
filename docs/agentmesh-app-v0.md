@@ -250,6 +250,28 @@ agentmesh app run \
 
 See `docs/public-0x-readiness-gate.md` for the checklist, required artifacts, rollback proof, and retention rules. The gate must not be used to tag, publish, upload assets, mutate Multica authority, or perform production cutover.
 
+## Public 0.x readiness report App
+
+`apps/public-0x-readiness-report/agentmesh-app.toml` declares a post-dogfood readiness reporting App. It consumes retained `agentmesh-adapter-evidence-digest.v0` source request evidence artifacts plus retained `adapter-evidence-envelope-compact.v0` adapter envelopes. Its compact output is `public-0x-readiness-report-compact.v0`: a deterministic normalized digest with fixed-order `coverage`, `freshness`, and `adapter_consistency` checks, explicit pass/fail reasons, normalized request source references, and sorted artifact summaries.
+
+Use it after dogfood or repair cycles have generated local evidence packets. The caller supplies `freshness.fresh_after`, coverage requirements, source evidence artifacts, and adapter envelope artifacts; the App does not read live tracker state or require Multica credentials.
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-adapter-metadata-canonicalizer
+agentmesh app validate \
+  --manifest apps/public-0x-readiness-report/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/public-0x-readiness-report/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/adapter-metadata-canonicalizer/testdata/public_0x_readiness_report_success_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-public-0x-readiness-report
+```
+
+See `docs/public-0x-readiness-report.md` for the full input/output contract and local/non-Multica workflow. The report must not be used to tag, publish, upload assets, mutate Multica authority, or perform production cutover.
+
 ## Public 0.x rollback replay App
 
 `apps/public-0x-rollback-replay/agentmesh-app.toml` declares a deterministic rollback evidence App for public 0.x readiness rehearsals. It accepts only retained output from the shared parser where `request_schema_version` is `agentmesh-request.v0` and `valid` is true; malformed input fails fast with the normalized adapter error contract embedded under `adapter_error`.
@@ -337,7 +359,7 @@ python scripts/package_toolchain_bundle.py \
 ```
 
 Targets: `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`.
-Bundle always includes `agentmesh` + `agentmesh-multica-selector-shadow` + `agentmesh-markdown-request-validator` + apps/docs + `release-manifest.json`.
+Bundle always includes `agentmesh` + `agentmesh-multica-selector-shadow` + `agentmesh-markdown-request-validator` + `agentmesh-public-0x-readiness-report` + `agentmesh-public-0x-rollback-replay` + apps/docs + `release-manifest.json`.
 
 ## Install (atomic / immutable)
 

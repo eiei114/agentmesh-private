@@ -1,0 +1,130 @@
+{
+  "app_version": "public-0x-readiness-report.v0",
+  "checks": [
+    {
+      "key": "coverage",
+      "reason_count": 3,
+      "reasons": [
+        {
+          "artifact_id": null,
+          "code": "required_envelope_missing",
+          "field": "non-multica-request-adapter:execution",
+          "message": "required adapter envelope missing for adapter=non-multica-request-adapter phase=execution",
+          "request_id": "DOT-1298"
+        },
+        {
+          "artifact_id": null,
+          "code": "required_evidence_field_missing",
+          "field": "source_design",
+          "message": "request evidence is missing required field source_design",
+          "request_id": "DOT-1298"
+        },
+        {
+          "artifact_id": null,
+          "code": "required_evidence_field_missing",
+          "field": "source_roadmap",
+          "message": "request evidence is missing required field source_roadmap",
+          "request_id": "DOT-1298"
+        }
+      ],
+      "status": "fail"
+    },
+    {
+      "key": "freshness",
+      "reason_count": 2,
+      "reasons": [
+        {
+          "artifact_id": "markdown-validation-envelope-stale.json",
+          "code": "adapter_envelope_stale",
+          "field": "captured_at",
+          "message": "adapter envelope captured_at is before fresh_after 2026-08-01T00:00:00Z",
+          "request_id": "DOT-1298"
+        },
+        {
+          "artifact_id": "markdown-request-digest-stale.json",
+          "code": "request_evidence_stale",
+          "field": "captured_at",
+          "message": "request evidence artifact captured_at is before fresh_after 2026-08-01T00:00:00Z",
+          "request_id": "DOT-1298"
+        }
+      ],
+      "status": "fail"
+    },
+    {
+      "key": "adapter_consistency",
+      "reason_count": 3,
+      "reasons": [
+        {
+          "artifact_id": "markdown-validation-envelope-stale.json",
+          "code": "adapter_envelope_invalid_result",
+          "field": "envelope.valid",
+          "message": "adapter envelope valid must be true",
+          "request_id": "DOT-1298"
+        },
+        {
+          "artifact_id": "markdown-validation-envelope-stale.json",
+          "code": "adapter_envelope_result_not_success",
+          "field": "envelope.result_class",
+          "message": "adapter envelope result_class must be success",
+          "request_id": "DOT-1298"
+        },
+        {
+          "artifact_id": null,
+          "code": "evidence_comparison_insufficient",
+          "field": null,
+          "message": "at least two request evidence artifacts are required for adapter comparison",
+          "request_id": "DOT-1298"
+        }
+      ],
+      "status": "fail"
+    }
+  ],
+  "fresh_after": "2026-08-01T00:00:00Z",
+  "generated_at": "2026-08-01T12:00:00Z",
+  "readiness_target": "public-0.x",
+  "requests": [
+    {
+      "adapter_envelopes": [
+        {
+          "adapter_id": "markdown-request-validator",
+          "artifact_id": "markdown-validation-envelope-stale.json",
+          "captured_at": "2026-07-30T08:32:00Z",
+          "phase": "validation",
+          "result_class": "adapter_error"
+        }
+      ],
+      "evidence_artifacts": [
+        {
+          "adapter_id": "markdown-request-validator",
+          "artifact_id": "markdown-request-digest-stale.json",
+          "captured_at": "2026-07-30T08:30:00Z"
+        }
+      ],
+      "request_id": "DOT-1298",
+      "request_kind": "app",
+      "source_references": {
+        "source_design": null,
+        "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-01-add-a-post-dogfood-public-0-x-readiness-report-app.md",
+        "source_roadmap": null
+      },
+      "title": "Add a post-dogfood public 0.x readiness report app"
+    }
+  ],
+  "schema_version": "public-0x-readiness-report-compact.v0",
+  "serialization": {
+    "array_order": "checks use contract order coverage/freshness/adapter_consistency; requests and artifact summaries sort by stable identifiers; reasons sort by code/request/artifact/field/message",
+    "format": "json",
+    "null_policy": "missing optional scalar fields serialize as null; failures remain deterministic blocking reasons",
+    "object_key_order": "lexicographic"
+  },
+  "summary": {
+    "adapter_consistency": "fail",
+    "adapter_envelope_count": 1,
+    "blocking_reason_count": 8,
+    "coverage": "fail",
+    "evidence_artifact_count": 1,
+    "freshness": "fail",
+    "request_count": 1
+  },
+  "valid": false
+}

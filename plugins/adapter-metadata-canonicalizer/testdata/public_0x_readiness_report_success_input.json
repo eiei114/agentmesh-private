@@ -1,0 +1,102 @@
+{
+  "schema_version": "public-0x-readiness-report-input.v0",
+  "generated_at": "2026-08-01T12:00:00Z",
+  "freshness": {
+    "fresh_after": "2026-08-01T00:00:00Z"
+  },
+  "coverage": {
+    "minimum_request_count": 1,
+    "required_request_kinds": ["app"],
+    "required_evidence_fields": ["title", "request_kind", "source_prd", "source_design", "source_roadmap"],
+    "required_envelopes": [
+      { "adapter_id": "markdown-request-validator", "phase": "validation" },
+      { "adapter_id": "non-multica-request-adapter", "phase": "execution" }
+    ]
+  },
+  "request_evidence": [
+    {
+      "artifact_id": "markdown-request-digest.json",
+      "request_id": "DOT-1298",
+      "adapter_id": "markdown-request-validator",
+      "captured_at": "2026-08-01T08:30:00Z",
+      "digest": {
+        "schema_version": "agentmesh-adapter-evidence-digest.v0",
+        "request_schema_version": "agentmesh-request.v0",
+        "sections": [
+          {
+            "key": "identity",
+            "fields": [
+              { "key": "title", "value": "Add a post-dogfood public 0.x readiness report app" },
+              { "key": "request_kind", "value": "app" }
+            ]
+          },
+          {
+            "key": "sources",
+            "fields": [
+              { "key": "source_prd", "value": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-01-add-a-post-dogfood-public-0-x-readiness-report-app.md" },
+              { "key": "source_design", "value": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md" },
+              { "key": "source_roadmap", "value": "4_Project/OSS/agentmesh-private/ROADMAP.md" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "artifact_id": "non-multica-request-digest.json",
+      "request_id": "DOT-1298",
+      "adapter_id": "non-multica-request-adapter",
+      "captured_at": "2026-08-01T08:31:00Z",
+      "digest": {
+        "schema_version": "agentmesh-adapter-evidence-digest.v0",
+        "request_schema_version": "agentmesh-request.v0",
+        "sections": [
+          {
+            "key": "identity",
+            "fields": [
+              { "key": "title", "value": "Add a post-dogfood public 0.x readiness report app" },
+              { "key": "request_kind", "value": "app" }
+            ]
+          },
+          {
+            "key": "sources",
+            "fields": [
+              { "key": "source_prd", "value": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-01-add-a-post-dogfood-public-0-x-readiness-report-app.md" },
+              { "key": "source_design", "value": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md" },
+              { "key": "source_roadmap", "value": "4_Project/OSS/agentmesh-private/ROADMAP.md" }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "adapter_envelopes": [
+    {
+      "artifact_id": "markdown-validation-envelope.json",
+      "request_id": "DOT-1298",
+      "captured_at": "2026-08-01T08:32:00Z",
+      "envelope": {
+        "schema_version": "adapter-evidence-envelope-compact.v0",
+        "valid": true,
+        "request_id": "DOT-1298",
+        "phase": "validation",
+        "adapter": { "id": "markdown-request-validator" },
+        "result_class": "success",
+        "deterministic_diagnostics": { "items": [] }
+      }
+    },
+    {
+      "artifact_id": "non-multica-execution-envelope.json",
+      "request_id": "DOT-1298",
+      "captured_at": "2026-08-01T08:33:00Z",
+      "envelope": {
+        "schema_version": "adapter-evidence-envelope-compact.v0",
+        "valid": true,
+        "request_id": "DOT-1298",
+        "phase": "execution",
+        "adapter": { "id": "non-multica-request-adapter" },
+        "result_class": "success",
+        "deterministic_diagnostics": { "items": [] }
+      }
+    }
+  ]
+}

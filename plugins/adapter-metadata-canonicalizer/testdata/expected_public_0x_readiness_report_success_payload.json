@@ -1,0 +1,107 @@
+{
+  "app_version": "public-0x-readiness-report.v0",
+  "checks": [
+    {
+      "key": "coverage",
+      "reason_count": 1,
+      "reasons": [
+        {
+          "artifact_id": null,
+          "code": "coverage_satisfied",
+          "field": null,
+          "message": "coverage satisfied for 1 request(s): 2 evidence artifact(s) and 2 adapter envelope(s)",
+          "request_id": null
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "key": "freshness",
+      "reason_count": 1,
+      "reasons": [
+        {
+          "artifact_id": null,
+          "code": "freshness_satisfied",
+          "field": null,
+          "message": "freshness satisfied for 4 artifact(s) at or after 2026-08-01T00:00:00Z",
+          "request_id": null
+        }
+      ],
+      "status": "pass"
+    },
+    {
+      "key": "adapter_consistency",
+      "reason_count": 1,
+      "reasons": [
+        {
+          "artifact_id": null,
+          "code": "adapter_consistency_satisfied",
+          "field": null,
+          "message": "adapter consistency satisfied for 1 request(s)",
+          "request_id": null
+        }
+      ],
+      "status": "pass"
+    }
+  ],
+  "fresh_after": "2026-08-01T00:00:00Z",
+  "generated_at": "2026-08-01T12:00:00Z",
+  "readiness_target": "public-0.x",
+  "requests": [
+    {
+      "adapter_envelopes": [
+        {
+          "adapter_id": "markdown-request-validator",
+          "artifact_id": "markdown-validation-envelope.json",
+          "captured_at": "2026-08-01T08:32:00Z",
+          "phase": "validation",
+          "result_class": "success"
+        },
+        {
+          "adapter_id": "non-multica-request-adapter",
+          "artifact_id": "non-multica-execution-envelope.json",
+          "captured_at": "2026-08-01T08:33:00Z",
+          "phase": "execution",
+          "result_class": "success"
+        }
+      ],
+      "evidence_artifacts": [
+        {
+          "adapter_id": "markdown-request-validator",
+          "artifact_id": "markdown-request-digest.json",
+          "captured_at": "2026-08-01T08:30:00Z"
+        },
+        {
+          "adapter_id": "non-multica-request-adapter",
+          "artifact_id": "non-multica-request-digest.json",
+          "captured_at": "2026-08-01T08:31:00Z"
+        }
+      ],
+      "request_id": "DOT-1298",
+      "request_kind": "app",
+      "source_references": {
+        "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+        "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-01-add-a-post-dogfood-public-0-x-readiness-report-app.md",
+        "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md"
+      },
+      "title": "Add a post-dogfood public 0.x readiness report app"
+    }
+  ],
+  "schema_version": "public-0x-readiness-report-compact.v0",
+  "serialization": {
+    "array_order": "checks use contract order coverage/freshness/adapter_consistency; requests and artifact summaries sort by stable identifiers; reasons sort by code/request/artifact/field/message",
+    "format": "json",
+    "null_policy": "missing optional scalar fields serialize as null; failures remain deterministic blocking reasons",
+    "object_key_order": "lexicographic"
+  },
+  "summary": {
+    "adapter_consistency": "pass",
+    "adapter_envelope_count": 2,
+    "blocking_reason_count": 0,
+    "coverage": "pass",
+    "evidence_artifact_count": 2,
+    "freshness": "pass",
+    "request_count": 1
+  },
+  "valid": true
+}
