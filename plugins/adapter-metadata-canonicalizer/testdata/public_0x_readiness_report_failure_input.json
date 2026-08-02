@@ -33,7 +33,7 @@
           {
             "key": "sources",
             "fields": [
-              { "key": "source_prd", "value": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-01-add-a-post-dogfood-public-0-x-readiness-report-app.md" }
+              { "key": "source_prd", "value": "docs/fixtures/request.md" }
             ]
           }
         ]

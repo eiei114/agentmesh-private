@@ -6,6 +6,7 @@
 //! handling.
 
 use agentmesh_markdown_request_validator::adapter_error_contract::normalize_adapter_errors;
+use chrono::{DateTime, FixedOffset};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -44,6 +45,10 @@ const ROLLBACK_REPLAY_OUTPUT_SCHEMA_VERSION: &str = "public-0x-rollback-replay-c
 pub const PUBLIC_0X_READINESS_REPORT_VERSION: &str = "public-0x-readiness-report.v0";
 const READINESS_REPORT_INPUT_SCHEMA_VERSION: &str = "public-0x-readiness-report-input.v0";
 const READINESS_REPORT_OUTPUT_SCHEMA_VERSION: &str = "public-0x-readiness-report-compact.v0";
+const READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION: &str =
+    "agentmesh-adapter-evidence-digest.v0";
+const READINESS_REPORT_REQUEST_SCHEMA_VERSION: &str = "agentmesh-request.v0";
+const READINESS_REPORT_DEFAULT_MINIMUM_EVIDENCE_COUNT: u64 = 2;
 const READINESS_REPORT_DEFAULT_FIELDS: &[&str] = &[
     "title",
     "request_kind",
@@ -1061,6 +1066,15 @@ pub fn evaluate_public_0x_readiness_report_input(value: &Value) -> Value {
             "fresh_after_missing",
             "freshness.fresh_after must be provided",
         ));
+    } else if fresh_after
+        .as_deref()
+        .and_then(parse_readiness_report_timestamp)
+        .is_none()
+    {
+        freshness_reasons.push(ReadinessReportReason::new(
+            "fresh_after_invalid",
+            "freshness.fresh_after must be an RFC 3339 timestamp",
+        ));
     }
 
     let coverage = object.get("coverage").and_then(Value::as_object);
@@ -1070,10 +1084,18 @@ pub fn evaluate_public_0x_readiness_report_input(value: &Value) -> Value {
             "coverage requirements must be provided",
         ));
     }
-    let minimum_request_count = coverage
-        .and_then(|coverage| coverage.get("minimum_request_count"))
-        .and_then(Value::as_u64)
-        .unwrap_or(1);
+    let minimum_request_count = readiness_report_unsigned_count(
+        coverage,
+        "minimum_request_count",
+        1,
+        &mut coverage_reasons,
+    );
+    let minimum_evidence_count = readiness_report_unsigned_count(
+        coverage,
+        "minimum_evidence_count",
+        READINESS_REPORT_DEFAULT_MINIMUM_EVIDENCE_COUNT,
+        &mut coverage_reasons,
+    );
     let required_request_kinds =
         readiness_report_string_list(coverage, "required_request_kinds", &["app"]);
     let required_fields = readiness_report_string_list(
@@ -1131,7 +1153,12 @@ pub fn evaluate_public_0x_readiness_report_input(value: &Value) -> Value {
         &required_envelopes,
         &mut coverage_reasons,
     );
-    evaluate_readiness_report_consistency(&requests, &required_fields, &mut consistency_reasons);
+    evaluate_readiness_report_consistency(
+        &requests,
+        minimum_evidence_count,
+        &required_fields,
+        &mut consistency_reasons,
+    );
 
     readiness_report_compact(
         generated_at,
@@ -1196,12 +1223,14 @@ fn parse_readiness_report_evidence(
     match object.get("digest") {
         Some(digest) if digest.is_object() => {
             if digest.get("schema_version").and_then(Value::as_str)
-                != Some("agentmesh-adapter-evidence-digest.v0")
+                != Some(READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION)
             {
                 consistency_reasons.push(
                     ReadinessReportReason::new(
                         "evidence_digest_schema_mismatch",
-                        "request evidence digest must use agentmesh-adapter-evidence-digest.v0",
+                        format!(
+                            "request evidence digest must use {READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION}"
+                        ),
                     )
                     .request(request_id.clone())
                     .artifact(artifact_id.clone())
@@ -1209,12 +1238,14 @@ fn parse_readiness_report_evidence(
                 );
             }
             if digest.get("request_schema_version").and_then(Value::as_str)
-                != Some("agentmesh-request.v0")
+                != Some(READINESS_REPORT_REQUEST_SCHEMA_VERSION)
             {
                 consistency_reasons.push(
                     ReadinessReportReason::new(
                         "request_schema_mismatch",
-                        "request evidence digest must cover agentmesh-request.v0",
+                        format!(
+                            "request evidence digest must cover {READINESS_REPORT_REQUEST_SCHEMA_VERSION}"
+                        ),
                     )
                     .request(request_id.clone())
                     .artifact(artifact_id.clone())
@@ -1482,15 +1513,18 @@ fn evaluate_readiness_report_coverage(
 
 fn evaluate_readiness_report_consistency(
     requests: &BTreeMap<String, ReadinessReportRequest>,
+    minimum_evidence_count: u64,
     required_fields: &[String],
     consistency_reasons: &mut Vec<ReadinessReportReason>,
 ) {
     for (request_id, request) in requests {
-        if request.evidence.len() < 2 {
+        if (request.evidence.len() as u64) < minimum_evidence_count {
             consistency_reasons.push(
                 ReadinessReportReason::new(
                     "evidence_comparison_insufficient",
-                    "at least two request evidence artifacts are required for adapter comparison",
+                    format!(
+                        "at least {minimum_evidence_count} request evidence artifact(s) are required for adapter comparison"
+                    ),
                 )
                 .request(request_id.clone()),
             );
@@ -1604,7 +1638,8 @@ fn readiness_report_compact(
             "format": "json",
             "object_key_order": "lexicographic",
             "array_order": "checks use contract order coverage/freshness/adapter_consistency; requests and artifact summaries sort by stable identifiers; reasons sort by code/request/artifact/field/message",
-            "null_policy": "missing optional scalar fields serialize as null; failures remain deterministic blocking reasons"
+            "null_policy": "missing optional scalar fields serialize as null; failures remain deterministic blocking reasons",
+            "reason_count_policy": "passing checks emit one synthetic *_satisfied reason, so a pass has reason_count=1 while contributing zero reasons to summary.blocking_reason_count"
         }
     })
 }
@@ -1774,6 +1809,34 @@ fn report_value_missing(value: &Value) -> bool {
     }
 }
 
+fn readiness_report_unsigned_count(
+    coverage: Option<&Map<String, Value>>,
+    field: &str,
+    default: u64,
+    coverage_reasons: &mut Vec<ReadinessReportReason>,
+) -> u64 {
+    let Some(value) = coverage.and_then(|coverage| coverage.get(field)) else {
+        return default;
+    };
+    match value.as_u64() {
+        Some(count) if count > 0 => count,
+        _ => {
+            coverage_reasons.push(
+                ReadinessReportReason::new(
+                    format!("{field}_invalid"),
+                    format!("coverage.{field} must be a positive unsigned integer"),
+                )
+                .field(format!("coverage.{field}")),
+            );
+            default
+        }
+    }
+}
+
+fn parse_readiness_report_timestamp(value: &str) -> Option<DateTime<FixedOffset>> {
+    DateTime::parse_from_rfc3339(value.trim()).ok()
+}
+
 fn check_report_freshness(
     artifact_kind: &str,
     request_id: &str,
@@ -1799,8 +1862,23 @@ fn check_report_freshness(
         );
         return;
     };
+    let Some(captured_at_timestamp) = parse_readiness_report_timestamp(captured_at) else {
+        freshness_reasons.push(
+            ReadinessReportReason::new(
+                format!("{artifact_kind}_captured_at_invalid"),
+                format!("{label} captured_at must be an RFC 3339 timestamp"),
+            )
+            .request(request_id.to_string())
+            .artifact(artifact_id.to_string())
+            .field("captured_at"),
+        );
+        return;
+    };
     if let Some(fresh_after) = fresh_after {
-        if captured_at < fresh_after {
+        let Some(fresh_after_timestamp) = parse_readiness_report_timestamp(fresh_after) else {
+            return;
+        };
+        if captured_at_timestamp < fresh_after_timestamp {
             freshness_reasons.push(
                 ReadinessReportReason::new(
                     format!("{artifact_kind}_stale"),
@@ -2228,6 +2306,149 @@ mod tests {
                 evaluate_public_0x_readiness_report_input(&input),
                 expected,
                 "{input_name} should match {expected_name}"
+            );
+        }
+    }
+
+    fn readiness_report_reason_codes(output: &Value) -> BTreeSet<String> {
+        output["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|check| check["reasons"].as_array().unwrap())
+            .filter_map(|reason| reason["code"].as_str())
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn minimal_readiness_report_input() -> Value {
+        json!({
+            "schema_version": READINESS_REPORT_INPUT_SCHEMA_VERSION,
+            "generated_at": "2026-08-01T12:00:00Z",
+            "freshness": {"fresh_after": "2026-08-01T00:00:00Z"},
+            "coverage": {
+                "minimum_request_count": 1,
+                "required_request_kinds": ["app"],
+                "required_evidence_fields": ["title", "request_kind"],
+                "required_envelopes": [{"adapter_id": "markdown", "phase": "validation"}]
+            },
+            "request_evidence": [{
+                "artifact_id": "markdown-digest.json",
+                "request_id": "DOT-1298",
+                "adapter_id": "markdown",
+                "captured_at": "2026-08-01T08:00:00Z",
+                "digest": {
+                    "schema_version": READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION,
+                    "request_schema_version": READINESS_REPORT_REQUEST_SCHEMA_VERSION,
+                    "sections": [{"key": "identity", "fields": [
+                        {"key": "title", "value": "App"},
+                        {"key": "request_kind", "value": "app"}
+                    ]}]
+                }
+            }, {
+                "artifact_id": "local-digest.json",
+                "request_id": "DOT-1298",
+                "adapter_id": "local",
+                "captured_at": "2026-08-01T08:01:00Z",
+                "digest": {
+                    "schema_version": READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION,
+                    "request_schema_version": READINESS_REPORT_REQUEST_SCHEMA_VERSION,
+                    "sections": [{"key": "identity", "fields": [
+                        {"key": "title", "value": "App"},
+                        {"key": "request_kind", "value": "app"}
+                    ]}]
+                }
+            }],
+            "adapter_envelopes": [{
+                "artifact_id": "markdown-validation-envelope.json",
+                "request_id": "DOT-1298",
+                "captured_at": "2026-08-01T08:02:00Z",
+                "envelope": {
+                    "schema_version": EVIDENCE_ENVELOPE_OUTPUT_SCHEMA_VERSION,
+                    "valid": true,
+                    "request_id": "DOT-1298",
+                    "phase": "validation",
+                    "adapter": {"id": "markdown"},
+                    "result_class": "success"
+                }
+            }]
+        })
+    }
+
+    #[test]
+    fn public_readiness_report_covers_deterministic_reason_codes() {
+        let mut cases: Vec<(&str, Value)> = vec![
+            ("input_invalid", json!(null)),
+            ("unsupported_schema_version", {
+                let mut input = minimal_readiness_report_input();
+                input["schema_version"] = json!("public-0x-readiness-report-input.v1");
+                input
+            }),
+            ("minimum_request_count_invalid", {
+                let mut input = minimal_readiness_report_input();
+                input["coverage"]["minimum_request_count"] = json!("many");
+                input
+            }),
+            ("required_envelopes_missing", {
+                let mut input = minimal_readiness_report_input();
+                input["coverage"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("required_envelopes");
+                input
+            }),
+            ("required_envelope_invalid", {
+                let mut input = minimal_readiness_report_input();
+                input["coverage"]["required_envelopes"] = json!(["not-an-object"]);
+                input
+            }),
+            ("evidence_digest_missing", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("digest");
+                input
+            }),
+            ("evidence_digest_schema_mismatch", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][0]["digest"]["schema_version"] = json!("digest.v1");
+                input
+            }),
+            ("evidence_digest_empty", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][0]["digest"]["sections"] = json!([]);
+                input
+            }),
+            ("adapter_envelope_request_id_mismatch", {
+                let mut input = minimal_readiness_report_input();
+                input["adapter_envelopes"][0]["envelope"]["request_id"] = json!("DOT-OTHER");
+                input
+            }),
+            ("evidence_field_mismatch", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][1]["digest"]["sections"][0]["fields"][0]["value"] =
+                    json!("Different");
+                input
+            }),
+            ("fresh_after_invalid", {
+                let mut input = minimal_readiness_report_input();
+                input["freshness"]["fresh_after"] = json!("2026-8-1");
+                input
+            }),
+            ("request_evidence_captured_at_invalid", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][0]["captured_at"] = json!("2026-8-1");
+                input
+            }),
+        ];
+
+        for (expected_code, input) in cases.drain(..) {
+            let output = evaluate_public_0x_readiness_report_input(&input);
+            let codes = readiness_report_reason_codes(&output);
+            assert!(
+                codes.contains(expected_code),
+                "expected {expected_code} in {codes:?}"
             );
         }
     }

@@ -13,8 +13,9 @@ Input schema: `public-0x-readiness-report-input.v0` (`apps/public-0x-readiness-r
 Required top-level fields:
 
 - `generated_at` — caller-supplied report timestamp retained verbatim.
-- `freshness.fresh_after` — deterministic freshness cutoff. Evidence with `captured_at` lexically before this RFC3339/UTC-style value fails freshness.
+- `freshness.fresh_after` — deterministic freshness cutoff. Evidence with `captured_at` before this RFC 3339 timestamp fails freshness after absolute timestamp parsing.
 - `coverage.minimum_request_count` — minimum unique request ids expected in the packet.
+- `coverage.minimum_evidence_count` — optional minimum source evidence artifacts required per request for adapter comparison; defaults to `2`.
 - `coverage.required_request_kinds` — request kinds that must be observed in source evidence, normally `app`.
 - `coverage.required_evidence_fields` — digest fields that must be present per request, normally `title`, `request_kind`, `source_prd`, `source_design`, and `source_roadmap`.
 - `coverage.required_envelopes[]` — adapter/phase pairs that must be present per request, for example Markdown validation and non-Multica execution envelopes.
@@ -38,7 +39,7 @@ The compact report contains:
 Important failure codes include:
 
 - Coverage: `minimum_request_count_not_met`, `required_request_kind_missing`, `required_evidence_field_missing`, `required_envelope_missing`.
-- Freshness: `request_evidence_stale`, `adapter_envelope_stale`, `*_captured_at_missing`, `fresh_after_missing`.
+- Freshness: `request_evidence_stale`, `adapter_envelope_stale`, `*_captured_at_missing`, `*_captured_at_invalid`, `fresh_after_missing`, `fresh_after_invalid`.
 - Adapter consistency: `evidence_comparison_insufficient`, `evidence_field_mismatch`, `adapter_envelope_invalid_result`, `adapter_envelope_result_not_success`, schema/request-id mismatch codes.
 
 ## Local/non-Multica workflow

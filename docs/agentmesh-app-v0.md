@@ -254,7 +254,7 @@ See `docs/public-0x-readiness-gate.md` for the checklist, required artifacts, ro
 
 `apps/public-0x-readiness-report/agentmesh-app.toml` declares a post-dogfood readiness reporting App. It consumes retained `agentmesh-adapter-evidence-digest.v0` source request evidence artifacts plus retained `adapter-evidence-envelope-compact.v0` adapter envelopes. Its compact output is `public-0x-readiness-report-compact.v0`: a deterministic normalized digest with fixed-order `coverage`, `freshness`, and `adapter_consistency` checks, explicit pass/fail reasons, normalized request source references, and sorted artifact summaries.
 
-Use it after dogfood or repair cycles have generated local evidence packets. The caller supplies `freshness.fresh_after`, coverage requirements, source evidence artifacts, and adapter envelope artifacts; the App does not read live tracker state or require Multica credentials.
+Use it after dogfooding or repair cycles have generated local evidence packets. The caller supplies `freshness.fresh_after`, coverage requirements, source evidence artifacts, and adapter envelope artifacts; the App does not read live tracker state or require Multica credentials.
 
 ```bash
 cargo build -p agentmesh-cli -p agentmesh-adapter-metadata-canonicalizer

@@ -9,6 +9,7 @@ dependencies = [
  "agentmesh-fixture-support",
  "agentmesh-markdown-request-validator",
  "agentmesh-proto",
+ "chrono",
  "hex",
  "serde",
  "serde_json",

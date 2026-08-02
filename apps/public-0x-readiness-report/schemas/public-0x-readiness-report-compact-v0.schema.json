@@ -34,7 +34,7 @@
         "properties": {
           "key": { "enum": ["coverage", "freshness", "adapter_consistency"] },
           "status": { "enum": ["pass", "fail"] },
-          "reason_count": { "type": "integer", "minimum": 0 },
+          "reason_count": { "type": "integer", "minimum": 0, "description": "Number of emitted reasons for this check. Passing checks emit one synthetic *_satisfied reason, so pass reason_count is 1 while summary.blocking_reason_count remains 0 for that check." },
           "reasons": {
             "type": "array",
             "items": {

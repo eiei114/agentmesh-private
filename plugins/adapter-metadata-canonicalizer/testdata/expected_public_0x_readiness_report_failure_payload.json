@@ -72,7 +72,7 @@
           "artifact_id": null,
           "code": "evidence_comparison_insufficient",
           "field": null,
-          "message": "at least two request evidence artifacts are required for adapter comparison",
+          "message": "at least 2 request evidence artifact(s) are required for adapter comparison",
           "request_id": "DOT-1298"
         }
       ],
@@ -104,7 +104,7 @@
       "request_kind": "app",
       "source_references": {
         "source_design": null,
-        "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-01-add-a-post-dogfood-public-0-x-readiness-report-app.md",
+        "source_prd": "docs/fixtures/request.md",
         "source_roadmap": null
       },
       "title": "Add a post-dogfood public 0.x readiness report app"
@@ -115,7 +115,8 @@
     "array_order": "checks use contract order coverage/freshness/adapter_consistency; requests and artifact summaries sort by stable identifiers; reasons sort by code/request/artifact/field/message",
     "format": "json",
     "null_policy": "missing optional scalar fields serialize as null; failures remain deterministic blocking reasons",
-    "object_key_order": "lexicographic"
+    "object_key_order": "lexicographic",
+    "reason_count_policy": "passing checks emit one synthetic *_satisfied reason, so a pass has reason_count=1 while contributing zero reasons to summary.blocking_reason_count"
   },
   "summary": {
     "adapter_consistency": "fail",

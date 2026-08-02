@@ -12,7 +12,7 @@
       "additionalProperties": false,
       "required": ["fresh_after"],
       "properties": {
-        "fresh_after": { "type": "string", "minLength": 1 }
+        "fresh_after": { "type": "string", "minLength": 1, "format": "date-time" }
       }
     },
     "coverage": {
@@ -21,6 +21,7 @@
       "required": ["minimum_request_count", "required_request_kinds", "required_evidence_fields", "required_envelopes"],
       "properties": {
         "minimum_request_count": { "type": "integer", "minimum": 1 },
+        "minimum_evidence_count": { "type": "integer", "minimum": 1, "default": 2 },
         "required_request_kinds": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "required_evidence_fields": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "required_envelopes": {
@@ -48,7 +49,7 @@
           "artifact_id": { "type": "string", "minLength": 1 },
           "request_id": { "type": "string", "minLength": 1 },
           "adapter_id": { "type": "string", "minLength": 1 },
-          "captured_at": { "type": "string", "minLength": 1 },
+          "captured_at": { "type": "string", "minLength": 1, "format": "date-time" },
           "digest": { "type": "object" }
         }
       }
@@ -62,7 +63,7 @@
         "properties": {
           "artifact_id": { "type": "string", "minLength": 1 },
           "request_id": { "type": "string", "minLength": 1 },
-          "captured_at": { "type": "string", "minLength": 1 },
+          "captured_at": { "type": "string", "minLength": 1, "format": "date-time" },
           "envelope": { "type": "object" }
         }
       }
