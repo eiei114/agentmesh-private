@@ -6,9 +6,11 @@
 //! handling.
 
 use agentmesh_markdown_request_validator::adapter_error_contract::normalize_adapter_errors;
+use chrono::{DateTime, FixedOffset};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Plugin/schema version exposed in compact output.
 pub const APP_VERSION: &str = "adapter-metadata-canonicalizer.v0";
@@ -38,6 +40,22 @@ const EVIDENCE_ENVELOPE_ALLOWED_RESULT_CLASSES: &[&str] = &[
 pub const PUBLIC_0X_ROLLBACK_REPLAY_VERSION: &str = "public-0x-rollback-replay.v0";
 const ROLLBACK_REPLAY_INPUT_SCHEMA_VERSION: &str = "public-0x-rollback-replay-input.v0";
 const ROLLBACK_REPLAY_OUTPUT_SCHEMA_VERSION: &str = "public-0x-rollback-replay-compact.v0";
+
+/// Plugin/schema version exposed by the post-dogfood public 0.x readiness report binary.
+pub const PUBLIC_0X_READINESS_REPORT_VERSION: &str = "public-0x-readiness-report.v0";
+const READINESS_REPORT_INPUT_SCHEMA_VERSION: &str = "public-0x-readiness-report-input.v0";
+const READINESS_REPORT_OUTPUT_SCHEMA_VERSION: &str = "public-0x-readiness-report-compact.v0";
+const READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION: &str =
+    "agentmesh-adapter-evidence-digest.v0";
+const READINESS_REPORT_REQUEST_SCHEMA_VERSION: &str = "agentmesh-request.v0";
+const READINESS_REPORT_DEFAULT_MINIMUM_EVIDENCE_COUNT: u64 = 2;
+const READINESS_REPORT_DEFAULT_FIELDS: &[&str] = &[
+    "title",
+    "request_kind",
+    "source_prd",
+    "source_design",
+    "source_roadmap",
+];
 
 const STABLE_FIELDS: &[&str] = &[
     "title",
@@ -919,6 +937,991 @@ fn readiness_compact(valid: bool, assertions: Vec<&str>, issues: Vec<Value>) -> 
     })
 }
 
+#[derive(Debug, Clone)]
+struct ReadinessReportReason {
+    code: String,
+    message: String,
+    request_id: Option<String>,
+    artifact_id: Option<String>,
+    field: Option<String>,
+}
+
+impl ReadinessReportReason {
+    fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            request_id: None,
+            artifact_id: None,
+            field: None,
+        }
+    }
+
+    fn request(mut self, request_id: impl Into<String>) -> Self {
+        self.request_id = Some(request_id.into());
+        self
+    }
+
+    fn artifact(mut self, artifact_id: impl Into<String>) -> Self {
+        self.artifact_id = Some(artifact_id.into());
+        self
+    }
+
+    fn field(mut self, field: impl Into<String>) -> Self {
+        self.field = Some(field.into());
+        self
+    }
+
+    fn sort_key(&self) -> (String, String, String, String, String) {
+        (
+            self.code.clone(),
+            self.request_id.clone().unwrap_or_default(),
+            self.artifact_id.clone().unwrap_or_default(),
+            self.field.clone().unwrap_or_default(),
+            self.message.clone(),
+        )
+    }
+
+    fn to_value(&self) -> Value {
+        json!({
+            "code": self.code,
+            "message": self.message,
+            "request_id": self.request_id,
+            "artifact_id": self.artifact_id,
+            "field": self.field,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ReadinessReportEvidence {
+    artifact_id: String,
+    adapter_id: Option<String>,
+    captured_at: Option<String>,
+    fields: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone)]
+struct ReadinessReportEnvelope {
+    artifact_id: String,
+    adapter_id: Option<String>,
+    phase: Option<String>,
+    captured_at: Option<String>,
+    result_class: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct ReadinessReportRequest {
+    evidence: Vec<ReadinessReportEvidence>,
+    envelopes: Vec<ReadinessReportEnvelope>,
+}
+
+#[derive(Debug)]
+struct RequiredReportEnvelope {
+    adapter_id: String,
+    phase: String,
+}
+
+/// Build a deterministic post-dogfood public 0.x readiness report.
+///
+/// The report consumes retained request evidence digests plus normalized adapter
+/// evidence envelopes. It does not call Multica or inspect live state; callers
+/// provide the freshness cutoff so local and non-Multica runners can replay the
+/// same packet and compare the compact output by value.
+pub fn evaluate_public_0x_readiness_report_input(value: &Value) -> Value {
+    let mut coverage_reasons = Vec::new();
+    let mut freshness_reasons = Vec::new();
+    let mut consistency_reasons = Vec::new();
+    let mut requests: BTreeMap<String, ReadinessReportRequest> = BTreeMap::new();
+
+    let Some(object) = value.as_object() else {
+        coverage_reasons.push(ReadinessReportReason::new(
+            "input_invalid",
+            "input must be a JSON object",
+        ));
+        return readiness_report_compact(
+            None,
+            None,
+            &requests,
+            &coverage_reasons,
+            &freshness_reasons,
+            &consistency_reasons,
+        );
+    };
+
+    if object.get("schema_version").and_then(Value::as_str)
+        != Some(READINESS_REPORT_INPUT_SCHEMA_VERSION)
+    {
+        coverage_reasons.push(ReadinessReportReason::new(
+            "unsupported_schema_version",
+            format!("schema_version must be {READINESS_REPORT_INPUT_SCHEMA_VERSION}"),
+        ));
+    }
+
+    let generated_at = report_string_field(object, "generated_at");
+    let freshness = object.get("freshness").and_then(Value::as_object);
+    let fresh_after = freshness.and_then(|freshness| report_string_field(freshness, "fresh_after"));
+    if fresh_after.is_none() {
+        freshness_reasons.push(ReadinessReportReason::new(
+            "fresh_after_missing",
+            "freshness.fresh_after must be provided",
+        ));
+    } else if fresh_after
+        .as_deref()
+        .and_then(parse_readiness_report_timestamp)
+        .is_none()
+    {
+        freshness_reasons.push(ReadinessReportReason::new(
+            "fresh_after_invalid",
+            "freshness.fresh_after must be an RFC 3339 timestamp",
+        ));
+    }
+
+    let coverage = object.get("coverage").and_then(Value::as_object);
+    if coverage.is_none() {
+        coverage_reasons.push(ReadinessReportReason::new(
+            "coverage_missing",
+            "coverage requirements must be provided",
+        ));
+    }
+    let minimum_request_count = readiness_report_unsigned_count(
+        coverage,
+        "minimum_request_count",
+        1,
+        &mut coverage_reasons,
+    );
+    let minimum_evidence_count = readiness_report_unsigned_count(
+        coverage,
+        "minimum_evidence_count",
+        READINESS_REPORT_DEFAULT_MINIMUM_EVIDENCE_COUNT,
+        &mut coverage_reasons,
+    );
+    let required_request_kinds =
+        readiness_report_string_list(coverage, "required_request_kinds", &["app"]);
+    let required_fields = readiness_report_string_list(
+        coverage,
+        "required_evidence_fields",
+        READINESS_REPORT_DEFAULT_FIELDS,
+    );
+    let required_envelopes = readiness_report_required_envelopes(coverage, &mut coverage_reasons);
+
+    match object.get("request_evidence").and_then(Value::as_array) {
+        Some(items) => {
+            for (index, item) in items.iter().enumerate() {
+                parse_readiness_report_evidence(
+                    item,
+                    index,
+                    fresh_after.as_deref(),
+                    &mut requests,
+                    &mut coverage_reasons,
+                    &mut freshness_reasons,
+                    &mut consistency_reasons,
+                );
+            }
+        }
+        None => coverage_reasons.push(ReadinessReportReason::new(
+            "request_evidence_missing",
+            "request_evidence must be an array of retained source evidence artifacts",
+        )),
+    }
+
+    match object.get("adapter_envelopes").and_then(Value::as_array) {
+        Some(items) => {
+            for (index, item) in items.iter().enumerate() {
+                parse_readiness_report_envelope(
+                    item,
+                    index,
+                    fresh_after.as_deref(),
+                    &mut requests,
+                    &mut coverage_reasons,
+                    &mut freshness_reasons,
+                    &mut consistency_reasons,
+                );
+            }
+        }
+        None => coverage_reasons.push(ReadinessReportReason::new(
+            "adapter_envelopes_missing",
+            "adapter_envelopes must be an array of retained adapter evidence envelopes",
+        )),
+    }
+
+    evaluate_readiness_report_coverage(
+        &requests,
+        minimum_request_count,
+        &required_request_kinds,
+        &required_fields,
+        &required_envelopes,
+        &mut coverage_reasons,
+    );
+    evaluate_readiness_report_consistency(
+        &requests,
+        minimum_evidence_count,
+        &required_fields,
+        &mut consistency_reasons,
+    );
+
+    readiness_report_compact(
+        generated_at,
+        fresh_after,
+        &requests,
+        &coverage_reasons,
+        &freshness_reasons,
+        &consistency_reasons,
+    )
+}
+
+fn parse_readiness_report_evidence(
+    item: &Value,
+    index: usize,
+    fresh_after: Option<&str>,
+    requests: &mut BTreeMap<String, ReadinessReportRequest>,
+    coverage_reasons: &mut Vec<ReadinessReportReason>,
+    freshness_reasons: &mut Vec<ReadinessReportReason>,
+    consistency_reasons: &mut Vec<ReadinessReportReason>,
+) {
+    let Some(object) = item.as_object() else {
+        coverage_reasons.push(ReadinessReportReason::new(
+            "request_evidence_invalid",
+            "request_evidence items must be JSON objects",
+        ));
+        return;
+    };
+    let artifact_id = report_artifact_id(object, "request_evidence", index);
+    let Some(request_id) = report_string_field(object, "request_id") else {
+        coverage_reasons.push(
+            ReadinessReportReason::new(
+                "request_id_missing",
+                "request evidence artifact must provide request_id",
+            )
+            .artifact(artifact_id),
+        );
+        return;
+    };
+    let adapter_id = report_string_field(object, "adapter_id");
+    if adapter_id.is_none() {
+        consistency_reasons.push(
+            ReadinessReportReason::new(
+                "request_evidence_adapter_missing",
+                "request evidence artifact must provide adapter_id",
+            )
+            .request(request_id.clone())
+            .artifact(artifact_id.clone())
+            .field("adapter_id"),
+        );
+    }
+    let captured_at = report_string_field(object, "captured_at");
+    check_report_freshness(
+        "request_evidence",
+        &request_id,
+        &artifact_id,
+        captured_at.as_deref(),
+        fresh_after,
+        freshness_reasons,
+    );
+
+    let mut fields = BTreeMap::new();
+    match object.get("digest") {
+        Some(digest) if digest.is_object() => {
+            if digest.get("schema_version").and_then(Value::as_str)
+                != Some(READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION)
+            {
+                consistency_reasons.push(
+                    ReadinessReportReason::new(
+                        "evidence_digest_schema_mismatch",
+                        format!(
+                            "request evidence digest must use {READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION}"
+                        ),
+                    )
+                    .request(request_id.clone())
+                    .artifact(artifact_id.clone())
+                    .field("digest.schema_version"),
+                );
+            }
+            if digest.get("request_schema_version").and_then(Value::as_str)
+                != Some(READINESS_REPORT_REQUEST_SCHEMA_VERSION)
+            {
+                consistency_reasons.push(
+                    ReadinessReportReason::new(
+                        "request_schema_mismatch",
+                        format!(
+                            "request evidence digest must cover {READINESS_REPORT_REQUEST_SCHEMA_VERSION}"
+                        ),
+                    )
+                    .request(request_id.clone())
+                    .artifact(artifact_id.clone())
+                    .field("digest.request_schema_version"),
+                );
+            }
+            fields = readiness_report_digest_fields(digest);
+            if fields.is_empty() {
+                consistency_reasons.push(
+                    ReadinessReportReason::new(
+                        "evidence_digest_empty",
+                        "request evidence digest must expose deterministic section fields",
+                    )
+                    .request(request_id.clone())
+                    .artifact(artifact_id.clone())
+                    .field("digest.sections"),
+                );
+            }
+        }
+        _ => consistency_reasons.push(
+            ReadinessReportReason::new(
+                "evidence_digest_missing",
+                "request evidence artifact must include a digest object",
+            )
+            .request(request_id.clone())
+            .artifact(artifact_id.clone())
+            .field("digest"),
+        ),
+    }
+
+    requests
+        .entry(request_id)
+        .or_default()
+        .evidence
+        .push(ReadinessReportEvidence {
+            artifact_id,
+            adapter_id,
+            captured_at,
+            fields,
+        });
+}
+
+fn parse_readiness_report_envelope(
+    item: &Value,
+    index: usize,
+    fresh_after: Option<&str>,
+    requests: &mut BTreeMap<String, ReadinessReportRequest>,
+    coverage_reasons: &mut Vec<ReadinessReportReason>,
+    freshness_reasons: &mut Vec<ReadinessReportReason>,
+    consistency_reasons: &mut Vec<ReadinessReportReason>,
+) {
+    let Some(object) = item.as_object() else {
+        coverage_reasons.push(ReadinessReportReason::new(
+            "adapter_envelope_invalid",
+            "adapter_envelopes items must be JSON objects",
+        ));
+        return;
+    };
+    let artifact_id = report_artifact_id(object, "adapter_envelopes", index);
+    let Some(request_id) = report_string_field(object, "request_id") else {
+        coverage_reasons.push(
+            ReadinessReportReason::new(
+                "request_id_missing",
+                "adapter envelope artifact must provide request_id",
+            )
+            .artifact(artifact_id),
+        );
+        return;
+    };
+    let captured_at = report_string_field(object, "captured_at");
+    check_report_freshness(
+        "adapter_envelope",
+        &request_id,
+        &artifact_id,
+        captured_at.as_deref(),
+        fresh_after,
+        freshness_reasons,
+    );
+
+    let envelope = object.get("envelope").unwrap_or(&Value::Null);
+    let adapter_id = report_string_at(envelope, "/adapter/id");
+    let phase = report_string_at(envelope, "/phase");
+    let result_class = report_string_at(envelope, "/result_class");
+    if !envelope.is_object() {
+        consistency_reasons.push(
+            ReadinessReportReason::new(
+                "adapter_envelope_missing",
+                "adapter envelope artifact must include an envelope object",
+            )
+            .request(request_id.clone())
+            .artifact(artifact_id.clone())
+            .field("envelope"),
+        );
+    } else {
+        if envelope.get("schema_version").and_then(Value::as_str)
+            != Some("adapter-evidence-envelope-compact.v0")
+        {
+            consistency_reasons.push(
+                ReadinessReportReason::new(
+                    "adapter_envelope_schema_mismatch",
+                    "adapter envelope must use adapter-evidence-envelope-compact.v0",
+                )
+                .request(request_id.clone())
+                .artifact(artifact_id.clone())
+                .field("envelope.schema_version"),
+            );
+        }
+        match report_string_at(envelope, "/request_id") {
+            Some(envelope_request_id) if envelope_request_id == request_id => {}
+            Some(_) => consistency_reasons.push(
+                ReadinessReportReason::new(
+                    "adapter_envelope_request_id_mismatch",
+                    "adapter envelope request_id must match its artifact wrapper",
+                )
+                .request(request_id.clone())
+                .artifact(artifact_id.clone())
+                .field("envelope.request_id"),
+            ),
+            None => consistency_reasons.push(
+                ReadinessReportReason::new(
+                    "adapter_envelope_request_id_missing",
+                    "adapter envelope must provide request_id",
+                )
+                .request(request_id.clone())
+                .artifact(artifact_id.clone())
+                .field("envelope.request_id"),
+            ),
+        }
+        if adapter_id.is_none() {
+            consistency_reasons.push(
+                ReadinessReportReason::new(
+                    "adapter_envelope_adapter_missing",
+                    "adapter envelope must provide adapter.id",
+                )
+                .request(request_id.clone())
+                .artifact(artifact_id.clone())
+                .field("envelope.adapter.id"),
+            );
+        }
+        if phase.is_none() {
+            consistency_reasons.push(
+                ReadinessReportReason::new(
+                    "adapter_envelope_phase_missing",
+                    "adapter envelope must provide phase",
+                )
+                .request(request_id.clone())
+                .artifact(artifact_id.clone())
+                .field("envelope.phase"),
+            );
+        }
+        if envelope.get("valid").and_then(Value::as_bool) != Some(true) {
+            consistency_reasons.push(
+                ReadinessReportReason::new(
+                    "adapter_envelope_invalid_result",
+                    "adapter envelope valid must be true",
+                )
+                .request(request_id.clone())
+                .artifact(artifact_id.clone())
+                .field("envelope.valid"),
+            );
+        }
+        if result_class.as_deref() != Some("success") {
+            consistency_reasons.push(
+                ReadinessReportReason::new(
+                    "adapter_envelope_result_not_success",
+                    "adapter envelope result_class must be success",
+                )
+                .request(request_id.clone())
+                .artifact(artifact_id.clone())
+                .field("envelope.result_class"),
+            );
+        }
+    }
+
+    requests
+        .entry(request_id)
+        .or_default()
+        .envelopes
+        .push(ReadinessReportEnvelope {
+            artifact_id,
+            adapter_id,
+            phase,
+            captured_at,
+            result_class,
+        });
+}
+
+fn evaluate_readiness_report_coverage(
+    requests: &BTreeMap<String, ReadinessReportRequest>,
+    minimum_request_count: u64,
+    required_request_kinds: &[String],
+    required_fields: &[String],
+    required_envelopes: &[RequiredReportEnvelope],
+    coverage_reasons: &mut Vec<ReadinessReportReason>,
+) {
+    if (requests.len() as u64) < minimum_request_count {
+        coverage_reasons.push(ReadinessReportReason::new(
+            "minimum_request_count_not_met",
+            format!(
+                "observed {} request(s), expected at least {minimum_request_count}",
+                requests.len()
+            ),
+        ));
+    }
+
+    let mut observed_kinds = BTreeSet::new();
+    for (request_id, request) in requests {
+        if request.evidence.is_empty() {
+            coverage_reasons.push(
+                ReadinessReportReason::new(
+                    "request_evidence_missing_for_request",
+                    "request must have at least one source evidence artifact",
+                )
+                .request(request_id.clone()),
+            );
+        }
+        if let Some(kind) = first_report_field(request, "request_kind").and_then(Value::as_str) {
+            observed_kinds.insert(kind.to_string());
+        }
+        for field in required_fields {
+            if first_report_field(request, field).is_none_or(report_value_missing) {
+                coverage_reasons.push(
+                    ReadinessReportReason::new(
+                        "required_evidence_field_missing",
+                        format!("request evidence is missing required field {field}"),
+                    )
+                    .request(request_id.clone())
+                    .field(field.clone()),
+                );
+            }
+        }
+        for required in required_envelopes {
+            let has_required = request.envelopes.iter().any(|envelope| {
+                envelope.adapter_id.as_deref() == Some(required.adapter_id.as_str())
+                    && envelope.phase.as_deref() == Some(required.phase.as_str())
+            });
+            if !has_required {
+                coverage_reasons.push(
+                    ReadinessReportReason::new(
+                        "required_envelope_missing",
+                        format!(
+                            "required adapter envelope missing for adapter={} phase={}",
+                            required.adapter_id, required.phase
+                        ),
+                    )
+                    .request(request_id.clone())
+                    .field(format!("{}:{}", required.adapter_id, required.phase)),
+                );
+            }
+        }
+    }
+
+    for required_kind in required_request_kinds {
+        if !observed_kinds.contains(required_kind) {
+            coverage_reasons.push(
+                ReadinessReportReason::new(
+                    "required_request_kind_missing",
+                    format!("no request evidence covered required request_kind {required_kind}"),
+                )
+                .field(format!("request_kind:{required_kind}")),
+            );
+        }
+    }
+}
+
+fn evaluate_readiness_report_consistency(
+    requests: &BTreeMap<String, ReadinessReportRequest>,
+    minimum_evidence_count: u64,
+    required_fields: &[String],
+    consistency_reasons: &mut Vec<ReadinessReportReason>,
+) {
+    for (request_id, request) in requests {
+        if (request.evidence.len() as u64) < minimum_evidence_count {
+            consistency_reasons.push(
+                ReadinessReportReason::new(
+                    "evidence_comparison_insufficient",
+                    format!(
+                        "at least {minimum_evidence_count} request evidence artifact(s) are required for adapter comparison"
+                    ),
+                )
+                .request(request_id.clone()),
+            );
+            continue;
+        }
+        for field in required_fields {
+            let mut expected: Option<(&str, &Value)> = None;
+            for artifact in &request.evidence {
+                let value = artifact.fields.get(field).unwrap_or(&Value::Null);
+                if report_value_missing(value) {
+                    consistency_reasons.push(
+                        ReadinessReportReason::new(
+                            "evidence_field_missing",
+                            format!(
+                                "request evidence artifact is missing comparable field {field}"
+                            ),
+                        )
+                        .request(request_id.clone())
+                        .artifact(artifact.artifact_id.clone())
+                        .field(field.clone()),
+                    );
+                    continue;
+                }
+                if let Some((expected_artifact, expected_value)) = expected {
+                    if value != expected_value {
+                        consistency_reasons.push(
+                            ReadinessReportReason::new(
+                                "evidence_field_mismatch",
+                                format!(
+                                    "request evidence field {field} differs from artifact {expected_artifact}"
+                                ),
+                            )
+                            .request(request_id.clone())
+                            .artifact(artifact.artifact_id.clone())
+                            .field(field.clone()),
+                        );
+                    }
+                } else {
+                    expected = Some((artifact.artifact_id.as_str(), value));
+                }
+            }
+        }
+    }
+}
+
+fn readiness_report_compact(
+    generated_at: Option<String>,
+    fresh_after: Option<String>,
+    requests: &BTreeMap<String, ReadinessReportRequest>,
+    coverage_reasons: &[ReadinessReportReason],
+    freshness_reasons: &[ReadinessReportReason],
+    consistency_reasons: &[ReadinessReportReason],
+) -> Value {
+    let coverage_status = check_status(coverage_reasons);
+    let freshness_status = check_status(freshness_reasons);
+    let consistency_status = check_status(consistency_reasons);
+    let evidence_artifact_count = requests
+        .values()
+        .map(|request| request.evidence.len())
+        .sum::<usize>();
+    let adapter_envelope_count = requests
+        .values()
+        .map(|request| request.envelopes.len())
+        .sum::<usize>();
+    let blocking_reason_count =
+        coverage_reasons.len() + freshness_reasons.len() + consistency_reasons.len();
+    let valid = blocking_reason_count == 0;
+
+    json!({
+        "schema_version": READINESS_REPORT_OUTPUT_SCHEMA_VERSION,
+        "app_version": PUBLIC_0X_READINESS_REPORT_VERSION,
+        "readiness_target": "public-0.x",
+        "valid": valid,
+        "generated_at": generated_at,
+        "fresh_after": fresh_after,
+        "summary": {
+            "request_count": requests.len(),
+            "evidence_artifact_count": evidence_artifact_count,
+            "adapter_envelope_count": adapter_envelope_count,
+            "coverage": coverage_status,
+            "freshness": freshness_status,
+            "adapter_consistency": consistency_status,
+            "blocking_reason_count": blocking_reason_count,
+        },
+        "checks": [
+            readiness_report_check(
+                "coverage",
+                coverage_reasons,
+                format!(
+                    "coverage satisfied for {} request(s): {} evidence artifact(s) and {} adapter envelope(s)",
+                    requests.len(), evidence_artifact_count, adapter_envelope_count
+                ),
+            ),
+            readiness_report_check(
+                "freshness",
+                freshness_reasons,
+                format!(
+                    "freshness satisfied for {} artifact(s) at or after {}",
+                    evidence_artifact_count + adapter_envelope_count,
+                    fresh_after.as_deref().unwrap_or("<missing fresh_after>")
+                ),
+            ),
+            readiness_report_check(
+                "adapter_consistency",
+                consistency_reasons,
+                format!("adapter consistency satisfied for {} request(s)", requests.len()),
+            ),
+        ],
+        "requests": readiness_report_requests(requests),
+        "serialization": {
+            "format": "json",
+            "object_key_order": "lexicographic",
+            "array_order": "checks use contract order coverage/freshness/adapter_consistency; requests and artifact summaries sort by stable identifiers; reasons sort by code/request/artifact/field/message",
+            "null_policy": "missing optional scalar fields serialize as null; failures remain deterministic blocking reasons",
+            "reason_count_policy": "passing checks emit one synthetic *_satisfied reason, so a pass has reason_count=1 while contributing zero reasons to summary.blocking_reason_count"
+        }
+    })
+}
+
+fn readiness_report_check(
+    key: &str,
+    reasons: &[ReadinessReportReason],
+    pass_message: String,
+) -> Value {
+    let reason_values = if reasons.is_empty() {
+        vec![ReadinessReportReason::new(format!("{key}_satisfied"), pass_message).to_value()]
+    } else {
+        let mut ordered = reasons.to_vec();
+        ordered.sort_by_key(ReadinessReportReason::sort_key);
+        ordered
+            .iter()
+            .map(ReadinessReportReason::to_value)
+            .collect::<Vec<_>>()
+    };
+    json!({
+        "key": key,
+        "status": check_status(reasons),
+        "reason_count": reason_values.len(),
+        "reasons": reason_values,
+    })
+}
+
+fn readiness_report_requests(requests: &BTreeMap<String, ReadinessReportRequest>) -> Vec<Value> {
+    requests
+        .iter()
+        .map(|(request_id, request)| {
+            let mut evidence = request.evidence.clone();
+            evidence.sort_by_key(|artifact| artifact.artifact_id.clone());
+            let mut envelopes = request.envelopes.clone();
+            envelopes.sort_by_key(|artifact| artifact.artifact_id.clone());
+            json!({
+                "request_id": request_id,
+                "title": first_report_field(request, "title").cloned().unwrap_or(Value::Null),
+                "request_kind": first_report_field(request, "request_kind").cloned().unwrap_or(Value::Null),
+                "source_references": {
+                    "source_prd": first_report_field(request, "source_prd").cloned().unwrap_or(Value::Null),
+                    "source_design": first_report_field(request, "source_design").cloned().unwrap_or(Value::Null),
+                    "source_roadmap": first_report_field(request, "source_roadmap").cloned().unwrap_or(Value::Null),
+                },
+                "evidence_artifacts": evidence.iter().map(|artifact| json!({
+                    "artifact_id": artifact.artifact_id,
+                    "adapter_id": artifact.adapter_id,
+                    "captured_at": artifact.captured_at,
+                })).collect::<Vec<_>>(),
+                "adapter_envelopes": envelopes.iter().map(|artifact| json!({
+                    "artifact_id": artifact.artifact_id,
+                    "adapter_id": artifact.adapter_id,
+                    "phase": artifact.phase,
+                    "captured_at": artifact.captured_at,
+                    "result_class": artifact.result_class,
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .collect()
+}
+
+fn readiness_report_required_envelopes(
+    coverage: Option<&Map<String, Value>>,
+    coverage_reasons: &mut Vec<ReadinessReportReason>,
+) -> Vec<RequiredReportEnvelope> {
+    let Some(items) = coverage
+        .and_then(|coverage| coverage.get("required_envelopes"))
+        .and_then(Value::as_array)
+    else {
+        coverage_reasons.push(ReadinessReportReason::new(
+            "required_envelopes_missing",
+            "coverage.required_envelopes must list adapter/phase evidence requirements",
+        ));
+        return Vec::new();
+    };
+
+    let mut envelopes = Vec::new();
+    for (index, item) in items.iter().enumerate() {
+        let Some(object) = item.as_object() else {
+            coverage_reasons.push(ReadinessReportReason::new(
+                "required_envelope_invalid",
+                format!("coverage.required_envelopes[{index}] must be an object"),
+            ));
+            continue;
+        };
+        match (
+            report_string_field(object, "adapter_id"),
+            report_string_field(object, "phase"),
+        ) {
+            (Some(adapter_id), Some(phase)) => {
+                envelopes.push(RequiredReportEnvelope { adapter_id, phase })
+            }
+            _ => coverage_reasons.push(ReadinessReportReason::new(
+                "required_envelope_invalid",
+                format!("coverage.required_envelopes[{index}] must provide adapter_id and phase"),
+            )),
+        }
+    }
+    if envelopes.is_empty() {
+        coverage_reasons.push(ReadinessReportReason::new(
+            "required_envelopes_empty",
+            "coverage.required_envelopes must contain at least one adapter/phase requirement",
+        ));
+    }
+    envelopes
+}
+
+fn readiness_report_string_list(
+    object: Option<&Map<String, Value>>,
+    field: &str,
+    default: &[&str],
+) -> Vec<String> {
+    let values = object
+        .and_then(|object| object.get(field))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if values.is_empty() {
+        default.iter().map(|item| (*item).to_string()).collect()
+    } else {
+        values
+    }
+}
+
+fn readiness_report_digest_fields(digest: &Value) -> BTreeMap<String, Value> {
+    let mut fields = BTreeMap::new();
+    let Some(sections) = digest.get("sections").and_then(Value::as_array) else {
+        return fields;
+    };
+    for section in sections {
+        let Some(section_fields) = section.get("fields").and_then(Value::as_array) else {
+            continue;
+        };
+        for field in section_fields {
+            if let Some(key) = field.get("key").and_then(Value::as_str) {
+                fields.insert(
+                    key.to_string(),
+                    field.get("value").cloned().unwrap_or(Value::Null),
+                );
+            }
+        }
+    }
+    fields
+}
+
+fn first_report_field<'a>(request: &'a ReadinessReportRequest, field: &str) -> Option<&'a Value> {
+    request
+        .evidence
+        .iter()
+        .filter_map(|artifact| artifact.fields.get(field))
+        .find(|value| !report_value_missing(value))
+}
+
+fn report_value_missing(value: &Value) -> bool {
+    match value {
+        Value::Null => true,
+        Value::String(value) => value.trim().is_empty(),
+        _ => false,
+    }
+}
+
+fn readiness_report_unsigned_count(
+    coverage: Option<&Map<String, Value>>,
+    field: &str,
+    default: u64,
+    coverage_reasons: &mut Vec<ReadinessReportReason>,
+) -> u64 {
+    let Some(value) = coverage.and_then(|coverage| coverage.get(field)) else {
+        return default;
+    };
+    match value.as_u64() {
+        Some(count) if count > 0 => count,
+        _ => {
+            coverage_reasons.push(
+                ReadinessReportReason::new(
+                    format!("{field}_invalid"),
+                    format!("coverage.{field} must be a positive unsigned integer"),
+                )
+                .field(format!("coverage.{field}")),
+            );
+            default
+        }
+    }
+}
+
+fn parse_readiness_report_timestamp(value: &str) -> Option<DateTime<FixedOffset>> {
+    DateTime::parse_from_rfc3339(value.trim()).ok()
+}
+
+fn check_report_freshness(
+    artifact_kind: &str,
+    request_id: &str,
+    artifact_id: &str,
+    captured_at: Option<&str>,
+    fresh_after: Option<&str>,
+    freshness_reasons: &mut Vec<ReadinessReportReason>,
+) {
+    let label = if artifact_kind == "request_evidence" {
+        "request evidence artifact"
+    } else {
+        "adapter envelope"
+    };
+    let Some(captured_at) = captured_at else {
+        freshness_reasons.push(
+            ReadinessReportReason::new(
+                format!("{artifact_kind}_captured_at_missing"),
+                format!("{label} must provide captured_at"),
+            )
+            .request(request_id.to_string())
+            .artifact(artifact_id.to_string())
+            .field("captured_at"),
+        );
+        return;
+    };
+    let Some(captured_at_timestamp) = parse_readiness_report_timestamp(captured_at) else {
+        freshness_reasons.push(
+            ReadinessReportReason::new(
+                format!("{artifact_kind}_captured_at_invalid"),
+                format!("{label} captured_at must be an RFC 3339 timestamp"),
+            )
+            .request(request_id.to_string())
+            .artifact(artifact_id.to_string())
+            .field("captured_at"),
+        );
+        return;
+    };
+    if let Some(fresh_after) = fresh_after {
+        let Some(fresh_after_timestamp) = parse_readiness_report_timestamp(fresh_after) else {
+            return;
+        };
+        if captured_at_timestamp < fresh_after_timestamp {
+            freshness_reasons.push(
+                ReadinessReportReason::new(
+                    format!("{artifact_kind}_stale"),
+                    format!("{label} captured_at is before fresh_after {fresh_after}"),
+                )
+                .request(request_id.to_string())
+                .artifact(artifact_id.to_string())
+                .field("captured_at"),
+            );
+        }
+    }
+}
+
+fn report_artifact_id(object: &Map<String, Value>, prefix: &str, index: usize) -> String {
+    report_string_field(object, "artifact_id").unwrap_or_else(|| format!("{prefix}[{index}]"))
+}
+
+fn report_string_field(object: &Map<String, Value>, field: &str) -> Option<String> {
+    object
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn report_string_at(value: &Value, pointer: &str) -> Option<String> {
+    value
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn check_status(reasons: &[ReadinessReportReason]) -> &'static str {
+    if reasons.is_empty() {
+        "pass"
+    } else {
+        "fail"
+    }
+}
+
 /// Build a deterministic rollback replay evidence bundle from a shared parser payload.
 ///
 /// The App intentionally accepts only `agentmesh request parse` compact output for
@@ -1280,6 +2283,174 @@ mod tests {
         )
         .unwrap();
         assert_eq!(evaluate_public_0x_readiness_input(&input), expected);
+    }
+
+    #[test]
+    fn public_readiness_report_fixtures_are_deterministic() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        for (input_name, expected_name) in [
+            (
+                "public_0x_readiness_report_success_input.json",
+                "expected_public_0x_readiness_report_success_payload.json",
+            ),
+            (
+                "public_0x_readiness_report_failure_input.json",
+                "expected_public_0x_readiness_report_failure_payload.json",
+            ),
+        ] {
+            let input: Value =
+                serde_json::from_slice(&std::fs::read(root.join(input_name)).unwrap()).unwrap();
+            let expected: Value =
+                serde_json::from_slice(&std::fs::read(root.join(expected_name)).unwrap()).unwrap();
+            assert_eq!(
+                evaluate_public_0x_readiness_report_input(&input),
+                expected,
+                "{input_name} should match {expected_name}"
+            );
+        }
+    }
+
+    fn readiness_report_reason_codes(output: &Value) -> BTreeSet<String> {
+        output["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|check| check["reasons"].as_array().unwrap())
+            .filter_map(|reason| reason["code"].as_str())
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn minimal_readiness_report_input() -> Value {
+        json!({
+            "schema_version": READINESS_REPORT_INPUT_SCHEMA_VERSION,
+            "generated_at": "2026-08-01T12:00:00Z",
+            "freshness": {"fresh_after": "2026-08-01T00:00:00Z"},
+            "coverage": {
+                "minimum_request_count": 1,
+                "required_request_kinds": ["app"],
+                "required_evidence_fields": ["title", "request_kind"],
+                "required_envelopes": [{"adapter_id": "markdown", "phase": "validation"}]
+            },
+            "request_evidence": [{
+                "artifact_id": "markdown-digest.json",
+                "request_id": "DOT-1298",
+                "adapter_id": "markdown",
+                "captured_at": "2026-08-01T08:00:00Z",
+                "digest": {
+                    "schema_version": READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION,
+                    "request_schema_version": READINESS_REPORT_REQUEST_SCHEMA_VERSION,
+                    "sections": [{"key": "identity", "fields": [
+                        {"key": "title", "value": "App"},
+                        {"key": "request_kind", "value": "app"}
+                    ]}]
+                }
+            }, {
+                "artifact_id": "local-digest.json",
+                "request_id": "DOT-1298",
+                "adapter_id": "local",
+                "captured_at": "2026-08-01T08:01:00Z",
+                "digest": {
+                    "schema_version": READINESS_REPORT_EVIDENCE_DIGEST_SCHEMA_VERSION,
+                    "request_schema_version": READINESS_REPORT_REQUEST_SCHEMA_VERSION,
+                    "sections": [{"key": "identity", "fields": [
+                        {"key": "title", "value": "App"},
+                        {"key": "request_kind", "value": "app"}
+                    ]}]
+                }
+            }],
+            "adapter_envelopes": [{
+                "artifact_id": "markdown-validation-envelope.json",
+                "request_id": "DOT-1298",
+                "captured_at": "2026-08-01T08:02:00Z",
+                "envelope": {
+                    "schema_version": EVIDENCE_ENVELOPE_OUTPUT_SCHEMA_VERSION,
+                    "valid": true,
+                    "request_id": "DOT-1298",
+                    "phase": "validation",
+                    "adapter": {"id": "markdown"},
+                    "result_class": "success"
+                }
+            }]
+        })
+    }
+
+    #[test]
+    fn public_readiness_report_covers_deterministic_reason_codes() {
+        let mut cases: Vec<(&str, Value)> = vec![
+            ("input_invalid", json!(null)),
+            ("unsupported_schema_version", {
+                let mut input = minimal_readiness_report_input();
+                input["schema_version"] = json!("public-0x-readiness-report-input.v1");
+                input
+            }),
+            ("minimum_request_count_invalid", {
+                let mut input = minimal_readiness_report_input();
+                input["coverage"]["minimum_request_count"] = json!("many");
+                input
+            }),
+            ("required_envelopes_missing", {
+                let mut input = minimal_readiness_report_input();
+                input["coverage"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("required_envelopes");
+                input
+            }),
+            ("required_envelope_invalid", {
+                let mut input = minimal_readiness_report_input();
+                input["coverage"]["required_envelopes"] = json!(["not-an-object"]);
+                input
+            }),
+            ("evidence_digest_missing", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("digest");
+                input
+            }),
+            ("evidence_digest_schema_mismatch", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][0]["digest"]["schema_version"] = json!("digest.v1");
+                input
+            }),
+            ("evidence_digest_empty", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][0]["digest"]["sections"] = json!([]);
+                input
+            }),
+            ("adapter_envelope_request_id_mismatch", {
+                let mut input = minimal_readiness_report_input();
+                input["adapter_envelopes"][0]["envelope"]["request_id"] = json!("DOT-OTHER");
+                input
+            }),
+            ("evidence_field_mismatch", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][1]["digest"]["sections"][0]["fields"][0]["value"] =
+                    json!("Different");
+                input
+            }),
+            ("fresh_after_invalid", {
+                let mut input = minimal_readiness_report_input();
+                input["freshness"]["fresh_after"] = json!("2026-8-1");
+                input
+            }),
+            ("request_evidence_captured_at_invalid", {
+                let mut input = minimal_readiness_report_input();
+                input["request_evidence"][0]["captured_at"] = json!("2026-8-1");
+                input
+            }),
+        ];
+
+        for (expected_code, input) in cases.drain(..) {
+            let output = evaluate_public_0x_readiness_report_input(&input);
+            let codes = readiness_report_reason_codes(&output);
+            assert!(
+                codes.contains(expected_code),
+                "expected {expected_code} in {codes:?}"
+            );
+        }
     }
 
     #[test]

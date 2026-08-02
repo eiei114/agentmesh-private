@@ -1,0 +1,17 @@
+schema_version = "agentmesh-app.v0"
+name = "public-0x-readiness-report"
+protocol_version = "2026-07-15"
+
+[plugin]
+logical_name = "agentmesh-public-0x-readiness-report"
+
+[schemas]
+input = "schemas/public-0x-readiness-report-input-v0.schema.json"
+output = "schemas/public-0x-readiness-report-compact-v0.schema.json"
+
+[sidecar]
+retention_class = "owner_local"
+capture_plugin_stderr = false
+
+[conformance]
+cargo_package = "agentmesh-adapter-metadata-canonicalizer"

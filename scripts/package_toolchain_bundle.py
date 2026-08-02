@@ -8,9 +8,12 @@ Produces the layout consumed by `agentmesh toolchain install`:
     bin/agentmesh[.exe]
     bin/agentmesh-multica-selector-shadow[.exe]
     bin/agentmesh-markdown-request-validator[.exe]
+    bin/agentmesh-public-0x-readiness-report[.exe]
     bin/agentmesh-public-0x-rollback-replay[.exe]
     apps/<app>/...
     docs/agentmesh-app-v0.md
+    docs/public-0x-readiness-gate.md
+    docs/public-0x-readiness-report.md
     README.bundle.md
 
 Also writes a Phase-0-compatible flat `manifest.json` (artifact smoke) listing the
@@ -104,8 +107,19 @@ def main() -> int:
     cli_name = logical_bin_name("agentmesh", args.target)
     multica_plugin_name = logical_bin_name("agentmesh-multica-selector-shadow", args.target)
     markdown_plugin_name = logical_bin_name("agentmesh-markdown-request-validator", args.target)
-    rollback_replay_plugin_name = logical_bin_name("agentmesh-public-0x-rollback-replay", args.target)
-    required = [cli_name, multica_plugin_name, markdown_plugin_name, rollback_replay_plugin_name]
+    readiness_report_plugin_name = logical_bin_name(
+        "agentmesh-public-0x-readiness-report", args.target
+    )
+    rollback_replay_plugin_name = logical_bin_name(
+        "agentmesh-public-0x-rollback-replay", args.target
+    )
+    required = [
+        cli_name,
+        multica_plugin_name,
+        markdown_plugin_name,
+        readiness_report_plugin_name,
+        rollback_replay_plugin_name,
+    ]
     if args.include_echo:
         required.append(logical_bin_name("agentmesh-fixture-echo", args.target))
 
@@ -131,11 +145,16 @@ def main() -> int:
     app_src = repo / "apps"
     if app_src.is_dir():
         copy_tree(app_src, out / "apps")
-    docs_src = repo / "docs" / "agentmesh-app-v0.md"
     docs_dst = out / "docs"
     docs_dst.mkdir(parents=True, exist_ok=True)
-    if docs_src.is_file():
-        shutil.copy2(docs_src, docs_dst / "agentmesh-app-v0.md")
+    for doc_name in [
+        "agentmesh-app-v0.md",
+        "public-0x-readiness-gate.md",
+        "public-0x-readiness-report.md",
+    ]:
+        docs_src = repo / "docs" / doc_name
+        if docs_src.is_file():
+            shutil.copy2(docs_src, docs_dst / doc_name)
     snapshot_schema = repo / "schemas" / "backlog-promoter-snapshot-v0.schema.json"
     if snapshot_schema.is_file():
         schemas_dst = out / "schemas"

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/public-0x-readiness-report-compact-v0.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "app_version", "readiness_target", "valid", "generated_at", "fresh_after", "summary", "checks", "requests", "serialization"],
+  "properties": {
+    "schema_version": { "const": "public-0x-readiness-report-compact.v0" },
+    "app_version": { "const": "public-0x-readiness-report.v0" },
+    "readiness_target": { "const": "public-0.x" },
+    "valid": { "type": "boolean" },
+    "generated_at": { "type": ["string", "null"] },
+    "fresh_after": { "type": ["string", "null"] },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_count", "evidence_artifact_count", "adapter_envelope_count", "coverage", "freshness", "adapter_consistency", "blocking_reason_count"],
+      "properties": {
+        "request_count": { "type": "integer", "minimum": 0 },
+        "evidence_artifact_count": { "type": "integer", "minimum": 0 },
+        "adapter_envelope_count": { "type": "integer", "minimum": 0 },
+        "coverage": { "enum": ["pass", "fail"] },
+        "freshness": { "enum": ["pass", "fail"] },
+        "adapter_consistency": { "enum": ["pass", "fail"] },
+        "blocking_reason_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "status", "reason_count", "reasons"],
+        "properties": {
+          "key": { "enum": ["coverage", "freshness", "adapter_consistency"] },
+          "status": { "enum": ["pass", "fail"] },
+          "reason_count": { "type": "integer", "minimum": 0, "description": "Number of emitted reasons for this check. Passing checks emit one synthetic *_satisfied reason, so pass reason_count is 1 while summary.blocking_reason_count remains 0 for that check." },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message", "request_id", "artifact_id", "field"],
+              "properties": {
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "request_id": { "type": ["string", "null"] },
+                "artifact_id": { "type": ["string", "null"] },
+                "field": { "type": ["string", "null"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "requests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["request_id", "title", "request_kind", "source_references", "evidence_artifacts", "adapter_envelopes"],
+        "properties": {
+          "request_id": { "type": "string" },
+          "title": {},
+          "request_kind": {},
+          "source_references": { "type": "object" },
+          "evidence_artifacts": { "type": "array" },
+          "adapter_envelopes": { "type": "array" }
+        }
+      }
+    },
+    "serialization": { "type": "object" }
+  }
+}
