@@ -156,7 +156,7 @@ jobs:
         run: python3 scripts/assert_prerelease_absent.py --tag "${{ inputs.tag }}" --json
 
       - name: Download all target archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release-assets
           pattern: prerelease-*
