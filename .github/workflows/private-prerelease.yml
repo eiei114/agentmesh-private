@@ -37,7 +37,7 @@ jobs:
     name: immutable-presence-guard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Require explicit PUBLISH confirmation
         shell: bash
@@ -75,7 +75,7 @@ jobs:
             archive: tar
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -147,7 +147,7 @@ jobs:
     needs: [guard, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Re-assert tag/release still absent
         env:
