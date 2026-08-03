@@ -1,0 +1,12 @@
+{
+  "schema_version": "local-runner-adapter-input.v0",
+  "request": {
+    "title": "Missing field local runner request",
+    "request_kind": "app",
+    "status": "ready",
+    "project_key": "agentmesh-private",
+    "sequence_index": 1,
+    "blocked_by": [],
+    "unblocks": []
+  }
+}
