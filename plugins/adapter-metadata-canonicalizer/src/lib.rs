@@ -36,6 +36,12 @@ const EVIDENCE_ENVELOPE_ALLOWED_RESULT_CLASSES: &[&str] = &[
     "execution_error",
 ];
 
+/// Plugin/schema version exposed by the adapter evidence traceability binary.
+pub const ADAPTER_EVIDENCE_TRACEABILITY_VERSION: &str = "adapter-evidence-traceability.v0";
+const TRACEABILITY_INPUT_SCHEMA_VERSION: &str = "adapter-evidence-traceability-input.v0";
+const TRACEABILITY_OUTPUT_SCHEMA_VERSION: &str = "adapter-evidence-traceability-compact.v0";
+const TRACEABILITY_STAGE_ORDER: &[&str] = &["request", "parser", "adapter", "evidence"];
+
 /// Plugin/schema version exposed by the deterministic rollback replay gate binary.
 pub const PUBLIC_0X_ROLLBACK_REPLAY_VERSION: &str = "public-0x-rollback-replay.v0";
 const ROLLBACK_REPLAY_INPUT_SCHEMA_VERSION: &str = "public-0x-rollback-replay-input.v0";
@@ -663,6 +669,815 @@ fn evidence_envelope_compact(
             "path_policy": "agentmesh app run writes host sidecars under --sidecar-dir/YYYY-MM-DD/<run-id>/full.json; this compact payload retains only transcript digests, not raw transcripts",
         },
     })
+}
+
+/// Build a deterministic request-to-evidence correlation graph.
+///
+/// The traceability App intentionally consumes retained artifacts supplied by
+/// the caller. It never reads tracker state or replay files itself; instead it
+/// normalizes artifact references, canonical payload digests, and explicit
+/// missing-data diagnostics into one stable graph that downstream tooling can
+/// compare across adapters.
+pub fn build_adapter_evidence_traceability_input(value: &Value) -> Value {
+    let mut diagnostics = Vec::new();
+    let Some(object) = value.as_object() else {
+        trace_diag(
+            &mut diagnostics,
+            "input_invalid",
+            "input",
+            Some("/"),
+            "input must be a JSON object",
+            "error",
+        );
+        let request = trace_request(None, None, None, None);
+        let stages = trace_stage_values(&request, None, None, None, None, None, None);
+        return traceability_compact(request, stages, Vec::new(), diagnostics);
+    };
+
+    if object.get("schema_version").and_then(Value::as_str)
+        != Some(TRACEABILITY_INPUT_SCHEMA_VERSION)
+    {
+        trace_diag(
+            &mut diagnostics,
+            "unsupported_schema_version",
+            "input",
+            Some("/schema_version"),
+            format!("schema_version must be {TRACEABILITY_INPUT_SCHEMA_VERSION}"),
+            "error",
+        );
+    }
+
+    let request_object = trace_required_object(
+        object.get("request"),
+        "request",
+        "/request",
+        &mut diagnostics,
+    );
+    let request_id = request_object.as_ref().and_then(|request| {
+        trace_required_string_at(request, "id", "request", "/request/id", &mut diagnostics)
+    });
+    let request_title = request_object.as_ref().and_then(|request| {
+        trace_optional_string_at(
+            request,
+            "title",
+            "request",
+            "/request/title",
+            &mut diagnostics,
+        )
+    });
+    let request_source_file = request_object.as_ref().and_then(|request| {
+        trace_required_string_at(
+            request,
+            "source_file",
+            "request",
+            "/request/source_file",
+            &mut diagnostics,
+        )
+    });
+    let request_source_line = request_object.as_ref().and_then(|request| {
+        trace_optional_u64_at(
+            request,
+            "source_line",
+            "request",
+            "/request/source_line",
+            &mut diagnostics,
+        )
+    });
+    let request = trace_request(
+        request_id.clone(),
+        request_title,
+        request_source_file.clone(),
+        request_source_line,
+    );
+
+    let parser_object =
+        trace_required_object(object.get("parser"), "parser", "/parser", &mut diagnostics);
+    let parser_artifact = parser_object.as_ref().and_then(|parser| {
+        trace_required_string_at(
+            parser,
+            "artifact",
+            "parser",
+            "/parser/artifact",
+            &mut diagnostics,
+        )
+    });
+    let parser_output = parser_object.as_ref().and_then(|parser| {
+        trace_required_json_object_at(
+            parser,
+            "output",
+            "parser",
+            "/parser/output",
+            &mut diagnostics,
+        )
+    });
+    let parser_digest = parser_output
+        .as_ref()
+        .map(|payload| trace_digest("canonical JSON parser output", payload));
+    let parser_correlation_id = trace_stage_correlation_id(
+        "parser",
+        &request_id,
+        &parser_artifact,
+        parser_digest.as_ref(),
+        json!({}),
+    );
+
+    let adapter_object = trace_required_object(
+        object.get("adapter"),
+        "adapter",
+        "/adapter",
+        &mut diagnostics,
+    );
+    let adapter_id = adapter_object.as_ref().and_then(|adapter| {
+        trace_required_string_at(adapter, "id", "adapter", "/adapter/id", &mut diagnostics)
+    });
+    let adapter_version = adapter_object.as_ref().and_then(|adapter| {
+        trace_optional_string_at(
+            adapter,
+            "version",
+            "adapter",
+            "/adapter/version",
+            &mut diagnostics,
+        )
+    });
+    let adapter_artifact = adapter_object.as_ref().and_then(|adapter| {
+        trace_required_string_at(
+            adapter,
+            "artifact",
+            "adapter",
+            "/adapter/artifact",
+            &mut diagnostics,
+        )
+    });
+    let adapter_output = adapter_object.as_ref().and_then(|adapter| {
+        trace_required_json_object_at(
+            adapter,
+            "output",
+            "adapter",
+            "/adapter/output",
+            &mut diagnostics,
+        )
+    });
+    let adapter_identity = json!({
+        "id": adapter_id,
+        "version": adapter_version,
+    });
+    let adapter_digest = adapter_output
+        .as_ref()
+        .map(|payload| trace_digest("canonical JSON adapter output", payload));
+    let adapter_correlation_id = trace_stage_correlation_id(
+        "adapter",
+        &request_id,
+        &adapter_artifact,
+        adapter_digest.as_ref(),
+        json!({
+            "adapter": adapter_identity.clone(),
+            "parser_digest": parser_digest.as_ref().and_then(trace_digest_value),
+        }),
+    );
+
+    let evidence_object = trace_required_object(
+        object.get("evidence"),
+        "evidence",
+        "/evidence",
+        &mut diagnostics,
+    );
+    let evidence_artifact = evidence_object.as_ref().and_then(|evidence| {
+        trace_required_string_at(
+            evidence,
+            "artifact",
+            "evidence",
+            "/evidence/artifact",
+            &mut diagnostics,
+        )
+    });
+    let evidence_envelope = evidence_object.as_ref().and_then(|evidence| {
+        trace_required_json_object_at(
+            evidence,
+            "envelope",
+            "evidence",
+            "/evidence/envelope",
+            &mut diagnostics,
+        )
+    });
+    let evidence_digest = evidence_envelope
+        .as_ref()
+        .map(|payload| trace_digest("canonical JSON evidence envelope", payload));
+    let evidence_correlation_id = trace_stage_correlation_id(
+        "evidence",
+        &request_id,
+        &evidence_artifact,
+        evidence_digest.as_ref(),
+        json!({
+            "adapter": adapter_identity.clone(),
+        }),
+    );
+
+    let parser_stage = json!({
+        "stage": "parser",
+        "status": trace_payload_stage_status(&parser_artifact, parser_digest.as_ref()),
+        "correlation_id": parser_correlation_id,
+        "artifact_ref": parser_artifact,
+        "source": {
+            "file": request_source_file,
+        },
+        "digest": parser_digest.clone(),
+    });
+    let adapter_stage = json!({
+        "stage": "adapter",
+        "status": trace_payload_stage_status(&adapter_artifact, adapter_digest.as_ref()),
+        "correlation_id": adapter_correlation_id,
+        "artifact_ref": adapter_artifact,
+        "adapter": adapter_identity.clone(),
+        "digest": adapter_digest.clone(),
+    });
+    let evidence_stage = json!({
+        "stage": "evidence",
+        "status": trace_payload_stage_status(&evidence_artifact, evidence_digest.as_ref()),
+        "correlation_id": evidence_correlation_id,
+        "artifact_ref": evidence_artifact,
+        "adapter": adapter_identity.clone(),
+        "digest": evidence_digest.clone(),
+    });
+
+    let stages = trace_stage_values(
+        &request,
+        Some(parser_stage),
+        Some(adapter_stage),
+        Some(evidence_stage),
+        parser_digest,
+        adapter_digest,
+        evidence_digest,
+    );
+    let replay_references = trace_replay_references(object.get("replay"), &mut diagnostics);
+
+    traceability_compact(request, stages, replay_references, diagnostics)
+}
+
+fn trace_request(
+    id: Option<String>,
+    title: Option<String>,
+    source_file: Option<String>,
+    source_line: Option<u64>,
+) -> Value {
+    let correlation_id = match (&id, &source_file) {
+        (Some(id), Some(source_file)) => Some(trace_correlation_id(
+            "request",
+            &json!({
+                "id": id,
+                "source_file": source_file,
+                "source_line": source_line,
+                "title": title,
+            }),
+        )),
+        _ => None,
+    };
+    json!({
+        "id": id,
+        "title": title,
+        "source_file": source_file,
+        "source_line": source_line,
+        "correlation_id": correlation_id,
+    })
+}
+
+fn trace_stage_values(
+    request: &Value,
+    parser_stage: Option<Value>,
+    adapter_stage: Option<Value>,
+    evidence_stage: Option<Value>,
+    parser_digest: Option<Value>,
+    adapter_digest: Option<Value>,
+    evidence_digest: Option<Value>,
+) -> Vec<Value> {
+    let request_correlation_id = request
+        .get("correlation_id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let request_digest = if request_correlation_id.is_some() {
+        trace_digest(
+            "canonical JSON request trace identity",
+            &json!({
+                "id": request.get("id").cloned().unwrap_or(Value::Null),
+                "title": request.get("title").cloned().unwrap_or(Value::Null),
+                "source_file": request.get("source_file").cloned().unwrap_or(Value::Null),
+                "source_line": request.get("source_line").cloned().unwrap_or(Value::Null),
+                "parser_digest": parser_digest.as_ref().and_then(trace_digest_value),
+                "adapter_digest": adapter_digest.as_ref().and_then(trace_digest_value),
+                "evidence_digest": evidence_digest.as_ref().and_then(trace_digest_value),
+            }),
+        )
+    } else {
+        Value::Null
+    };
+    let request_stage = json!({
+        "stage": "request",
+        "status": trace_stage_status(&request_correlation_id),
+        "correlation_id": request_correlation_id,
+        "artifact_ref": Value::Null,
+        "digest": request_digest,
+    });
+    vec![
+        request_stage,
+        parser_stage.unwrap_or_else(trace_missing_parser_stage),
+        adapter_stage.unwrap_or_else(trace_missing_adapter_stage),
+        evidence_stage.unwrap_or_else(trace_missing_evidence_stage),
+    ]
+}
+
+fn trace_missing_parser_stage() -> Value {
+    json!({
+        "stage": "parser",
+        "status": "missing",
+        "correlation_id": Value::Null,
+        "artifact_ref": Value::Null,
+        "source": {"file": Value::Null},
+        "digest": Value::Null,
+    })
+}
+
+fn trace_missing_adapter_stage() -> Value {
+    json!({
+        "stage": "adapter",
+        "status": "missing",
+        "correlation_id": Value::Null,
+        "artifact_ref": Value::Null,
+        "adapter": {"id": Value::Null, "version": Value::Null},
+        "digest": Value::Null,
+    })
+}
+
+fn trace_missing_evidence_stage() -> Value {
+    json!({
+        "stage": "evidence",
+        "status": "missing",
+        "correlation_id": Value::Null,
+        "artifact_ref": Value::Null,
+        "adapter": {"id": Value::Null, "version": Value::Null},
+        "digest": Value::Null,
+    })
+}
+
+fn traceability_compact(
+    request: Value,
+    stages: Vec<Value>,
+    replay_references: Vec<Value>,
+    mut diagnostics: Vec<Value>,
+) -> Value {
+    diagnostics.sort_by_key(trace_diagnostic_sort_key);
+    let missing_conditions = trace_missing_conditions(&diagnostics);
+    let valid = diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.get("severity").and_then(Value::as_str) != Some("error"));
+    let graph_basis = json!({
+        "request": request,
+        "stages": stages,
+        "replay_references": replay_references,
+        "missing_conditions": missing_conditions,
+    });
+    let graph_correlation_id = trace_correlation_id("graph", &graph_basis);
+    json!({
+        "schema_version": TRACEABILITY_OUTPUT_SCHEMA_VERSION,
+        "app_version": ADAPTER_EVIDENCE_TRACEABILITY_VERSION,
+        "valid": valid,
+        "request": graph_basis["request"].clone(),
+        "graph": {
+            "correlation_id": graph_correlation_id,
+            "node_order": TRACEABILITY_STAGE_ORDER,
+            "edges": [
+                {"from": "request", "to": "parser", "relationship": "parsed_by"},
+                {"from": "parser", "to": "adapter", "relationship": "materialized_by"},
+                {"from": "adapter", "to": "evidence", "relationship": "evidenced_by"},
+            ],
+        },
+        "stages": graph_basis["stages"].clone(),
+        "replay_references": graph_basis["replay_references"].clone(),
+        "missing_condition_count": missing_conditions.len(),
+        "missing_conditions": missing_conditions,
+        "diagnostic_count": diagnostics.len(),
+        "deterministic_diagnostics": {
+            "ordering": ["code", "stage", "field", "severity", "message"],
+            "items": diagnostics,
+        },
+        "serialization": {
+            "format": "json",
+            "object_key_order": "lexicographic before hashing",
+            "array_order": "contract-defined stage order; replay references sorted by kind/path/digest; diagnostics sorted by code/stage/field/severity/message",
+            "digest_algorithm": "sha256 over canonical JSON",
+            "missing_data_policy": "missing required trace inputs emit deterministic diagnostics and null stage correlation IDs instead of reading live tracker state",
+        },
+    })
+}
+
+fn trace_required_object(
+    value: Option<&Value>,
+    stage: &str,
+    pointer: &str,
+    diagnostics: &mut Vec<Value>,
+) -> Option<Map<String, Value>> {
+    match value.and_then(Value::as_object) {
+        Some(object) => Some(object.clone()),
+        None if value.is_some() => {
+            trace_diag(
+                diagnostics,
+                format!("{stage}_invalid"),
+                stage,
+                Some(pointer),
+                format!("{pointer} must be a JSON object"),
+                "error",
+            );
+            None
+        }
+        None => {
+            trace_diag(
+                diagnostics,
+                format!("{stage}_missing"),
+                stage,
+                Some(pointer),
+                format!("{pointer} is required"),
+                "error",
+            );
+            None
+        }
+    }
+}
+
+fn trace_required_json_object_at(
+    object: &Map<String, Value>,
+    field: &str,
+    stage: &str,
+    pointer: &str,
+    diagnostics: &mut Vec<Value>,
+) -> Option<Value> {
+    match object.get(field) {
+        Some(value) if value.is_object() => Some(value.clone()),
+        Some(_) => {
+            trace_diag(
+                diagnostics,
+                format!("{stage}_{field}_invalid"),
+                stage,
+                Some(pointer),
+                format!("{pointer} must be a JSON object"),
+                "error",
+            );
+            None
+        }
+        None => {
+            trace_diag(
+                diagnostics,
+                format!("{stage}_{field}_missing"),
+                stage,
+                Some(pointer),
+                format!("{pointer} is required"),
+                "error",
+            );
+            None
+        }
+    }
+}
+
+fn trace_required_string_at(
+    object: &Map<String, Value>,
+    field: &str,
+    stage: &str,
+    pointer: &str,
+    diagnostics: &mut Vec<Value>,
+) -> Option<String> {
+    match object.get(field) {
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.to_string()),
+        None => {
+            trace_diag(
+                diagnostics,
+                format!("{stage}_{field}_missing"),
+                stage,
+                Some(pointer),
+                format!("{pointer} must be a non-empty string"),
+                "error",
+            );
+            None
+        }
+        Some(_) => {
+            trace_diag(
+                diagnostics,
+                format!("{stage}_{field}_invalid"),
+                stage,
+                Some(pointer),
+                format!("{pointer} must be a non-empty string"),
+                "error",
+            );
+            None
+        }
+    }
+}
+
+fn trace_optional_string_at(
+    object: &Map<String, Value>,
+    field: &str,
+    stage: &str,
+    pointer: &str,
+    diagnostics: &mut Vec<Value>,
+) -> Option<String> {
+    match object.get(field) {
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.clone()),
+        Some(_) => {
+            trace_diag(
+                diagnostics,
+                format!("{stage}_{field}_invalid"),
+                stage,
+                Some(pointer),
+                format!("{pointer} must be a non-empty string when provided"),
+                "error",
+            );
+            None
+        }
+        None => None,
+    }
+}
+
+fn trace_optional_u64_at(
+    object: &Map<String, Value>,
+    field: &str,
+    stage: &str,
+    pointer: &str,
+    diagnostics: &mut Vec<Value>,
+) -> Option<u64> {
+    match object.get(field) {
+        Some(Value::Number(value)) => match value.as_u64() {
+            Some(value) if value > 0 => Some(value),
+            _ => {
+                trace_diag(
+                    diagnostics,
+                    format!("{stage}_{field}_invalid"),
+                    stage,
+                    Some(pointer),
+                    format!(
+                        "{pointer} must be an unsigned integer greater than zero when provided"
+                    ),
+                    "error",
+                );
+                None
+            }
+        },
+        Some(_) => {
+            trace_diag(
+                diagnostics,
+                format!("{stage}_{field}_invalid"),
+                stage,
+                Some(pointer),
+                format!("{pointer} must be an unsigned integer greater than zero when provided"),
+                "error",
+            );
+            None
+        }
+        None => None,
+    }
+}
+
+fn trace_replay_references(value: Option<&Value>, diagnostics: &mut Vec<Value>) -> Vec<Value> {
+    let Some(replay) = trace_required_object(value, "replay", "/replay", diagnostics) else {
+        return Vec::new();
+    };
+    let Some(artifacts) = replay.get("artifacts") else {
+        trace_diag(
+            diagnostics,
+            "replay_artifacts_missing",
+            "replay",
+            Some("/replay/artifacts"),
+            "/replay/artifacts is required",
+            "error",
+        );
+        return Vec::new();
+    };
+    let Some(artifacts) = artifacts.as_array() else {
+        trace_diag(
+            diagnostics,
+            "replay_artifacts_invalid",
+            "replay",
+            Some("/replay/artifacts"),
+            "/replay/artifacts must be an array",
+            "error",
+        );
+        return Vec::new();
+    };
+
+    let mut references = Vec::new();
+    for (index, artifact) in artifacts.iter().enumerate() {
+        let pointer = format!("/replay/artifacts/{index}");
+        let Some(artifact_object) = artifact.as_object() else {
+            trace_diag(
+                diagnostics,
+                "replay_artifact_invalid",
+                "replay",
+                Some(&pointer),
+                format!("{pointer} must be a JSON object"),
+                "error",
+            );
+            continue;
+        };
+        let kind = trace_required_string_at(
+            artifact_object,
+            "kind",
+            "replay",
+            &format!("{pointer}/kind"),
+            diagnostics,
+        );
+        let path = trace_required_string_at(
+            artifact_object,
+            "path",
+            "replay",
+            &format!("{pointer}/path"),
+            diagnostics,
+        );
+        let digest = match artifact_object.get("digest") {
+            Some(value) => trace_digest_string(value, &format!("{pointer}/digest"), diagnostics),
+            None => Value::Null,
+        };
+        if let (Some(kind), Some(path)) = (kind, path) {
+            references.push(json!({
+                "kind": kind,
+                "path": path,
+                "digest": digest,
+            }));
+        }
+    }
+    references.sort_by_key(trace_replay_sort_key);
+    references
+}
+
+fn trace_digest(source: &str, value: &Value) -> Value {
+    json!({
+        "algorithm": "sha256",
+        "source": source,
+        "value": sha256_json(value),
+    })
+}
+
+fn trace_digest_string(value: &Value, pointer: &str, diagnostics: &mut Vec<Value>) -> Value {
+    let Some(raw) = value.as_str() else {
+        trace_diag(
+            diagnostics,
+            "replay_digest_invalid",
+            "replay",
+            Some(pointer),
+            format!("{pointer} must be sha256:<64 lowercase hex> when provided"),
+            "error",
+        );
+        return Value::Null;
+    };
+    let digest = raw.strip_prefix("sha256:").unwrap_or(raw);
+    if digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        json!({"algorithm": "sha256", "value": digest.to_ascii_lowercase()})
+    } else {
+        trace_diag(
+            diagnostics,
+            "replay_digest_invalid",
+            "replay",
+            Some(pointer),
+            format!("{pointer} must be sha256:<64 lowercase hex> when provided"),
+            "error",
+        );
+        Value::Null
+    }
+}
+
+fn trace_digest_value(value: &Value) -> Option<String> {
+    value
+        .get("value")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+}
+
+fn trace_stage_correlation_id(
+    stage: &str,
+    request_id: &Option<String>,
+    artifact: &Option<String>,
+    digest: Option<&Value>,
+    extra: Value,
+) -> Option<String> {
+    match (request_id, artifact, digest.and_then(trace_digest_value)) {
+        (Some(request_id), Some(artifact), Some(digest)) => Some(trace_correlation_id(
+            stage,
+            &json!({
+                "request_id": request_id,
+                "artifact": artifact,
+                "digest": digest,
+                "extra": extra,
+            }),
+        )),
+        _ => None,
+    }
+}
+
+fn trace_correlation_id(stage: &str, value: &Value) -> String {
+    format!("trace:{stage}:{}", sha256_json(value))
+}
+
+fn trace_stage_status(correlation_id: &Option<String>) -> &'static str {
+    if correlation_id.is_some() {
+        "present"
+    } else {
+        "missing"
+    }
+}
+
+fn trace_payload_stage_status(artifact: &Option<String>, digest: Option<&Value>) -> &'static str {
+    if artifact.is_some()
+        && digest
+            .and_then(|value| value.get("value"))
+            .and_then(Value::as_str)
+            .is_some()
+    {
+        "present"
+    } else {
+        "missing"
+    }
+}
+
+fn trace_diag(
+    diagnostics: &mut Vec<Value>,
+    code: impl Into<String>,
+    stage: &str,
+    field: Option<&str>,
+    message: impl Into<String>,
+    severity: &str,
+) {
+    diagnostics.push(json!({
+        "code": code.into(),
+        "stage": stage,
+        "field": field,
+        "severity": severity,
+        "message": message.into(),
+    }));
+}
+
+fn trace_missing_conditions(diagnostics: &[Value]) -> Vec<Value> {
+    diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic
+                .get("code")
+                .and_then(Value::as_str)
+                .is_some_and(|code| code.ends_with("_missing"))
+        })
+        .map(|diagnostic| {
+            json!({
+                "code": diagnostic.get("code").cloned().unwrap_or(Value::Null),
+                "stage": diagnostic.get("stage").cloned().unwrap_or(Value::Null),
+                "field": diagnostic.get("field").cloned().unwrap_or(Value::Null),
+                "message": diagnostic.get("message").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect()
+}
+
+fn trace_diagnostic_sort_key(value: &Value) -> (String, String, String, String, String) {
+    (
+        value
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        value
+            .get("stage")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        value
+            .get("field")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        value
+            .get("severity")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        value
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    )
+}
+
+fn trace_replay_sort_key(value: &Value) -> (String, String, String) {
+    (
+        value
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        value
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        value
+            .get("digest")
+            .and_then(|digest| digest.get("value"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    )
 }
 
 fn required_string(
@@ -2480,6 +3295,68 @@ mod tests {
                 "{input_name} should match {expected_name}"
             );
         }
+    }
+
+    #[test]
+    fn adapter_evidence_traceability_fixtures_are_deterministic() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        for (input_name, expected_name) in [
+            (
+                "traceability_success_input.json",
+                "expected_traceability_success_payload.json",
+            ),
+            (
+                "traceability_malformed_input.json",
+                "expected_traceability_malformed_payload.json",
+            ),
+            (
+                "traceability_missing_evidence_input.json",
+                "expected_traceability_missing_evidence_payload.json",
+            ),
+        ] {
+            let input: Value =
+                serde_json::from_slice(&std::fs::read(root.join(input_name)).unwrap()).unwrap();
+            let expected: Value =
+                serde_json::from_slice(&std::fs::read(root.join(expected_name)).unwrap()).unwrap();
+            assert_eq!(
+                build_adapter_evidence_traceability_input(&input),
+                expected,
+                "{input_name} should match {expected_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn adapter_evidence_traceability_sorts_replay_references() {
+        let output = build_adapter_evidence_traceability_input(&json!({
+            "schema_version": TRACEABILITY_INPUT_SCHEMA_VERSION,
+            "request": {"id": "DOT-1", "source_file": "Requests/App/example.md"},
+            "parser": {"artifact": "parser.json", "output": {"valid": true}},
+            "adapter": {"id": "adapter-b", "artifact": "adapter.json", "output": {"valid": true}},
+            "evidence": {"artifact": "evidence.json", "envelope": {"valid": true}},
+            "replay": {"artifacts": [
+                {"kind": "transcript", "path": "z.json"},
+                {"kind": "sidecar", "path": "c.json", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+                {"kind": "sidecar", "path": "b.json"},
+                {"kind": "sidecar", "path": "c.json", "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+                {"kind": "sidecar", "path": "a.json"}
+            ]}
+        }));
+
+        assert_eq!(output["valid"], true);
+        assert_eq!(output["replay_references"][0]["path"], "a.json");
+        assert_eq!(output["replay_references"][1]["path"], "b.json");
+        assert_eq!(output["replay_references"][2]["path"], "c.json");
+        assert_eq!(
+            output["replay_references"][2]["digest"]["value"],
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(output["replay_references"][3]["path"], "c.json");
+        assert_eq!(
+            output["replay_references"][3]["digest"]["value"],
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+        assert_eq!(output["replay_references"][4]["path"], "z.json");
     }
 
     #[test]

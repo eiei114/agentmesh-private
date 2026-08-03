@@ -1,0 +1,41 @@
+{
+  "schema_version": "adapter-evidence-traceability-input.v0",
+  "request": {
+    "id": "DOT-1324",
+    "title": "Add adapter evidence traceability app",
+    "source_file": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-03-add-adapter-evidence-traceability-app.md"
+  },
+  "parser": {
+    "artifact": "evidence/DOT-1324/parser-output.json",
+    "output": {
+      "schema_version": "agentmesh-request-parse-output.v0",
+      "request_schema_version": "agentmesh-request.v0",
+      "valid": true,
+      "canonical": {
+        "title": "Add adapter evidence traceability app",
+        "request_kind": "app"
+      }
+    }
+  },
+  "adapter": {
+    "id": "local-tracker-adapter",
+    "version": "local-tracker-adapter.v0",
+    "artifact": "evidence/DOT-1324/local-tracker-adapter-output.json",
+    "output": {
+      "schema_version": "local-tracker-adapter-compact.v0",
+      "valid": true,
+      "canonical": {
+        "title": "Add adapter evidence traceability app",
+        "request_kind": "app"
+      }
+    }
+  },
+  "replay": {
+    "artifacts": [
+      {
+        "kind": "sidecar",
+        "path": "sidecars/2026-08-03/DOT-1324/full.json"
+      }
+    ]
+  }
+}

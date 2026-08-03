@@ -1,0 +1,85 @@
+{
+  "schema_version": "adapter-evidence-traceability-input.v0",
+  "request": {
+    "id": "DOT-1324",
+    "title": "Add adapter evidence traceability app",
+    "source_file": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-03-add-adapter-evidence-traceability-app.md",
+    "source_line": 1
+  },
+  "parser": {
+    "artifact": "evidence/DOT-1324/parser-output.json",
+    "output": {
+      "schema_version": "agentmesh-request-parse-output.v0",
+      "request_schema_version": "agentmesh-request.v0",
+      "valid": true,
+      "canonical": {
+        "title": "Add adapter evidence traceability app",
+        "request_kind": "app",
+        "issue_type": "AFK",
+        "status": "ready",
+        "project_key": "agentmesh-private",
+        "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-03-add-adapter-evidence-traceability-app.md"
+      },
+      "error_count": 0,
+      "errors": []
+    }
+  },
+  "adapter": {
+    "id": "non-multica-request-adapter",
+    "version": "non-multica-request-adapter.v0",
+    "artifact": "evidence/DOT-1324/non-multica-adapter-output.json",
+    "output": {
+      "schema_version": "non-multica-request-adapter-compact.v0",
+      "adapter_version": "non-multica-request-adapter.v0",
+      "request_schema_version": "agentmesh-request.v0",
+      "valid": true,
+      "canonical": {
+        "title": "Add adapter evidence traceability app",
+        "request_kind": "app",
+        "issue_type": "AFK",
+        "status": "ready",
+        "project_key": "agentmesh-private"
+      },
+      "issue_count": 0,
+      "issues": []
+    }
+  },
+  "evidence": {
+    "artifact": "evidence/DOT-1324/adapter-evidence-envelope.json",
+    "envelope": {
+      "schema_version": "adapter-evidence-envelope-compact.v0",
+      "app_version": "adapter-evidence-envelope.v0",
+      "valid": true,
+      "request_id": "DOT-1324",
+      "phase": "validation",
+      "adapter": {
+        "id": "non-multica-request-adapter",
+        "version": "non-multica-request-adapter.v0",
+        "capabilities": ["request_parse", "evidence_digest"]
+      },
+      "result_class": "success",
+      "deterministic_diagnostics": {
+        "ordering": ["code", "field", "severity", "message"],
+        "items": []
+      },
+      "replay_transcript_digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON transcript array",
+        "value": "35bdaaf126baf55b1b6907036229c292e27a7d6cc1b1e4dc3854763c5733a4f8"
+      }
+    }
+  },
+  "replay": {
+    "artifacts": [
+      {
+        "kind": "transcript",
+        "path": "replay/DOT-1324/transcript.json"
+      },
+      {
+        "kind": "sidecar",
+        "path": "sidecars/2026-08-03/DOT-1324/full.json",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  }
+}

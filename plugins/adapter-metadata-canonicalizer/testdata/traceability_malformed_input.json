@@ -1,0 +1,36 @@
+{
+  "schema_version": "adapter-evidence-traceability-input.v1",
+  "request": {
+    "title": "Malformed traceability fixture",
+    "source_file": "Requests/App/malformed.md"
+  },
+  "parser": {
+    "artifact": "evidence/malformed/parser-output.json",
+    "output": []
+  },
+  "adapter": {
+    "id": "",
+    "artifact": "evidence/malformed/adapter-output.json",
+    "output": {
+      "valid": false
+    }
+  },
+  "evidence": {
+    "artifact": "evidence/malformed/evidence-envelope.json",
+    "envelope": {
+      "valid": false
+    }
+  },
+  "replay": {
+    "artifacts": [
+      {
+        "kind": "sidecar",
+        "path": "sidecars/malformed/full.json",
+        "digest": "not-a-sha256"
+      },
+      {
+        "kind": "transcript"
+      }
+    ]
+  }
+}

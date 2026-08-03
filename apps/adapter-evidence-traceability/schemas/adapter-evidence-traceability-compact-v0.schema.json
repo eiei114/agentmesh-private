@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter-evidence-traceability-compact.v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "app_version",
+    "valid",
+    "request",
+    "graph",
+    "stages",
+    "replay_references",
+    "missing_condition_count",
+    "missing_conditions",
+    "diagnostic_count",
+    "deterministic_diagnostics",
+    "serialization"
+  ],
+  "properties": {
+    "schema_version": { "const": "adapter-evidence-traceability-compact.v0" },
+    "app_version": { "const": "adapter-evidence-traceability.v0" },
+    "valid": { "type": "boolean" },
+    "request": {
+      "type": "object",
+      "required": ["id", "title", "source_file", "source_line", "correlation_id"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "title": { "type": ["string", "null"] },
+        "source_file": { "type": ["string", "null"] },
+        "source_line": { "type": ["integer", "null"] },
+        "correlation_id": { "type": ["string", "null"] }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "required": ["correlation_id", "node_order", "edges"],
+      "properties": {
+        "correlation_id": { "type": "string" },
+        "node_order": { "const": ["request", "parser", "adapter", "evidence"] },
+        "edges": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/stage" }
+    },
+    "replay_references": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/replay_reference" }
+    },
+    "missing_condition_count": { "type": "integer", "minimum": 0 },
+    "missing_conditions": { "type": "array", "items": { "$ref": "#/$defs/missing_condition" } },
+    "diagnostic_count": { "type": "integer", "minimum": 0 },
+    "deterministic_diagnostics": {
+      "type": "object",
+      "required": ["ordering", "items"],
+      "properties": {
+        "ordering": { "const": ["code", "stage", "field", "severity", "message"] },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+      }
+    },
+    "serialization": { "type": "object" }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "required": ["stage", "status", "correlation_id", "artifact_ref", "digest"],
+      "properties": {
+        "stage": { "enum": ["request", "parser", "adapter", "evidence"] },
+        "status": { "enum": ["present", "missing"] },
+        "correlation_id": { "type": ["string", "null"] },
+        "artifact_ref": { "type": ["string", "null"] },
+        "source": { "type": "object" },
+        "adapter": { "type": "object" },
+        "digest": { "anyOf": [{ "$ref": "#/$defs/sha256_digest" }, { "type": "null" }] }
+      }
+    },
+    "sha256_digest": {
+      "type": "object",
+      "required": ["algorithm", "source", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "source": { "type": "string" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "replay_reference": {
+      "type": "object",
+      "required": ["kind", "path", "digest"],
+      "properties": {
+        "kind": { "type": "string" },
+        "path": { "type": "string" },
+        "digest": { "anyOf": [{ "$ref": "#/$defs/replay_digest" }, { "type": "null" }] }
+      }
+    },
+    "replay_digest": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "stage", "field", "severity", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "stage": { "type": "string" },
+        "field": { "type": ["string", "null"] },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "message": { "type": "string" }
+      }
+    },
+    "missing_condition": {
+      "type": "object",
+      "required": ["code", "stage", "field", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "stage": { "type": "string" },
+        "field": { "type": ["string", "null"] },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "app_version": "adapter-evidence-traceability.v0",
+  "deterministic_diagnostics": {
+    "items": [
+      {
+        "code": "evidence_missing",
+        "field": "/evidence",
+        "message": "/evidence is required",
+        "severity": "error",
+        "stage": "evidence"
+      }
+    ],
+    "ordering": [
+      "code",
+      "stage",
+      "field",
+      "severity",
+      "message"
+    ]
+  },
+  "diagnostic_count": 1,
+  "graph": {
+    "correlation_id": "trace:graph:e23061788cae5c428548be22fbc4d13d4e5db67c095e2c64bf55ea43c2ecbaef",
+    "edges": [
+      {
+        "from": "request",
+        "relationship": "parsed_by",
+        "to": "parser"
+      },
+      {
+        "from": "parser",
+        "relationship": "materialized_by",
+        "to": "adapter"
+      },
+      {
+        "from": "adapter",
+        "relationship": "evidenced_by",
+        "to": "evidence"
+      }
+    ],
+    "node_order": [
+      "request",
+      "parser",
+      "adapter",
+      "evidence"
+    ]
+  },
+  "missing_condition_count": 1,
+  "missing_conditions": [
+    {
+      "code": "evidence_missing",
+      "field": "/evidence",
+      "message": "/evidence is required",
+      "stage": "evidence"
+    }
+  ],
+  "replay_references": [
+    {
+      "digest": null,
+      "kind": "sidecar",
+      "path": "sidecars/2026-08-03/DOT-1324/full.json"
+    }
+  ],
+  "request": {
+    "correlation_id": "trace:request:2ab3d119a3c635519e9f41976036932022fddf088d6505f84e8775123c03c454",
+    "id": "DOT-1324",
+    "source_file": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-03-add-adapter-evidence-traceability-app.md",
+    "source_line": null,
+    "title": "Add adapter evidence traceability app"
+  },
+  "schema_version": "adapter-evidence-traceability-compact.v0",
+  "serialization": {
+    "array_order": "contract-defined stage order; replay references sorted by kind/path/digest; diagnostics sorted by code/stage/field/severity/message",
+    "digest_algorithm": "sha256 over canonical JSON",
+    "format": "json",
+    "missing_data_policy": "missing required trace inputs emit deterministic diagnostics and null stage correlation IDs instead of reading live tracker state",
+    "object_key_order": "lexicographic before hashing"
+  },
+  "stages": [
+    {
+      "artifact_ref": null,
+      "correlation_id": "trace:request:2ab3d119a3c635519e9f41976036932022fddf088d6505f84e8775123c03c454",
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON request trace identity",
+        "value": "b622dac460a210b35fb641df4a8686fa509bd3165dd8e7aecefafb12e3c95bcd"
+      },
+      "stage": "request",
+      "status": "present"
+    },
+    {
+      "artifact_ref": "evidence/DOT-1324/parser-output.json",
+      "correlation_id": "trace:parser:eeae0c15a367a138e6f0915f217efd21dae2a03c0511bd9138f983cdaa2e1384",
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON parser output",
+        "value": "09802a941826f313e810f9d98554396055d04a9ccfd7c8da1b7ce4ac3665f70c"
+      },
+      "source": {
+        "file": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-03-add-adapter-evidence-traceability-app.md"
+      },
+      "stage": "parser",
+      "status": "present"
+    },
+    {
+      "adapter": {
+        "id": "local-tracker-adapter",
+        "version": "local-tracker-adapter.v0"
+      },
+      "artifact_ref": "evidence/DOT-1324/local-tracker-adapter-output.json",
+      "correlation_id": "trace:adapter:bf1debee5834eae0ab7244ee100ac23874db1fa10a7098fae95e04e0dbf09084",
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON adapter output",
+        "value": "0d04f2d99e2a09716298ef1087279109c7abd07d573398f9edc0e0c31593de1e"
+      },
+      "stage": "adapter",
+      "status": "present"
+    },
+    {
+      "adapter": {
+        "id": "local-tracker-adapter",
+        "version": "local-tracker-adapter.v0"
+      },
+      "artifact_ref": null,
+      "correlation_id": null,
+      "digest": null,
+      "stage": "evidence",
+      "status": "missing"
+    }
+  ],
+  "valid": false
+}
