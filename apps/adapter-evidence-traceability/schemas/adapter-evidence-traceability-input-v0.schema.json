@@ -4,6 +4,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "request", "parser", "adapter", "replay"],
+  "description": "The evidence object is intentionally optional: omitted evidence is reported by the processor as evidence_missing with valid=false so retained parser/adapter artifacts can still produce a partial trace.",
   "properties": {
     "schema_version": { "const": "adapter-evidence-traceability-input.v0" },
     "request": {
@@ -38,6 +39,7 @@
       }
     },
     "evidence": {
+      "description": "Optional retained evidence envelope reference. When absent, the compact output records evidence_missing and a missing evidence stage instead of reading live tracker state.",
       "type": "object",
       "additionalProperties": false,
       "required": ["artifact", "envelope"],

@@ -817,10 +817,10 @@ pub fn build_adapter_evidence_traceability_input(value: &Value) -> Value {
             &mut diagnostics,
         )
     });
-    let adapter_identity = Some(json!({
+    let adapter_identity = json!({
         "id": adapter_id,
         "version": adapter_version,
-    }));
+    });
     let adapter_digest = adapter_output
         .as_ref()
         .map(|payload| trace_digest("canonical JSON adapter output", payload));
@@ -830,7 +830,7 @@ pub fn build_adapter_evidence_traceability_input(value: &Value) -> Value {
         &adapter_artifact,
         adapter_digest.as_ref(),
         json!({
-            "adapter": adapter_identity.clone().unwrap_or(Value::Null),
+            "adapter": adapter_identity.clone(),
             "parser_digest": parser_digest.as_ref().and_then(trace_digest_value),
         }),
     );
@@ -868,13 +868,13 @@ pub fn build_adapter_evidence_traceability_input(value: &Value) -> Value {
         &evidence_artifact,
         evidence_digest.as_ref(),
         json!({
-            "adapter": adapter_identity.clone().unwrap_or(Value::Null),
+            "adapter": adapter_identity.clone(),
         }),
     );
 
     let parser_stage = json!({
         "stage": "parser",
-        "status": trace_stage_status(&parser_correlation_id),
+        "status": trace_payload_stage_status(&parser_artifact, parser_digest.as_ref()),
         "correlation_id": parser_correlation_id,
         "artifact_ref": parser_artifact,
         "source": {
@@ -884,18 +884,18 @@ pub fn build_adapter_evidence_traceability_input(value: &Value) -> Value {
     });
     let adapter_stage = json!({
         "stage": "adapter",
-        "status": trace_stage_status(&adapter_correlation_id),
+        "status": trace_payload_stage_status(&adapter_artifact, adapter_digest.as_ref()),
         "correlation_id": adapter_correlation_id,
         "artifact_ref": adapter_artifact,
-        "adapter": adapter_identity,
+        "adapter": adapter_identity.clone(),
         "digest": adapter_digest.clone(),
     });
     let evidence_stage = json!({
         "stage": "evidence",
-        "status": trace_stage_status(&evidence_correlation_id),
+        "status": trace_payload_stage_status(&evidence_artifact, evidence_digest.as_ref()),
         "correlation_id": evidence_correlation_id,
         "artifact_ref": evidence_artifact,
-        "adapter": adapter_stage.get("adapter").cloned().unwrap_or(Value::Null),
+        "adapter": adapter_identity.clone(),
         "digest": evidence_digest.clone(),
     });
 
@@ -953,20 +953,28 @@ fn trace_stage_values(
         .get("correlation_id")
         .and_then(Value::as_str)
         .map(str::to_owned);
+    let request_digest = if request_correlation_id.is_some() {
+        trace_digest(
+            "canonical JSON request trace identity",
+            &json!({
+                "id": request.get("id").cloned().unwrap_or(Value::Null),
+                "title": request.get("title").cloned().unwrap_or(Value::Null),
+                "source_file": request.get("source_file").cloned().unwrap_or(Value::Null),
+                "source_line": request.get("source_line").cloned().unwrap_or(Value::Null),
+                "parser_digest": parser_digest.as_ref().and_then(trace_digest_value),
+                "adapter_digest": adapter_digest.as_ref().and_then(trace_digest_value),
+                "evidence_digest": evidence_digest.as_ref().and_then(trace_digest_value),
+            }),
+        )
+    } else {
+        Value::Null
+    };
     let request_stage = json!({
         "stage": "request",
         "status": trace_stage_status(&request_correlation_id),
         "correlation_id": request_correlation_id,
         "artifact_ref": Value::Null,
-        "digest": trace_digest("canonical JSON request trace identity", &json!({
-            "id": request.get("id").cloned().unwrap_or(Value::Null),
-            "title": request.get("title").cloned().unwrap_or(Value::Null),
-            "source_file": request.get("source_file").cloned().unwrap_or(Value::Null),
-            "source_line": request.get("source_line").cloned().unwrap_or(Value::Null),
-            "parser_digest": parser_digest.as_ref().and_then(trace_digest_value),
-            "adapter_digest": adapter_digest.as_ref().and_then(trace_digest_value),
-            "evidence_digest": evidence_digest.as_ref().and_then(trace_digest_value),
-        })),
+        "digest": request_digest,
     });
     vec![
         request_stage,
@@ -1134,12 +1142,23 @@ fn trace_required_string_at(
     pointer: &str,
     diagnostics: &mut Vec<Value>,
 ) -> Option<String> {
-    match object.get(field).and_then(Value::as_str) {
-        Some(value) if !value.trim().is_empty() => Some(value.to_string()),
-        _ => {
+    match object.get(field) {
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.to_string()),
+        None => {
             trace_diag(
                 diagnostics,
                 format!("{stage}_{field}_missing"),
+                stage,
+                Some(pointer),
+                format!("{pointer} must be a non-empty string"),
+                "error",
+            );
+            None
+        }
+        Some(_) => {
+            trace_diag(
+                diagnostics,
+                format!("{stage}_{field}_invalid"),
                 stage,
                 Some(pointer),
                 format!("{pointer} must be a non-empty string"),
@@ -1159,7 +1178,7 @@ fn trace_optional_string_at(
 ) -> Option<String> {
     match object.get(field) {
         Some(Value::String(value)) if !value.trim().is_empty() => Some(value.clone()),
-        Some(Value::String(_)) | Some(_) => {
+        Some(_) => {
             trace_diag(
                 diagnostics,
                 format!("{stage}_{field}_invalid"),
@@ -1182,24 +1201,29 @@ fn trace_optional_u64_at(
     diagnostics: &mut Vec<Value>,
 ) -> Option<u64> {
     match object.get(field) {
-        Some(Value::Number(value)) => value.as_u64().or_else(|| {
-            trace_diag(
-                diagnostics,
-                format!("{stage}_{field}_invalid"),
-                stage,
-                Some(pointer),
-                format!("{pointer} must be an unsigned integer when provided"),
-                "error",
-            );
-            None
-        }),
+        Some(Value::Number(value)) => match value.as_u64() {
+            Some(value) if value > 0 => Some(value),
+            _ => {
+                trace_diag(
+                    diagnostics,
+                    format!("{stage}_{field}_invalid"),
+                    stage,
+                    Some(pointer),
+                    format!(
+                        "{pointer} must be an unsigned integer greater than zero when provided"
+                    ),
+                    "error",
+                );
+                None
+            }
+        },
         Some(_) => {
             trace_diag(
                 diagnostics,
                 format!("{stage}_{field}_invalid"),
                 stage,
                 Some(pointer),
-                format!("{pointer} must be an unsigned integer when provided"),
+                format!("{pointer} must be an unsigned integer greater than zero when provided"),
                 "error",
             );
             None
@@ -1349,6 +1373,19 @@ fn trace_correlation_id(stage: &str, value: &Value) -> String {
 
 fn trace_stage_status(correlation_id: &Option<String>) -> &'static str {
     if correlation_id.is_some() {
+        "present"
+    } else {
+        "missing"
+    }
+}
+
+fn trace_payload_stage_status(artifact: &Option<String>, digest: Option<&Value>) -> &'static str {
+    if artifact.is_some()
+        && digest
+            .and_then(|value| value.get("value"))
+            .and_then(Value::as_str)
+            .is_some()
+    {
         "present"
     } else {
         "missing"
@@ -3299,7 +3336,9 @@ mod tests {
             "evidence": {"artifact": "evidence.json", "envelope": {"valid": true}},
             "replay": {"artifacts": [
                 {"kind": "transcript", "path": "z.json"},
+                {"kind": "sidecar", "path": "c.json", "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
                 {"kind": "sidecar", "path": "b.json"},
+                {"kind": "sidecar", "path": "c.json", "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
                 {"kind": "sidecar", "path": "a.json"}
             ]}
         }));
@@ -3307,7 +3346,17 @@ mod tests {
         assert_eq!(output["valid"], true);
         assert_eq!(output["replay_references"][0]["path"], "a.json");
         assert_eq!(output["replay_references"][1]["path"], "b.json");
-        assert_eq!(output["replay_references"][2]["path"], "z.json");
+        assert_eq!(output["replay_references"][2]["path"], "c.json");
+        assert_eq!(
+            output["replay_references"][2]["digest"]["value"],
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(output["replay_references"][3]["path"], "c.json");
+        assert_eq!(
+            output["replay_references"][3]["digest"]["value"],
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+        assert_eq!(output["replay_references"][4]["path"], "z.json");
     }
 
     #[test]

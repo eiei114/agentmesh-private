@@ -243,7 +243,7 @@ Pinned production smoke uses the same manifest/input without `--mode development
 }
 ```
 
-The compact payload is `adapter-evidence-traceability-compact.v0`. It returns a canonical correlation graph with fixed `node_order` (`request`, `parser`, `adapter`, `evidence`), stable `trace:<stage>:<sha256>` IDs for present parser/adapter/evidence stages, source file and artifact references, adapter identity, SHA-256 digests over canonical JSON payloads, and replay references sorted by `kind`, `path`, then digest. The App never reads live tracker state or dereferences artifacts; missing inputs are reported as deterministic diagnostics and `missing_conditions` with null stage correlation IDs.
+The compact payload is `adapter-evidence-traceability-compact.v0`. It returns a canonical correlation graph with fixed `node_order` (`request`, `parser`, `adapter`, `evidence`), stable `trace:<stage>:<sha256>` IDs for present request/parser/adapter/evidence stages, source file and artifact references, adapter identity, SHA-256 digests over canonical JSON payloads, and replay references sorted by `kind`, `path`, then digest. The App never reads live tracker state or dereferences artifacts; missing inputs are reported as deterministic diagnostics and `missing_conditions` with null stage correlation IDs.
 
 Downstream parity tooling can debug drift by comparing, in order: graph correlation ID, stage correlation IDs, stage digest values, adapter identity, replay reference list, then `missing_conditions`. A parser-stage digest change indicates request parsing drift; an adapter-stage digest change with the same parser digest indicates adapter materialization drift; an evidence-stage digest change indicates evidence envelope or replay-summary drift.
 

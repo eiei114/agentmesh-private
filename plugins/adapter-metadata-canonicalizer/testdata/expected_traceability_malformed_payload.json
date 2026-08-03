@@ -3,7 +3,7 @@
   "deterministic_diagnostics": {
     "items": [
       {
-        "code": "adapter_id_missing",
+        "code": "adapter_id_invalid",
         "field": "/adapter/id",
         "message": "/adapter/id must be a non-empty string",
         "severity": "error",
@@ -55,7 +55,7 @@
   },
   "diagnostic_count": 6,
   "graph": {
-    "correlation_id": "trace:graph:6b2703b159733f19fef47902c324fa8ffef49713d0c6c8d182a3083430271d59",
+    "correlation_id": "trace:graph:adbc0403db525e3979063469911d4e0e7747825f201de07019b8cdc0600f5d5c",
     "edges": [
       {
         "from": "request",
@@ -80,14 +80,8 @@
       "evidence"
     ]
   },
-  "missing_condition_count": 3,
+  "missing_condition_count": 2,
   "missing_conditions": [
-    {
-      "code": "adapter_id_missing",
-      "field": "/adapter/id",
-      "message": "/adapter/id must be a non-empty string",
-      "stage": "adapter"
-    },
     {
       "code": "replay_path_missing",
       "field": "/replay/artifacts/1/path",
@@ -127,11 +121,7 @@
     {
       "artifact_ref": null,
       "correlation_id": null,
-      "digest": {
-        "algorithm": "sha256",
-        "source": "canonical JSON request trace identity",
-        "value": "ac1bdd8c6c0b4ede55cf36d5d0ef7ed9b0bc565fdb9d31783de8d15faa606dd5"
-      },
+      "digest": null,
       "stage": "request",
       "status": "missing"
     },
@@ -158,7 +148,7 @@
         "value": "af5fd803088fcdc627e5cd97fb88d7fcbbb02a705f38fd48b1ab5f4ffca50ae8"
       },
       "stage": "adapter",
-      "status": "missing"
+      "status": "present"
     },
     {
       "adapter": {
@@ -173,7 +163,7 @@
         "value": "af5fd803088fcdc627e5cd97fb88d7fcbbb02a705f38fd48b1ab5f4ffca50ae8"
       },
       "stage": "evidence",
-      "status": "missing"
+      "status": "present"
     }
   ],
   "valid": false
