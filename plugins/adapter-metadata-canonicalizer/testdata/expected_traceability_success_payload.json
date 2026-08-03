@@ -1,0 +1,130 @@
+{
+  "app_version": "adapter-evidence-traceability.v0",
+  "deterministic_diagnostics": {
+    "items": [],
+    "ordering": [
+      "code",
+      "stage",
+      "field",
+      "severity",
+      "message"
+    ]
+  },
+  "diagnostic_count": 0,
+  "graph": {
+    "correlation_id": "trace:graph:7f112fda57d9f250eeea486aa7bcb67bd8e5b65b01b6d4870e7d9ff5bef0a982",
+    "edges": [
+      {
+        "from": "request",
+        "relationship": "parsed_by",
+        "to": "parser"
+      },
+      {
+        "from": "parser",
+        "relationship": "materialized_by",
+        "to": "adapter"
+      },
+      {
+        "from": "adapter",
+        "relationship": "evidenced_by",
+        "to": "evidence"
+      }
+    ],
+    "node_order": [
+      "request",
+      "parser",
+      "adapter",
+      "evidence"
+    ]
+  },
+  "missing_condition_count": 0,
+  "missing_conditions": [],
+  "replay_references": [
+    {
+      "digest": {
+        "algorithm": "sha256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "kind": "sidecar",
+      "path": "sidecars/2026-08-03/DOT-1324/full.json"
+    },
+    {
+      "digest": null,
+      "kind": "transcript",
+      "path": "replay/DOT-1324/transcript.json"
+    }
+  ],
+  "request": {
+    "correlation_id": "trace:request:fdf7d86c56c287794aca085190a557b8c0b5100ca51899f0af9f0a7f17b223c8",
+    "id": "DOT-1324",
+    "source_file": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-03-add-adapter-evidence-traceability-app.md",
+    "source_line": 1,
+    "title": "Add adapter evidence traceability app"
+  },
+  "schema_version": "adapter-evidence-traceability-compact.v0",
+  "serialization": {
+    "array_order": "contract-defined stage order; replay references sorted by kind/path/digest; diagnostics sorted by code/stage/field/severity/message",
+    "digest_algorithm": "sha256 over canonical JSON",
+    "format": "json",
+    "missing_data_policy": "missing required trace inputs emit deterministic diagnostics and null stage correlation IDs instead of reading live tracker state",
+    "object_key_order": "lexicographic before hashing"
+  },
+  "stages": [
+    {
+      "artifact_ref": null,
+      "correlation_id": "trace:request:fdf7d86c56c287794aca085190a557b8c0b5100ca51899f0af9f0a7f17b223c8",
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON request trace identity",
+        "value": "a3e87dd6b36ef35b7c2835da424eddaa2ab636dd4de5bdf474c059bb665af869"
+      },
+      "stage": "request",
+      "status": "present"
+    },
+    {
+      "artifact_ref": "evidence/DOT-1324/parser-output.json",
+      "correlation_id": "trace:parser:7afc7584e1b7787c41ff9168404c9b59b489bb690d38b63297e6888c7e3dc381",
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON parser output",
+        "value": "5236df2d135736903f23a25a7db6296743d6dbc81193fc83d55936b6de92c579"
+      },
+      "source": {
+        "file": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-03-add-adapter-evidence-traceability-app.md"
+      },
+      "stage": "parser",
+      "status": "present"
+    },
+    {
+      "adapter": {
+        "id": "non-multica-request-adapter",
+        "version": "non-multica-request-adapter.v0"
+      },
+      "artifact_ref": "evidence/DOT-1324/non-multica-adapter-output.json",
+      "correlation_id": "trace:adapter:2233b745ea1fff6e5c65af17408e78f58fc492e4cd9d1bd3026beb919e1845f2",
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON adapter output",
+        "value": "3ac3ca36ce836005d5eeaf2a41d8507ddb7d3bcb1989da78c801126abaff228e"
+      },
+      "stage": "adapter",
+      "status": "present"
+    },
+    {
+      "adapter": {
+        "id": "non-multica-request-adapter",
+        "version": "non-multica-request-adapter.v0"
+      },
+      "artifact_ref": "evidence/DOT-1324/adapter-evidence-envelope.json",
+      "correlation_id": "trace:evidence:f2d30670fc861f392e49cb39378a477bb97ec0c8baef54147d17da3a97e9d532",
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON evidence envelope",
+        "value": "cef7f142c449198b0ef4dbae0594c2fe243d1d58f4fcff1424068416f401b95e"
+      },
+      "stage": "evidence",
+      "status": "present"
+    }
+  ],
+  "valid": true
+}

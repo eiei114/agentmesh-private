@@ -20,6 +20,8 @@ The adapter metadata canonicalizer App (`agentmesh-adapter-metadata-canonicalize
 
 The adapter evidence envelope App (`agentmesh-adapter-evidence-envelope`) normalizes validation/execution evidence into stable request id, capability hash, adapter identity, result class, diagnostics, and replay transcript digest fields.
 
+The adapter evidence traceability App (`agentmesh-adapter-evidence-traceability`) emits a deterministic request → parser → adapter → evidence correlation graph with canonical stage digests, artifact references, and explicit missing-data conditions.
+
 The local tracker adapter App (`agentmesh-local-tracker-adapter`) is a second concrete non-Multica request target: it maps `agentmesh-request.v0` sources into deterministic local taskfile payloads, keeps stable canonical fields separate from adapter extensions, and emits schema-stable validation errors.
 
 The public 0.x rollback replay App (`agentmesh-public-0x-rollback-replay`) consumes shared parser output plus retained adapter/protocol artifacts and emits a stable rollback evidence bundle for non-Multica runners.
@@ -136,6 +138,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/local-tracker-adapter/` — local taskfile tracker adapter manifest + IO schemas
 - `apps/adapter-metadata-canonicalizer/` — adapter metadata comparison/canonicalization manifest + IO schemas
 - `apps/adapter-evidence-envelope/` — deterministic adapter evidence envelope manifest + IO schemas
+- `apps/adapter-evidence-traceability/` — deterministic adapter evidence traceability graph manifest + IO schemas
 - `apps/adapter-error-contract/` — shared adapter error boundary contract manifest + IO schemas
 - `apps/public-0x-readiness/` — public 0.x readiness evidence gate manifest + IO schemas
 - `apps/public-0x-readiness-report/` — post-dogfood public 0.x readiness report manifest + IO schemas
@@ -153,6 +156,7 @@ Internal / test-only:
 - `agentmesh-local-tracker-adapter` — local taskfile tracker adapter contract (plugin-owned types only)
 - `agentmesh-adapter-metadata-canonicalizer` — deterministic adapter metadata drift comparison and canonical subset emitter (plugin-owned types only)
 - `agentmesh-adapter-evidence-envelope` — deterministic adapter evidence envelope binary (`adapter-metadata-canonicalizer` package)
+- `agentmesh-adapter-evidence-traceability` — deterministic adapter evidence traceability binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-adapter-error-contract` — shared adapter error boundary contract binary (`markdown-request-validator` package)
 - `agentmesh-public-0x-readiness` — public 0.x readiness evidence gate binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-public-0x-readiness-report` — post-dogfood public 0.x readiness report binary (`adapter-metadata-canonicalizer` package)

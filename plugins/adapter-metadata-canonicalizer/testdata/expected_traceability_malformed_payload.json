@@ -1,0 +1,180 @@
+{
+  "app_version": "adapter-evidence-traceability.v0",
+  "deterministic_diagnostics": {
+    "items": [
+      {
+        "code": "adapter_id_missing",
+        "field": "/adapter/id",
+        "message": "/adapter/id must be a non-empty string",
+        "severity": "error",
+        "stage": "adapter"
+      },
+      {
+        "code": "parser_output_invalid",
+        "field": "/parser/output",
+        "message": "/parser/output must be a JSON object",
+        "severity": "error",
+        "stage": "parser"
+      },
+      {
+        "code": "replay_digest_invalid",
+        "field": "/replay/artifacts/0/digest",
+        "message": "/replay/artifacts/0/digest must be sha256:<64 lowercase hex> when provided",
+        "severity": "error",
+        "stage": "replay"
+      },
+      {
+        "code": "replay_path_missing",
+        "field": "/replay/artifacts/1/path",
+        "message": "/replay/artifacts/1/path must be a non-empty string",
+        "severity": "error",
+        "stage": "replay"
+      },
+      {
+        "code": "request_id_missing",
+        "field": "/request/id",
+        "message": "/request/id must be a non-empty string",
+        "severity": "error",
+        "stage": "request"
+      },
+      {
+        "code": "unsupported_schema_version",
+        "field": "/schema_version",
+        "message": "schema_version must be adapter-evidence-traceability-input.v0",
+        "severity": "error",
+        "stage": "input"
+      }
+    ],
+    "ordering": [
+      "code",
+      "stage",
+      "field",
+      "severity",
+      "message"
+    ]
+  },
+  "diagnostic_count": 6,
+  "graph": {
+    "correlation_id": "trace:graph:6b2703b159733f19fef47902c324fa8ffef49713d0c6c8d182a3083430271d59",
+    "edges": [
+      {
+        "from": "request",
+        "relationship": "parsed_by",
+        "to": "parser"
+      },
+      {
+        "from": "parser",
+        "relationship": "materialized_by",
+        "to": "adapter"
+      },
+      {
+        "from": "adapter",
+        "relationship": "evidenced_by",
+        "to": "evidence"
+      }
+    ],
+    "node_order": [
+      "request",
+      "parser",
+      "adapter",
+      "evidence"
+    ]
+  },
+  "missing_condition_count": 3,
+  "missing_conditions": [
+    {
+      "code": "adapter_id_missing",
+      "field": "/adapter/id",
+      "message": "/adapter/id must be a non-empty string",
+      "stage": "adapter"
+    },
+    {
+      "code": "replay_path_missing",
+      "field": "/replay/artifacts/1/path",
+      "message": "/replay/artifacts/1/path must be a non-empty string",
+      "stage": "replay"
+    },
+    {
+      "code": "request_id_missing",
+      "field": "/request/id",
+      "message": "/request/id must be a non-empty string",
+      "stage": "request"
+    }
+  ],
+  "replay_references": [
+    {
+      "digest": null,
+      "kind": "sidecar",
+      "path": "sidecars/malformed/full.json"
+    }
+  ],
+  "request": {
+    "correlation_id": null,
+    "id": null,
+    "source_file": "Requests/App/malformed.md",
+    "source_line": null,
+    "title": "Malformed traceability fixture"
+  },
+  "schema_version": "adapter-evidence-traceability-compact.v0",
+  "serialization": {
+    "array_order": "contract-defined stage order; replay references sorted by kind/path/digest; diagnostics sorted by code/stage/field/severity/message",
+    "digest_algorithm": "sha256 over canonical JSON",
+    "format": "json",
+    "missing_data_policy": "missing required trace inputs emit deterministic diagnostics and null stage correlation IDs instead of reading live tracker state",
+    "object_key_order": "lexicographic before hashing"
+  },
+  "stages": [
+    {
+      "artifact_ref": null,
+      "correlation_id": null,
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON request trace identity",
+        "value": "ac1bdd8c6c0b4ede55cf36d5d0ef7ed9b0bc565fdb9d31783de8d15faa606dd5"
+      },
+      "stage": "request",
+      "status": "missing"
+    },
+    {
+      "artifact_ref": "evidence/malformed/parser-output.json",
+      "correlation_id": null,
+      "digest": null,
+      "source": {
+        "file": "Requests/App/malformed.md"
+      },
+      "stage": "parser",
+      "status": "missing"
+    },
+    {
+      "adapter": {
+        "id": null,
+        "version": null
+      },
+      "artifact_ref": "evidence/malformed/adapter-output.json",
+      "correlation_id": null,
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON adapter output",
+        "value": "af5fd803088fcdc627e5cd97fb88d7fcbbb02a705f38fd48b1ab5f4ffca50ae8"
+      },
+      "stage": "adapter",
+      "status": "missing"
+    },
+    {
+      "adapter": {
+        "id": null,
+        "version": null
+      },
+      "artifact_ref": "evidence/malformed/evidence-envelope.json",
+      "correlation_id": null,
+      "digest": {
+        "algorithm": "sha256",
+        "source": "canonical JSON evidence envelope",
+        "value": "af5fd803088fcdc627e5cd97fb88d7fcbbb02a705f38fd48b1ab5f4ffca50ae8"
+      },
+      "stage": "evidence",
+      "status": "missing"
+    }
+  ],
+  "valid": false
+}

@@ -228,6 +228,43 @@ agentmesh app run \
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-adapter-evidence-envelope`.
 
+## Adapter evidence traceability App
+
+`apps/adapter-evidence-traceability/agentmesh-app.toml` declares a deterministic traceability App for retained request-run artifacts. It consumes request identity, parser compact output, adapter compact output, an adapter evidence envelope, and replay artifact references supplied by the caller:
+
+```json
+{
+  "schema_version": "adapter-evidence-traceability-input.v0",
+  "request": {"id": "DOT-1324", "source_file": "Requests/App/add-traceability.md"},
+  "parser": {"artifact": "evidence/DOT-1324/parser-output.json", "output": {"valid": true}},
+  "adapter": {"id": "non-multica-request-adapter", "artifact": "evidence/DOT-1324/adapter-output.json", "output": {"valid": true}},
+  "evidence": {"artifact": "evidence/DOT-1324/evidence-envelope.json", "envelope": {"valid": true}},
+  "replay": {"artifacts": [{"kind": "sidecar", "path": "sidecars/2026-08-03/DOT-1324/full.json"}]}
+}
+```
+
+The compact payload is `adapter-evidence-traceability-compact.v0`. It returns a canonical correlation graph with fixed `node_order` (`request`, `parser`, `adapter`, `evidence`), stable `trace:<stage>:<sha256>` IDs for present parser/adapter/evidence stages, source file and artifact references, adapter identity, SHA-256 digests over canonical JSON payloads, and replay references sorted by `kind`, `path`, then digest. The App never reads live tracker state or dereferences artifacts; missing inputs are reported as deterministic diagnostics and `missing_conditions` with null stage correlation IDs.
+
+Downstream parity tooling can debug drift by comparing, in order: graph correlation ID, stage correlation IDs, stage digest values, adapter identity, replay reference list, then `missing_conditions`. A parser-stage digest change indicates request parsing drift; an adapter-stage digest change with the same parser digest indicates adapter materialization drift; an evidence-stage digest change indicates evidence envelope or replay-summary drift.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-adapter-metadata-canonicalizer
+agentmesh app validate \
+  --manifest apps/adapter-evidence-traceability/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/adapter-evidence-traceability/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/adapter-metadata-canonicalizer/testdata/traceability_success_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-adapter-evidence-traceability
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-adapter-evidence-traceability`.
+
 ## Public 0.x readiness gate App
 
 `apps/public-0x-readiness/agentmesh-app.toml` declares an evidence-only readiness-capability App. It consumes retained compact outputs from the Markdown request validator and non-Multica request adapter, plus an explicit checklist for protocol acceptance, adapter compatibility, rollback proof, and evidence retention. It emits deterministic `public-0x-readiness-compact.v0` JSON with `valid`, `assertions[]`, and `issues[]` so public readiness claims can be reviewed without live Multica credentials or production authority.
