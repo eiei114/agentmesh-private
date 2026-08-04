@@ -18,6 +18,7 @@ members = [
     "plugins/markdown-request-validator",
     "plugins/non-multica-request-adapter",
     "plugins/local-tracker-adapter",
+    "plugins/local-runner-adapter",
     "plugins/adapter-metadata-canonicalizer",
 ]
 default-members = [
@@ -42,6 +43,7 @@ agentmesh-multica-selector-shadow = { path = "plugins/multica-selector-shadow" }
 agentmesh-markdown-request-validator = { path = "plugins/markdown-request-validator" }
 agentmesh-non-multica-request-adapter = { path = "plugins/non-multica-request-adapter" }
 agentmesh-local-tracker-adapter = { path = "plugins/local-tracker-adapter" }
+agentmesh-local-runner-adapter = { path = "plugins/local-runner-adapter" }
 agentmesh-adapter-metadata-canonicalizer = { path = "plugins/adapter-metadata-canonicalizer" }
 agentmesh-app = { path = "crates/agentmesh-app" }
 agentmesh-request-evidence = { path = "crates/agentmesh-request-evidence" }

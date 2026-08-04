@@ -11,6 +11,7 @@ const ACCEPTED_INPUT_SCHEMA_VERSIONS: &[&str] = &[
     INPUT_SCHEMA_VERSION,
     "non-multica-request-adapter-input.v0",
     "local-tracker-adapter-input.v0",
+    "local-runner-adapter-input.v0",
     "markdown-request-validator-input.v0",
 ];
 

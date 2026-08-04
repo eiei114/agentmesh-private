@@ -142,6 +142,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentmesh-local-runner-adapter"
+version = "0.1.0"
+dependencies = [
+ "agentmesh-fixture-support",
+ "agentmesh-proto",
+ "serde_json",
+]
+
+[[package]]
 name = "agentmesh-local-tracker-adapter"
 version = "0.1.0"
 dependencies = [

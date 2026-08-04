@@ -24,6 +24,8 @@ The adapter evidence traceability App (`agentmesh-adapter-evidence-traceability`
 
 The local tracker adapter App (`agentmesh-local-tracker-adapter`) is a second concrete non-Multica request target: it maps `agentmesh-request.v0` sources into deterministic local taskfile payloads, keeps stable canonical fields separate from adapter extensions, and emits schema-stable validation errors.
 
+The local runner adapter App (`agentmesh-local-runner-adapter`) emits a deterministic runner-focused envelope for non-Multica local execution and dry-run preview. It reports missing, extra, and incompatible request fields with stable rerun diagnostics while keeping adapter-only passthrough metadata outside canonical request fields.
+
 The public 0.x rollback replay App (`agentmesh-public-0x-rollback-replay`) consumes shared parser output plus retained adapter/protocol artifacts and emits a stable rollback evidence bundle for non-Multica runners.
 
 The public 0.x readiness report App (`agentmesh-public-0x-readiness-report`) consumes retained request evidence digests and adapter evidence envelopes after dogfood/repair cycles, then emits a deterministic coverage/freshness/adapter-consistency report for local and non-Multica workflows.
@@ -136,6 +138,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/markdown-request-validator/` — tool-neutral request validator manifest + IO schemas
 - `apps/non-multica-request-adapter/` — tracker-neutral request adapter manifest + IO schemas
 - `apps/local-tracker-adapter/` — local taskfile tracker adapter manifest + IO schemas
+- `apps/local-runner-adapter/` — deterministic local-runner compatibility envelope manifest + IO schemas
 - `apps/adapter-metadata-canonicalizer/` — adapter metadata comparison/canonicalization manifest + IO schemas
 - `apps/adapter-evidence-envelope/` — deterministic adapter evidence envelope manifest + IO schemas
 - `apps/adapter-evidence-traceability/` — deterministic adapter evidence traceability graph manifest + IO schemas
@@ -154,6 +157,7 @@ Internal / test-only:
 - `agentmesh-markdown-request-validator` — deterministic Markdown App request validator (plugin-owned types only)
 - `agentmesh-non-multica-request-adapter` — tracker-neutral request adapter contract (plugin-owned types only)
 - `agentmesh-local-tracker-adapter` — local taskfile tracker adapter contract (plugin-owned types only)
+- `agentmesh-local-runner-adapter` — local-runner compatibility envelope contract (plugin-owned types only)
 - `agentmesh-adapter-metadata-canonicalizer` — deterministic adapter metadata drift comparison and canonical subset emitter (plugin-owned types only)
 - `agentmesh-adapter-evidence-envelope` — deterministic adapter evidence envelope binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-adapter-evidence-traceability` — deterministic adapter evidence traceability binary (`adapter-metadata-canonicalizer` package)

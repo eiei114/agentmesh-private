@@ -1,0 +1,75 @@
+{
+  "adapter_version": "local-runner-adapter.v0",
+  "canonical": {
+    "field_order": [
+      "title",
+      "request_kind",
+      "issue_type",
+      "status",
+      "project_key",
+      "source_prd",
+      "source_design",
+      "source_roadmap",
+      "blocked_by",
+      "unblocks",
+      "sequence_index",
+      "sequence_total"
+    ],
+    "fields": {
+      "blocked_by": [],
+      "issue_type": null,
+      "project_key": "agentmesh-private",
+      "request_kind": "app",
+      "sequence_index": 1,
+      "sequence_total": null,
+      "source_design": null,
+      "source_prd": null,
+      "source_roadmap": null,
+      "status": "ready",
+      "title": "Missing field local runner request",
+      "unblocks": []
+    },
+    "request_schema_version": "agentmesh-request.v0",
+    "schema_version": "local-runner-canonical-request.v0"
+  },
+  "diagnostic_count": 2,
+  "diagnostic_model": {
+    "invalid_canonical_policy": "When valid is false, canonical is diagnostic-only; consumers must check valid before using canonical.",
+    "rerun_policy": "Diagnostics are deterministic for the same request artifact; fix the reported input path and rerun the same request.",
+    "schema_version": "local-runner-diagnostic.v0",
+    "severity_order": [
+      "error",
+      "warning"
+    ],
+    "sort_order": [
+      "code",
+      "path",
+      "field",
+      "message"
+    ]
+  },
+  "diagnostics": [
+    {
+      "code": "request_field_missing",
+      "expected": "non-empty value in the request source",
+      "field": "issue_type",
+      "message": "request field issue_type is required",
+      "path": "$.request.issue_type",
+      "rerun_action": "fix_input_and_rerun",
+      "severity": "error"
+    },
+    {
+      "code": "request_sequence_incomplete",
+      "expected": "both sequence_index and sequence_total, or neither",
+      "field": "sequence",
+      "message": "sequence_index and sequence_total must be provided together",
+      "path": "$.request.sequence",
+      "rerun_action": "fix_input_and_rerun",
+      "severity": "error"
+    }
+  ],
+  "local_runner_envelope": null,
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "local-runner-adapter-compact.v0",
+  "valid": false
+}

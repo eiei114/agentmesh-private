@@ -1,0 +1,15 @@
+{
+  "schema_version": "local-runner-adapter-input.v0",
+  "request": {
+    "title": "Malformed local runner request",
+    "request_kind": "batch",
+    "issue_type": "AFK",
+    "blocked_by": ["DOT-1", 3],
+    "sequence_index": "first",
+    "multica_issue_id": "DOT-999"
+  },
+  "adapter": {
+    "passthrough": ["not", "an", "object"]
+  },
+  "unexpected": true
+}

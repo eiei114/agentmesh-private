@@ -1,0 +1,17 @@
+schema_version = "agentmesh-app.v0"
+name = "local-runner-adapter"
+protocol_version = "2026-07-15"
+
+[plugin]
+logical_name = "agentmesh-local-runner-adapter"
+
+[schemas]
+input = "schemas/local-runner-adapter-input-v0.schema.json"
+output = "schemas/local-runner-adapter-compact-v0.schema.json"
+
+[sidecar]
+retention_class = "owner_local"
+capture_plugin_stderr = false
+
+[conformance]
+cargo_package = "agentmesh-local-runner-adapter"

@@ -81,7 +81,7 @@ Pinned production smoke uses the same manifest/input without `--mode development
 - `request`: a Markdown-compatible JSON object containing the same stable frontmatter fields.
 - Direct request fields at the top level for simple non-Multica adapters that already decoded their source envelope.
 
-The parser accepts the shared `agentmesh-request-parse-input.v0` schema marker and existing adapter input schema markers (`markdown-request-validator-input.v0`, `non-multica-request-adapter-input.v0`, `local-tracker-adapter-input.v0`) so adapters can hand the same source envelope to the CLI before doing adapter-owned work.
+The parser accepts the shared `agentmesh-request-parse-input.v0` schema marker and existing adapter input schema markers (`markdown-request-validator-input.v0`, `non-multica-request-adapter-input.v0`, `local-tracker-adapter-input.v0`, `local-runner-adapter-input.v0`) so adapters can hand the same source envelope to the CLI before doing adapter-owned work.
 
 Successful output is deterministic JSON with `schema_version: agentmesh-request-parse-output.v0`, `request_schema_version: agentmesh-request.v0`, `valid`, `canonical`, `error_count`, and `errors[]`. `canonical` contains only stable request fields: `title`, `request_kind`, `issue_type`, `ready_for_multica`, `status`, `project_key`, source document paths, dependency arrays, and sequence fields. `request_kind` accepts daily App supply (`app`) and deterministic maintenance follow-up (`repair`) so repair-first controller findings can use the same adapter handoff. Adapter-specific passthrough/routing fields stay outside this output; markdown and non-Multica adapters consume `canonical` first, then attach tracker-specific payloads under their own adapter-owned keys.
 
@@ -156,6 +156,48 @@ agentmesh app run \
 ```
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-local-tracker-adapter`.
+
+## Local runner adapter App
+
+`apps/local-runner-adapter/agentmesh-app.toml` declares a local-runner compatibility App for deterministic execution or dry-run preview outside Multica. It accepts exactly one Markdown source or Markdown-compatible JSON object plus optional adapter-owned passthrough:
+
+```json
+{
+  "schema_version": "local-runner-adapter-input.v0",
+  "request": {
+    "title": "Add app",
+    "request_kind": "app",
+    "issue_type": "AFK",
+    "status": "ready",
+    "project_key": "agentmesh-private",
+    "blocked_by": [],
+    "unblocks": []
+  },
+  "adapter": {"passthrough": {"execution_profile": "preview"}}
+}
+```
+
+The compact payload contains `schema_version`, `adapter_version`, `request_schema_version`, `valid`, `canonical`, `local_runner_envelope`, `diagnostic_model`, `diagnostic_count`, and `diagnostics[]`. `canonical.field_order` defines the stable request field order emitted for local runners: title, request kind, issue type, status, project, source references, dependencies, and sequence fields. Multica-only metadata such as `ready_for_multica` is accepted for request compatibility but intentionally omitted from `canonical.fields` and `local_runner_envelope`; adapter-only data is preserved only under `local_runner_envelope.adapter_metadata.passthrough`. When `valid` is `false`, `canonical` is diagnostic-only, and consumers must check `valid` before using canonical fields.
+
+`local_runner_envelope` uses `schema_version: local-runner-envelope.v0`, a deterministic `local-runner://<project>/<title-slug>` id, source references, dependencies, sequence values, and the adapter metadata object. If `project_key` is omitted, the envelope emits `project: "unassigned"` and uses the same value in the id. Invalid inputs return `local_runner_envelope: null` with stable rerun diagnostics. Important diagnostic codes include `request_field_missing`, `request_field_extra`, `request_field_incompatible`, `request_kind_unsupported`, `request_sequence_incomplete`, `request_sequence_out_of_range`, `adapter_passthrough_incompatible`, and `top_level_field_extra`. Diagnostics are sorted by `code`, `path`, `field`, then `message`, and each item includes `rerun_action: fix_input_and_rerun` so reruns can compare error snapshots deterministically.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-local-runner-adapter
+agentmesh app validate \
+  --manifest apps/local-runner-adapter/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/local-runner-adapter/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/local-runner-adapter/testdata/valid_request_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-local-runner-adapter
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-local-runner-adapter`.
 
 ## Adapter metadata canonicalizer App
 

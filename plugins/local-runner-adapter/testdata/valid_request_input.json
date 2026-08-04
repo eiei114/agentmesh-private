@@ -1,0 +1,11 @@
+{
+  "schema_version": "local-runner-adapter-input.v0",
+  "markdown": "---\ntitle: \"Add a local-runner adapter compatibility app\"\nstatus: ready\nproject_key: agentmesh-private\nissue_type: AFK\nrequest_kind: app\nready_for_multica: true\nsource_prd: docs/example-prd.md\nsource_design: docs/example-design.md\nsource_roadmap: docs/example-roadmap.md\nsequence_index: 1\nsequence_total: 1\nblocked_by: []\nunblocks: []\n---\n# Add a local-runner adapter compatibility app\n\n## What to build\nBuild a local runner adapter.\n\n## Acceptance criteria\n- Emits a deterministic local-runner envelope.\n",
+  "adapter": {
+    "passthrough": {
+      "dry_run": true,
+      "execution_profile": "preview",
+      "runner_labels": ["local", "compatibility"]
+    }
+  }
+}
