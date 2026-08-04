@@ -1,7 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "local-runner-adapter-compact.v0",
+  "$comment": "diagnostic_count is emitted by the adapter as diagnostics.length; portable Draft 2020-12 JSON Schema cannot compare an integer property with an array length, so fixture tests cover that cross-field invariant.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["schema_version", "adapter_version", "request_schema_version", "valid", "canonical", "local_runner_envelope", "diagnostic_model", "diagnostic_count", "diagnostics"],
   "properties": {
     "schema_version": { "const": "local-runner-adapter-compact.v0" },
@@ -10,6 +12,7 @@
     "valid": { "type": "boolean" },
     "canonical": {
       "type": ["object", "null"],
+      "additionalProperties": false,
       "required": ["schema_version", "request_schema_version", "field_order", "fields"],
       "properties": {
         "schema_version": { "const": "local-runner-canonical-request.v0" },
@@ -17,11 +20,30 @@
         "field_order": {
           "const": ["title", "request_kind", "issue_type", "status", "project_key", "source_prd", "source_design", "source_roadmap", "blocked_by", "unblocks", "sequence_index", "sequence_total"]
         },
-        "fields": { "type": "object" }
+        "fields": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "request_kind", "issue_type", "status", "project_key", "source_prd", "source_design", "source_roadmap", "blocked_by", "unblocks", "sequence_index", "sequence_total"],
+          "properties": {
+            "title": { "type": ["string", "null"] },
+            "request_kind": { "type": ["string", "null"] },
+            "issue_type": { "type": ["string", "null"] },
+            "status": { "type": ["string", "null"] },
+            "project_key": { "type": ["string", "null"] },
+            "source_prd": { "type": ["string", "null"] },
+            "source_design": { "type": ["string", "null"] },
+            "source_roadmap": { "type": ["string", "null"] },
+            "blocked_by": { "type": "array", "items": { "type": "string" } },
+            "unblocks": { "type": "array", "items": { "type": "string" } },
+            "sequence_index": { "type": ["integer", "null"], "minimum": 0 },
+            "sequence_total": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        }
       }
     },
     "local_runner_envelope": {
       "type": ["object", "null"],
+      "additionalProperties": false,
       "required": ["schema_version", "runner", "field_order", "id", "title", "request_kind", "issue_type", "project", "state", "sources", "dependencies", "sequence", "adapter_metadata"],
       "properties": {
         "schema_version": { "const": "local-runner-envelope.v0" },
@@ -30,32 +52,61 @@
           "const": ["id", "title", "request_kind", "issue_type", "project", "state", "sources", "dependencies", "sequence", "adapter_metadata"]
         },
         "id": { "type": "string" },
-        "title": { "type": ["string", "null"] },
-        "request_kind": { "type": ["string", "null"] },
-        "issue_type": { "type": ["string", "null"] },
-        "project": { "type": ["string", "null"] },
+        "title": { "type": "string" },
+        "request_kind": { "type": "string" },
+        "issue_type": { "type": "string" },
+        "project": { "type": "string" },
         "state": { "type": "string" },
-        "sources": { "type": "object" },
-        "dependencies": { "type": "object" },
-        "sequence": { "type": "object" },
+        "sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["request_schema_version", "prd", "design", "roadmap"],
+          "properties": {
+            "request_schema_version": { "const": "agentmesh-request.v0" },
+            "prd": { "type": ["string", "null"] },
+            "design": { "type": ["string", "null"] },
+            "roadmap": { "type": ["string", "null"] }
+          }
+        },
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["blocked_by", "unblocks"],
+          "properties": {
+            "blocked_by": { "type": "array", "items": { "type": "string" } },
+            "unblocks": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "sequence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["index", "total"],
+          "properties": {
+            "index": { "type": ["integer", "null"], "minimum": 0 },
+            "total": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        },
         "adapter_metadata": {
           "type": "object",
+          "additionalProperties": false,
           "required": ["schema_version", "passthrough"],
           "properties": {
             "schema_version": { "const": "local-runner-adapter-metadata.v0" },
-            "passthrough": { "type": "object" }
+            "passthrough": { "type": "object", "additionalProperties": true }
           }
         }
       }
     },
     "diagnostic_model": {
       "type": "object",
-      "required": ["schema_version", "severity_order", "sort_order", "rerun_policy"],
+      "additionalProperties": false,
+      "required": ["schema_version", "severity_order", "sort_order", "rerun_policy", "invalid_canonical_policy"],
       "properties": {
         "schema_version": { "const": "local-runner-diagnostic.v0" },
         "severity_order": { "const": ["error", "warning"] },
         "sort_order": { "const": ["code", "path", "field", "message"] },
-        "rerun_policy": { "type": "string" }
+        "rerun_policy": { "type": "string" },
+        "invalid_canonical_policy": { "type": "string" }
       }
     },
     "diagnostic_count": { "type": "integer", "minimum": 0 },
@@ -63,6 +114,7 @@
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": ["code", "field", "path", "severity", "message", "expected", "rerun_action"],
         "properties": {
           "code": { "type": "string" },
@@ -75,5 +127,27 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["valid"], "properties": { "valid": { "const": true } } },
+      "then": {
+        "properties": {
+          "local_runner_envelope": { "type": "object" },
+          "diagnostic_count": { "const": 0 },
+          "diagnostics": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "required": ["valid"], "properties": { "valid": { "const": false } } },
+      "then": {
+        "properties": {
+          "local_runner_envelope": { "type": "null" },
+          "diagnostic_count": { "minimum": 1 },
+          "diagnostics": { "minItems": 1 }
+        }
+      }
+    }
+  ]
 }

@@ -34,6 +34,7 @@
   },
   "diagnostic_count": 2,
   "diagnostic_model": {
+    "invalid_canonical_policy": "When valid is false, canonical is diagnostic-only; consumers must check valid before using canonical.",
     "rerun_policy": "Diagnostics are deterministic for the same request artifact; fix the reported input path and rerun the same request.",
     "schema_version": "local-runner-diagnostic.v0",
     "severity_order": [

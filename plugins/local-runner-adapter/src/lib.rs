@@ -266,6 +266,7 @@ fn parse_markdown(markdown: &str, diagnostics: &mut Vec<Value>) -> Option<Reques
             ),
             format!("at most {MAX_SOURCE_BYTES} bytes"),
         ));
+        return None;
     }
 
     let normalized = markdown.replace("\r\n", "\n");
@@ -284,7 +285,7 @@ fn parse_markdown(markdown: &str, diagnostics: &mut Vec<Value>) -> Option<Reques
 
 fn fields_from_frontmatter(frontmatter: &str, diagnostics: &mut Vec<Value>) -> RequestFields {
     let mut fields = RequestFields::default();
-    for line in frontmatter.lines() {
+    for (index, line) in frontmatter.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -293,8 +294,11 @@ fn fields_from_frontmatter(frontmatter: &str, diagnostics: &mut Vec<Value>) -> R
             diagnostics.push(diagnostic(
                 "frontmatter_line_incompatible",
                 "frontmatter",
-                "$.markdown.frontmatter",
-                "frontmatter lines must use key: value syntax",
+                format!("$.markdown.frontmatter[{index}]"),
+                format!(
+                    "frontmatter line {} must use key: value syntax: {trimmed}",
+                    index + 1
+                ),
                 "key: value",
             ));
             continue;
@@ -490,6 +494,16 @@ fn validate_request_fields(
             "sequence_index and sequence_total must be provided together",
             "both sequence_index and sequence_total, or neither",
         ));
+    } else if let (Some(index), Some(total)) = (fields.sequence_index, fields.sequence_total) {
+        if index == 0 || index > total {
+            diagnostics.push(diagnostic(
+                "request_sequence_out_of_range",
+                "sequence_index",
+                field_path(source_kind, "sequence_index"),
+                "sequence_index must be 1-based and not exceed sequence_total",
+                "1 <= sequence_index <= sequence_total",
+            ));
+        }
     }
 }
 
@@ -534,7 +548,8 @@ fn compact(
             "schema_version": DIAGNOSTIC_SCHEMA_VERSION,
             "severity_order": ["error", "warning"],
             "sort_order": ["code", "path", "field", "message"],
-            "rerun_policy": "Diagnostics are deterministic for the same request artifact; fix the reported input path and rerun the same request."
+            "rerun_policy": "Diagnostics are deterministic for the same request artifact; fix the reported input path and rerun the same request.",
+            "invalid_canonical_policy": "When valid is false, canonical is diagnostic-only; consumers must check valid before using canonical."
         },
         "diagnostic_count": diagnostics.len(),
         "diagnostics": diagnostics,
@@ -574,7 +589,7 @@ fn local_runner_envelope(fields: &RequestFields, adapter_passthrough: Value) -> 
         "title": fields.title,
         "request_kind": fields.request_kind,
         "issue_type": fields.issue_type,
-        "project": fields.project_key,
+        "project": project,
         "state": fields.status.as_deref().unwrap_or("draft"),
         "sources": {
             "request_schema_version": REQUEST_SCHEMA_VERSION,
@@ -724,10 +739,17 @@ mod tests {
                 serde_json::from_slice(&std::fs::read(root.join(input_name)).unwrap()).unwrap();
             let expected: Value =
                 serde_json::from_slice(&std::fs::read(root.join(expected_name)).unwrap()).unwrap();
+            let output = adapt_request_input(&input);
             assert_eq!(
-                adapt_request_input(&input),
-                expected,
+                output, expected,
                 "{input_name} should match {expected_name}"
+            );
+            assert_eq!(
+                output["diagnostic_count"].as_u64(),
+                output["diagnostics"]
+                    .as_array()
+                    .map(|items| items.len() as u64),
+                "{input_name} diagnostic_count must match diagnostics length"
             );
         }
     }
@@ -748,12 +770,41 @@ mod tests {
         }));
 
         assert_eq!(output["valid"], true);
-        assert!(output["canonical"]["fields"]
-            .get("ready_for_multica")
-            .is_none());
-        assert!(output["local_runner_envelope"]
-            .get("ready_for_multica")
-            .is_none());
+        let canonical_fields = output["canonical"]["fields"]
+            .as_object()
+            .expect("canonical.fields must be an object");
+        let envelope = output["local_runner_envelope"]
+            .as_object()
+            .expect("local_runner_envelope must be an object");
+        assert!(!canonical_fields.contains_key("ready_for_multica"));
+        assert!(!envelope.contains_key("ready_for_multica"));
+    }
+
+    #[test]
+    fn sequence_index_must_be_one_based_and_within_total() {
+        let output = adapt_request_input(&json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "request": {
+                "title": "Invalid sequence",
+                "request_kind": "app",
+                "issue_type": "AFK",
+                "sequence_index": 2,
+                "sequence_total": 1,
+                "blocked_by": [],
+                "unblocks": []
+            }
+        }));
+
+        assert_eq!(output["valid"], false);
+        assert_eq!(output["local_runner_envelope"], Value::Null);
+        assert!(output["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| {
+                diagnostic["code"] == "request_sequence_out_of_range"
+                    && diagnostic["path"] == "$.request.sequence_index"
+            }));
     }
 
     #[test]

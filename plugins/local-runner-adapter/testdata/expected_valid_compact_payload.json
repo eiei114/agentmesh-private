@@ -22,9 +22,9 @@
       "request_kind": "app",
       "sequence_index": 1,
       "sequence_total": 1,
-      "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
-      "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-04-add-a-local-runner-adapter-compatibility-app.md",
-      "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+      "source_design": "docs/example-design.md",
+      "source_prd": "docs/example-prd.md",
+      "source_roadmap": "docs/example-roadmap.md",
       "status": "ready",
       "title": "Add a local-runner adapter compatibility app",
       "unblocks": []
@@ -34,6 +34,7 @@
   },
   "diagnostic_count": 0,
   "diagnostic_model": {
+    "invalid_canonical_policy": "When valid is false, canonical is diagnostic-only; consumers must check valid before using canonical.",
     "rerun_policy": "Diagnostics are deterministic for the same request artifact; fix the reported input path and rerun the same request.",
     "schema_version": "local-runner-diagnostic.v0",
     "severity_order": [
@@ -87,10 +88,10 @@
       "total": 1
     },
     "sources": {
-      "design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
-      "prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-04-add-a-local-runner-adapter-compatibility-app.md",
+      "design": "docs/example-design.md",
+      "prd": "docs/example-prd.md",
       "request_schema_version": "agentmesh-request.v0",
-      "roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md"
+      "roadmap": "docs/example-roadmap.md"
     },
     "state": "ready",
     "title": "Add a local-runner adapter compatibility app"
