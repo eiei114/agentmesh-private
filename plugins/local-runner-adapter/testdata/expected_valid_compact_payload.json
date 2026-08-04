@@ -22,9 +22,9 @@
       "request_kind": "app",
       "sequence_index": 1,
       "sequence_total": 1,
-      "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
-      "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-04-add-a-local-runner-adapter-compatibility-app.md",
-      "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+      "source_design": "docs/agentmesh-request-operations-v1.md",
+      "source_prd": "requests/2026-08-04-add-a-local-runner-adapter-compatibility-app.md",
+      "source_roadmap": "ROADMAP.md",
       "status": "ready",
       "title": "Add a local-runner adapter compatibility app",
       "unblocks": []
@@ -87,10 +87,10 @@
       "total": 1
     },
     "sources": {
-      "design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
-      "prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-04-add-a-local-runner-adapter-compatibility-app.md",
+      "design": "docs/agentmesh-request-operations-v1.md",
+      "prd": "requests/2026-08-04-add-a-local-runner-adapter-compatibility-app.md",
       "request_schema_version": "agentmesh-request.v0",
-      "roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md"
+      "roadmap": "ROADMAP.md"
     },
     "state": "ready",
     "title": "Add a local-runner adapter compatibility app"

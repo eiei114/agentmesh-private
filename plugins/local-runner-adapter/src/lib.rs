@@ -266,6 +266,7 @@ fn parse_markdown(markdown: &str, diagnostics: &mut Vec<Value>) -> Option<Reques
             ),
             format!("at most {MAX_SOURCE_BYTES} bytes"),
         ));
+        return None;
     }
 
     let normalized = markdown.replace("\r\n", "\n");
@@ -284,7 +285,7 @@ fn parse_markdown(markdown: &str, diagnostics: &mut Vec<Value>) -> Option<Reques
 
 fn fields_from_frontmatter(frontmatter: &str, diagnostics: &mut Vec<Value>) -> RequestFields {
     let mut fields = RequestFields::default();
-    for line in frontmatter.lines() {
+    for (index, line) in frontmatter.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -293,8 +294,11 @@ fn fields_from_frontmatter(frontmatter: &str, diagnostics: &mut Vec<Value>) -> R
             diagnostics.push(diagnostic(
                 "frontmatter_line_incompatible",
                 "frontmatter",
-                "$.markdown.frontmatter",
-                "frontmatter lines must use key: value syntax",
+                format!("$.markdown.frontmatter[{index}]"),
+                format!(
+                    "frontmatter line {} must use key: value syntax: {trimmed}",
+                    index + 1
+                ),
                 "key: value",
             ));
             continue;
@@ -490,6 +494,16 @@ fn validate_request_fields(
             "sequence_index and sequence_total must be provided together",
             "both sequence_index and sequence_total, or neither",
         ));
+    } else if let (Some(index), Some(total)) = (fields.sequence_index, fields.sequence_total) {
+        if index == 0 || index > total {
+            diagnostics.push(diagnostic(
+                "request_sequence_out_of_range",
+                "sequence",
+                field_path(source_kind, "sequence"),
+                format!("sequence_index {index} must be between 1 and {total}"),
+                "1-based sequence_index within sequence_total",
+            ));
+        }
     }
 }
 
@@ -564,13 +578,17 @@ fn canonical_payload(fields: &RequestFields) -> Value {
 }
 
 fn local_runner_envelope(fields: &RequestFields, adapter_passthrough: Value) -> Value {
-    let project = fields.project_key.as_deref().unwrap_or("unassigned");
     let title = fields.title.as_deref().unwrap_or("untitled");
+    let title_slug = slug(title);
+    let id = match fields.project_key.as_deref() {
+        Some(project) => format!("local-runner://{project}/{title_slug}"),
+        None => format!("local-runner:///{title_slug}"),
+    };
     json!({
         "schema_version": ENVELOPE_SCHEMA_VERSION,
         "runner": LOCAL_RUNNER_VERSION,
         "field_order": RUNNER_FIELD_ORDER,
-        "id": format!("local-runner://{project}/{}", slug(title)),
+        "id": id,
         "title": fields.title,
         "request_kind": fields.request_kind,
         "issue_type": fields.issue_type,
@@ -748,12 +766,14 @@ mod tests {
         }));
 
         assert_eq!(output["valid"], true);
-        assert!(output["canonical"]["fields"]
-            .get("ready_for_multica")
-            .is_none());
-        assert!(output["local_runner_envelope"]
-            .get("ready_for_multica")
-            .is_none());
+        let canonical_fields = output["canonical"]["fields"]
+            .as_object()
+            .expect("canonical.fields must be an object");
+        let envelope = output["local_runner_envelope"]
+            .as_object()
+            .expect("local_runner_envelope must be an object");
+        assert!(!canonical_fields.contains_key("ready_for_multica"));
+        assert!(!envelope.contains_key("ready_for_multica"));
     }
 
     #[test]
