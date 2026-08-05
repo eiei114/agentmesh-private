@@ -1,5 +1,6 @@
 //! AgentMesh CLI entrypoint (Phase 0 host + App v0 validate/run).
 
+mod docs;
 mod request_parse;
 
 use agentmesh_app::{
@@ -83,6 +84,11 @@ enum Commands {
         #[command(subcommand)]
         command: ToolchainCommands,
     },
+    /// Discover embedded AgentMesh documentation.
+    Docs {
+        #[command(subcommand)]
+        command: DocsCommands,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -139,6 +145,12 @@ enum RequestCommands {
         #[arg(long)]
         input: PathBuf,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum DocsCommands {
+    /// List embedded AgentMesh documents available in this binary.
+    List,
 }
 
 #[derive(Debug, Subcommand)]
@@ -229,6 +241,9 @@ async fn main() -> ExitCode {
                 toolchain_cache,
                 json,
             } => toolchain_install_command(bundle, toolchain_cache, json),
+        },
+        Commands::Docs { command } => match command {
+            DocsCommands::List => docs::docs_list_command(),
         },
     }
 }

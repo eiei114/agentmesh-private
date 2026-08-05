@@ -1,0 +1,31 @@
+schema_version = "agentmesh-docs.v0"
+
+[[documents]]
+name = "agentmesh-app-v0"
+description = "AgentMesh App manifestとtoolchain pinの仕様"
+source = "docs/agentmesh-app-v0.md"
+
+[[documents]]
+name = "backlog-promoter-snapshot-v0"
+description = "Backlog Promoter snapshot v0 immutable inventory contract"
+source = "docs/backlog-promoter-snapshot-v0.md"
+
+[[documents]]
+name = "protocol-v0"
+description = "AgentMeshのstdio JSON-RPC protocol仕様"
+source = "docs/protocol-v0.md"
+
+[[documents]]
+name = "public-0x-readiness-gate"
+description = "Public 0.x readiness evidence gate checklist"
+source = "docs/public-0x-readiness-gate.md"
+
+[[documents]]
+name = "public-0x-readiness-report"
+description = "Public 0.x readiness report App contract"
+source = "docs/public-0x-readiness-report.md"
+
+[[documents]]
+name = "threat-model-v0"
+description = "AgentMesh Phase 0 threat model"
+source = "docs/threat-model-v0.md"
