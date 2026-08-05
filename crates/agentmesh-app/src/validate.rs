@@ -238,6 +238,48 @@ mod tests {
         assert!(listed > 0, "expected at least one app manifest under apps/");
     }
 
+    #[test]
+    fn readme_lists_all_workspace_crates() {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let readme =
+            std::fs::read_to_string(workspace_root.join("README.md")).expect("README.md readable");
+        let workspace_section = readme
+            .split_once("## Workspace crates")
+            .map(|(_, section)| {
+                section
+                    .split_once("\n## ")
+                    .map_or(section, |(body, _)| body)
+            })
+            .expect("README.md workspace crates section");
+        let crates_dir = workspace_root.join("crates");
+
+        let mut listed = 0;
+        for entry in std::fs::read_dir(&crates_dir).expect("crates directory") {
+            let path = entry.expect("crates entry").path();
+            if !path.is_dir() {
+                continue;
+            }
+            let manifest = path.join("Cargo.toml");
+            if !manifest.is_file() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .expect("crate directory name")
+                .to_string_lossy();
+            let expected = format!("- `{name}`");
+            assert!(
+                workspace_section
+                    .lines()
+                    .any(|line| line.trim_start().starts_with(&expected)),
+                "README.md missing workspace crate entry for {expected}"
+            );
+            listed += 1;
+        }
+
+        assert!(listed > 0, "expected at least one crate under crates/");
+    }
+
     fn write(dir: &Path, name: &str, body: &str) -> std::path::PathBuf {
         let path = dir.join(name);
         fs::write(&path, body).unwrap();
