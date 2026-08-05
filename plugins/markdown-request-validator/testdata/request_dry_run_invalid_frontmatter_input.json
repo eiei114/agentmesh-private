@@ -1,0 +1,21 @@
+{
+  "schema_version": "request-dry-run-summary-input.v0",
+  "request_id": "DOT-1355",
+  "scope": "agentmesh:app:request-dry-run-summary",
+  "target_app": "request-dry-run-summary",
+  "request": {
+    "title": "Invalid frontmatter values",
+    "request_kind": "app",
+    "issue_type": "AFK",
+    "status": "ready",
+    "project_key": "agentmesh-private",
+    "source_prd": "Requests/App/request-dry-run-summary.md",
+    "source_design": "Docs/agentmesh-request-operations-v1.md",
+    "source_roadmap": "ROADMAP.md",
+    "blocked_by": ["DOT-1"],
+    "unblocks": [],
+    "sequence_index": 2,
+    "sequence_total": 1,
+    "ready_for_multica": "yes"
+  }
+}

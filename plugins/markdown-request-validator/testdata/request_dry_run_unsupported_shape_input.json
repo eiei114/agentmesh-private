@@ -1,0 +1,10 @@
+{
+  "schema_version": "request-dry-run-summary-input.v0",
+  "request_id": "DOT-1355",
+  "scope": "agentmesh:app:request-dry-run-summary",
+  "target_app": "request-dry-run-summary",
+  "markdown": "---\ntitle: \"Ambiguous request\"\n---\n# Ambiguous request\n",
+  "request": {
+    "title": "Ambiguous request"
+  }
+}

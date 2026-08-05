@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-dry-run-summary-compact-v0.schema.json",
+  "title": "Request Dry-run Summary Compact Output v0",
+  "description": "Deterministic Markdown dry-run preview plus normalized JSON evidence for adapter-neutral request comparison.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "summary_version",
+    "request_schema_version",
+    "valid",
+    "request_id",
+    "scope",
+    "target_app",
+    "source_shape",
+    "preview_markdown",
+    "evidence",
+    "error_count",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": { "const": "request-dry-run-summary-compact.v0" },
+    "summary_version": { "const": "request-dry-run-summary.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "valid": { "type": "boolean" },
+    "request_id": { "type": ["string", "null"] },
+    "scope": { "type": ["string", "null"] },
+    "target_app": { "type": ["string", "null"] },
+    "source_shape": { "enum": ["markdown", "request", "unsupported"] },
+    "preview_markdown": { "type": "string", "minLength": 1 },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "error_count": { "type": "integer", "minimum": 0 },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/error_record" } }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "summary_version",
+        "request_schema_version",
+        "serialization",
+        "request_id",
+        "scope",
+        "target_app",
+        "source_shape",
+        "frontmatter_fields",
+        "validation",
+        "errors"
+      ],
+      "properties": {
+        "schema_version": { "const": "request-dry-run-summary-evidence.v0" },
+        "summary_version": { "const": "request-dry-run-summary.v0" },
+        "request_schema_version": { "const": "agentmesh-request.v0" },
+        "serialization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["format", "object_key_order", "array_order", "markdown_section_order"],
+          "properties": {
+            "format": { "const": "json" },
+            "object_key_order": { "const": "lexicographic" },
+            "array_order": { "const": "contract-defined" },
+            "markdown_section_order": {
+              "const": [
+                "Request Dry-run Summary",
+                "Parsed Frontmatter",
+                "Validation",
+                "Errors",
+                "Normalized JSON Evidence"
+              ]
+            }
+          }
+        },
+        "request_id": { "type": ["string", "null"] },
+        "scope": { "type": ["string", "null"] },
+        "target_app": { "type": ["string", "null"] },
+        "source_shape": { "enum": ["markdown", "request", "unsupported"] },
+        "frontmatter_fields": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/frontmatter_value" }
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["valid", "status", "error_count", "error_codes"],
+          "properties": {
+            "valid": { "type": "boolean" },
+            "status": { "enum": ["valid", "invalid"] },
+            "error_count": { "type": "integer", "minimum": 0 },
+            "error_codes": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "errors": { "type": "array", "items": { "$ref": "#/$defs/error_record" } }
+      }
+    },
+    "error_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category", "severity", "path", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "AGENTMESH_INPUT_SCHEMA_INVALID",
+            "AGENTMESH_FIELD_REQUIRED",
+            "AGENTMESH_UNSUPPORTED_REQUEST_SHAPE",
+            "AGENTMESH_FRONTMATTER_VALUE_INVALID"
+          ]
+        },
+        "category": {
+          "enum": [
+            "input_schema_invalid",
+            "missing_field",
+            "unsupported_request_shape",
+            "invalid_frontmatter_value"
+          ]
+        },
+        "severity": { "const": "error" },
+        "path": { "type": ["string", "null"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "frontmatter_value": {
+      "description": "Raw parsed frontmatter evidence. Invalid requests still echo malformed values so adapters can compare deterministic failures.",
+      "type": ["string", "boolean", "integer", "number", "array", "object", "null"]
+    }
+  }
+}
