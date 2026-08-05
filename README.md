@@ -151,6 +151,7 @@ Apps / packaging (version-controlled, not `default-members`):
 Internal / test-only:
 
 - `agentmesh-conformance` — reusable host-driven contract suite
+- `agentmesh-request-evidence` — canonical request adapter evidence digest contract (shared by adapter plugins)
 - `agentmesh-fixture-support` — fixture lifecycle helpers (depends on `proto` only)
 - Fixture plugins under `plugins/fixtures/*`
 - `agentmesh-multica-selector-shadow` — Phase 1.0 offline Multica selector adapter (plugin-owned types only)
