@@ -1,0 +1,91 @@
+{
+  "error_count": 2,
+  "errors": [
+    {
+      "category": "invalid_frontmatter_value",
+      "code": "AGENTMESH_FRONTMATTER_VALUE_INVALID",
+      "message": "frontmatter field ready_for_multica must be a boolean",
+      "path": "$.request.ready_for_multica",
+      "severity": "error"
+    },
+    {
+      "category": "invalid_frontmatter_value",
+      "code": "AGENTMESH_FRONTMATTER_VALUE_INVALID",
+      "message": "sequence_index must be less than or equal to sequence_total",
+      "path": "$.request.sequence_index",
+      "severity": "error"
+    }
+  ],
+  "evidence": {
+    "errors": [
+      {
+        "category": "invalid_frontmatter_value",
+        "code": "AGENTMESH_FRONTMATTER_VALUE_INVALID",
+        "message": "frontmatter field ready_for_multica must be a boolean",
+        "path": "$.request.ready_for_multica",
+        "severity": "error"
+      },
+      {
+        "category": "invalid_frontmatter_value",
+        "code": "AGENTMESH_FRONTMATTER_VALUE_INVALID",
+        "message": "sequence_index must be less than or equal to sequence_total",
+        "path": "$.request.sequence_index",
+        "severity": "error"
+      }
+    ],
+    "frontmatter_fields": {
+      "blocked_by": [
+        "DOT-1"
+      ],
+      "issue_type": "AFK",
+      "project_key": "agentmesh-private",
+      "ready_for_multica": "yes",
+      "request_kind": "app",
+      "sequence_index": 2,
+      "sequence_total": 1,
+      "source_design": "Docs/agentmesh-request-operations-v1.md",
+      "source_prd": "Requests/App/request-dry-run-summary.md",
+      "source_roadmap": "ROADMAP.md",
+      "status": "ready",
+      "title": "Invalid frontmatter values",
+      "unblocks": []
+    },
+    "request_id": "DOT-1355",
+    "request_schema_version": "agentmesh-request.v0",
+    "schema_version": "request-dry-run-summary-evidence.v0",
+    "scope": "agentmesh:app:request-dry-run-summary",
+    "serialization": {
+      "array_order": "contract-defined",
+      "format": "json",
+      "markdown_section_order": [
+        "Request Dry-run Summary",
+        "Parsed Frontmatter",
+        "Validation",
+        "Errors",
+        "Normalized JSON Evidence"
+      ],
+      "object_key_order": "lexicographic"
+    },
+    "source_shape": "request",
+    "summary_version": "request-dry-run-summary.v0",
+    "target_app": "request-dry-run-summary",
+    "validation": {
+      "error_codes": [
+        "AGENTMESH_FRONTMATTER_VALUE_INVALID",
+        "AGENTMESH_FRONTMATTER_VALUE_INVALID"
+      ],
+      "error_count": 2,
+      "status": "invalid",
+      "valid": false
+    }
+  },
+  "preview_markdown": "## Request Dry-run Summary\n\n- request_id: `\"DOT-1355\"`\n- schema_version: `agentmesh-request.v0`\n- scope: `\"agentmesh:app:request-dry-run-summary\"`\n- target_app: `\"request-dry-run-summary\"`\n- source_shape: `request`\n- validation_status: `invalid`\n\n## Parsed Frontmatter\n\n| Field | Value |\n| --- | --- |\n| blocked_by | [\"DOT-1\"] |\n| issue_type | \"AFK\" |\n| project_key | \"agentmesh-private\" |\n| ready_for_multica | \"yes\" |\n| request_kind | \"app\" |\n| sequence_index | 2 |\n| sequence_total | 1 |\n| source_design | \"Docs/agentmesh-request-operations-v1.md\" |\n| source_prd | \"Requests/App/request-dry-run-summary.md\" |\n| source_roadmap | \"ROADMAP.md\" |\n| status | \"ready\" |\n| title | \"Invalid frontmatter values\" |\n| unblocks | [] |\n\n## Validation\n\n- valid: `false`\n- error_count: `2`\n- error_codes: `[\"AGENTMESH_FRONTMATTER_VALUE_INVALID\",\"AGENTMESH_FRONTMATTER_VALUE_INVALID\"]`\n\n## Errors\n\n| Code | Category | Path | Message |\n| --- | --- | --- | --- |\n| AGENTMESH_FRONTMATTER_VALUE_INVALID | invalid_frontmatter_value | $.request.ready_for_multica | frontmatter field ready_for_multica must be a boolean |\n| AGENTMESH_FRONTMATTER_VALUE_INVALID | invalid_frontmatter_value | $.request.sequence_index | sequence_index must be less than or equal to sequence_total |\n\n## Normalized JSON Evidence\n\n```json\n{\n  \"errors\": [\n    {\n      \"category\": \"invalid_frontmatter_value\",\n      \"code\": \"AGENTMESH_FRONTMATTER_VALUE_INVALID\",\n      \"message\": \"frontmatter field ready_for_multica must be a boolean\",\n      \"path\": \"$.request.ready_for_multica\",\n      \"severity\": \"error\"\n    },\n    {\n      \"category\": \"invalid_frontmatter_value\",\n      \"code\": \"AGENTMESH_FRONTMATTER_VALUE_INVALID\",\n      \"message\": \"sequence_index must be less than or equal to sequence_total\",\n      \"path\": \"$.request.sequence_index\",\n      \"severity\": \"error\"\n    }\n  ],\n  \"frontmatter_fields\": {\n    \"blocked_by\": [\n      \"DOT-1\"\n    ],\n    \"issue_type\": \"AFK\",\n    \"project_key\": \"agentmesh-private\",\n    \"ready_for_multica\": \"yes\",\n    \"request_kind\": \"app\",\n    \"sequence_index\": 2,\n    \"sequence_total\": 1,\n    \"source_design\": \"Docs/agentmesh-request-operations-v1.md\",\n    \"source_prd\": \"Requests/App/request-dry-run-summary.md\",\n    \"source_roadmap\": \"ROADMAP.md\",\n    \"status\": \"ready\",\n    \"title\": \"Invalid frontmatter values\",\n    \"unblocks\": []\n  },\n  \"request_id\": \"DOT-1355\",\n  \"request_schema_version\": \"agentmesh-request.v0\",\n  \"schema_version\": \"request-dry-run-summary-evidence.v0\",\n  \"scope\": \"agentmesh:app:request-dry-run-summary\",\n  \"serialization\": {\n    \"array_order\": \"contract-defined\",\n    \"format\": \"json\",\n    \"markdown_section_order\": [\n      \"Request Dry-run Summary\",\n      \"Parsed Frontmatter\",\n      \"Validation\",\n      \"Errors\",\n      \"Normalized JSON Evidence\"\n    ],\n    \"object_key_order\": \"lexicographic\"\n  },\n  \"source_shape\": \"request\",\n  \"summary_version\": \"request-dry-run-summary.v0\",\n  \"target_app\": \"request-dry-run-summary\",\n  \"validation\": {\n    \"error_codes\": [\n      \"AGENTMESH_FRONTMATTER_VALUE_INVALID\",\n      \"AGENTMESH_FRONTMATTER_VALUE_INVALID\"\n    ],\n    \"error_count\": 2,\n    \"status\": \"invalid\",\n    \"valid\": false\n  }\n}\n```\n",
+  "request_id": "DOT-1355",
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "request-dry-run-summary-compact.v0",
+  "scope": "agentmesh:app:request-dry-run-summary",
+  "source_shape": "request",
+  "summary_version": "request-dry-run-summary.v0",
+  "target_app": "request-dry-run-summary",
+  "valid": false
+}

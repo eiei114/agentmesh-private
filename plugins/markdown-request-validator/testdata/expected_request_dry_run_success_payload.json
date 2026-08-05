@@ -1,0 +1,56 @@
+{
+  "error_count": 0,
+  "errors": [],
+  "evidence": {
+    "errors": [],
+    "frontmatter_fields": {
+      "blocked_by": [],
+      "issue_type": "AFK",
+      "project_key": "agentmesh-private",
+      "ready_for_multica": true,
+      "request_kind": "app",
+      "sequence_index": 1,
+      "sequence_total": 1,
+      "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+      "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-05-add-a-deterministic-request-dry-run-summary-adapter-app.md",
+      "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+      "status": "ready",
+      "title": "Add a deterministic request dry-run summary adapter app",
+      "unblocks": []
+    },
+    "request_id": "DOT-1355",
+    "request_schema_version": "agentmesh-request.v0",
+    "schema_version": "request-dry-run-summary-evidence.v0",
+    "scope": "agentmesh:app:request-dry-run-summary",
+    "serialization": {
+      "array_order": "contract-defined",
+      "format": "json",
+      "markdown_section_order": [
+        "Request Dry-run Summary",
+        "Parsed Frontmatter",
+        "Validation",
+        "Errors",
+        "Normalized JSON Evidence"
+      ],
+      "object_key_order": "lexicographic"
+    },
+    "source_shape": "markdown",
+    "summary_version": "request-dry-run-summary.v0",
+    "target_app": "request-dry-run-summary",
+    "validation": {
+      "error_codes": [],
+      "error_count": 0,
+      "status": "valid",
+      "valid": true
+    }
+  },
+  "preview_markdown": "## Request Dry-run Summary\n\n- request_id: `\"DOT-1355\"`\n- schema_version: `agentmesh-request.v0`\n- scope: `\"agentmesh:app:request-dry-run-summary\"`\n- target_app: `\"request-dry-run-summary\"`\n- source_shape: `markdown`\n- validation_status: `valid`\n\n## Parsed Frontmatter\n\n| Field | Value |\n| --- | --- |\n| blocked_by | [] |\n| issue_type | \"AFK\" |\n| project_key | \"agentmesh-private\" |\n| ready_for_multica | true |\n| request_kind | \"app\" |\n| sequence_index | 1 |\n| sequence_total | 1 |\n| source_design | \"4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md\" |\n| source_prd | \"4_Project/OSS/agentmesh-private/Requests/App/2026-08-05-add-a-deterministic-request-dry-run-summary-adapter-app.md\" |\n| source_roadmap | \"4_Project/OSS/agentmesh-private/ROADMAP.md\" |\n| status | \"ready\" |\n| title | \"Add a deterministic request dry-run summary adapter app\" |\n| unblocks | [] |\n\n## Validation\n\n- valid: `true`\n- error_count: `0`\n- error_codes: `[]`\n\n## Errors\n\n- none\n\n## Normalized JSON Evidence\n\n```json\n{\n  \"errors\": [],\n  \"frontmatter_fields\": {\n    \"blocked_by\": [],\n    \"issue_type\": \"AFK\",\n    \"project_key\": \"agentmesh-private\",\n    \"ready_for_multica\": true,\n    \"request_kind\": \"app\",\n    \"sequence_index\": 1,\n    \"sequence_total\": 1,\n    \"source_design\": \"4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md\",\n    \"source_prd\": \"4_Project/OSS/agentmesh-private/Requests/App/2026-08-05-add-a-deterministic-request-dry-run-summary-adapter-app.md\",\n    \"source_roadmap\": \"4_Project/OSS/agentmesh-private/ROADMAP.md\",\n    \"status\": \"ready\",\n    \"title\": \"Add a deterministic request dry-run summary adapter app\",\n    \"unblocks\": []\n  },\n  \"request_id\": \"DOT-1355\",\n  \"request_schema_version\": \"agentmesh-request.v0\",\n  \"schema_version\": \"request-dry-run-summary-evidence.v0\",\n  \"scope\": \"agentmesh:app:request-dry-run-summary\",\n  \"serialization\": {\n    \"array_order\": \"contract-defined\",\n    \"format\": \"json\",\n    \"markdown_section_order\": [\n      \"Request Dry-run Summary\",\n      \"Parsed Frontmatter\",\n      \"Validation\",\n      \"Errors\",\n      \"Normalized JSON Evidence\"\n    ],\n    \"object_key_order\": \"lexicographic\"\n  },\n  \"source_shape\": \"markdown\",\n  \"summary_version\": \"request-dry-run-summary.v0\",\n  \"target_app\": \"request-dry-run-summary\",\n  \"validation\": {\n    \"error_codes\": [],\n    \"error_count\": 0,\n    \"status\": \"valid\",\n    \"valid\": true\n  }\n}\n```\n",
+  "request_id": "DOT-1355",
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "request-dry-run-summary-compact.v0",
+  "scope": "agentmesh:app:request-dry-run-summary",
+  "source_shape": "markdown",
+  "summary_version": "request-dry-run-summary.v0",
+  "target_app": "request-dry-run-summary",
+  "valid": true
+}

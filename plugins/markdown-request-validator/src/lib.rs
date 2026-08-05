@@ -4,6 +4,7 @@
 //! deterministic request contract, and emits a compact adapter-neutral result.
 
 pub mod adapter_error_contract;
+pub mod request_dry_run_summary;
 
 use agentmesh_request_evidence::{adapter_evidence_digest, RequestEvidenceFields};
 use serde::Deserialize;

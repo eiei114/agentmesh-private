@@ -1,0 +1,74 @@
+{
+  "error_count": 1,
+  "errors": [
+    {
+      "category": "unsupported_request_shape",
+      "code": "AGENTMESH_UNSUPPORTED_REQUEST_SHAPE",
+      "message": "provide exactly one of markdown or request",
+      "path": "$",
+      "severity": "error"
+    }
+  ],
+  "evidence": {
+    "errors": [
+      {
+        "category": "unsupported_request_shape",
+        "code": "AGENTMESH_UNSUPPORTED_REQUEST_SHAPE",
+        "message": "provide exactly one of markdown or request",
+        "path": "$",
+        "severity": "error"
+      }
+    ],
+    "frontmatter_fields": {
+      "blocked_by": null,
+      "issue_type": null,
+      "project_key": null,
+      "ready_for_multica": null,
+      "request_kind": null,
+      "sequence_index": null,
+      "sequence_total": null,
+      "source_design": null,
+      "source_prd": null,
+      "source_roadmap": null,
+      "status": null,
+      "title": null,
+      "unblocks": null
+    },
+    "request_id": "DOT-1355",
+    "request_schema_version": "agentmesh-request.v0",
+    "schema_version": "request-dry-run-summary-evidence.v0",
+    "scope": "agentmesh:app:request-dry-run-summary",
+    "serialization": {
+      "array_order": "contract-defined",
+      "format": "json",
+      "markdown_section_order": [
+        "Request Dry-run Summary",
+        "Parsed Frontmatter",
+        "Validation",
+        "Errors",
+        "Normalized JSON Evidence"
+      ],
+      "object_key_order": "lexicographic"
+    },
+    "source_shape": "unsupported",
+    "summary_version": "request-dry-run-summary.v0",
+    "target_app": "request-dry-run-summary",
+    "validation": {
+      "error_codes": [
+        "AGENTMESH_UNSUPPORTED_REQUEST_SHAPE"
+      ],
+      "error_count": 1,
+      "status": "invalid",
+      "valid": false
+    }
+  },
+  "preview_markdown": "## Request Dry-run Summary\n\n- request_id: `\"DOT-1355\"`\n- schema_version: `agentmesh-request.v0`\n- scope: `\"agentmesh:app:request-dry-run-summary\"`\n- target_app: `\"request-dry-run-summary\"`\n- source_shape: `unsupported`\n- validation_status: `invalid`\n\n## Parsed Frontmatter\n\n| Field | Value |\n| --- | --- |\n| blocked_by | null |\n| issue_type | null |\n| project_key | null |\n| ready_for_multica | null |\n| request_kind | null |\n| sequence_index | null |\n| sequence_total | null |\n| source_design | null |\n| source_prd | null |\n| source_roadmap | null |\n| status | null |\n| title | null |\n| unblocks | null |\n\n## Validation\n\n- valid: `false`\n- error_count: `1`\n- error_codes: `[\"AGENTMESH_UNSUPPORTED_REQUEST_SHAPE\"]`\n\n## Errors\n\n| Code | Category | Path | Message |\n| --- | --- | --- | --- |\n| AGENTMESH_UNSUPPORTED_REQUEST_SHAPE | unsupported_request_shape | $ | provide exactly one of markdown or request |\n\n## Normalized JSON Evidence\n\n```json\n{\n  \"errors\": [\n    {\n      \"category\": \"unsupported_request_shape\",\n      \"code\": \"AGENTMESH_UNSUPPORTED_REQUEST_SHAPE\",\n      \"message\": \"provide exactly one of markdown or request\",\n      \"path\": \"$\",\n      \"severity\": \"error\"\n    }\n  ],\n  \"frontmatter_fields\": {\n    \"blocked_by\": null,\n    \"issue_type\": null,\n    \"project_key\": null,\n    \"ready_for_multica\": null,\n    \"request_kind\": null,\n    \"sequence_index\": null,\n    \"sequence_total\": null,\n    \"source_design\": null,\n    \"source_prd\": null,\n    \"source_roadmap\": null,\n    \"status\": null,\n    \"title\": null,\n    \"unblocks\": null\n  },\n  \"request_id\": \"DOT-1355\",\n  \"request_schema_version\": \"agentmesh-request.v0\",\n  \"schema_version\": \"request-dry-run-summary-evidence.v0\",\n  \"scope\": \"agentmesh:app:request-dry-run-summary\",\n  \"serialization\": {\n    \"array_order\": \"contract-defined\",\n    \"format\": \"json\",\n    \"markdown_section_order\": [\n      \"Request Dry-run Summary\",\n      \"Parsed Frontmatter\",\n      \"Validation\",\n      \"Errors\",\n      \"Normalized JSON Evidence\"\n    ],\n    \"object_key_order\": \"lexicographic\"\n  },\n  \"source_shape\": \"unsupported\",\n  \"summary_version\": \"request-dry-run-summary.v0\",\n  \"target_app\": \"request-dry-run-summary\",\n  \"validation\": {\n    \"error_codes\": [\n      \"AGENTMESH_UNSUPPORTED_REQUEST_SHAPE\"\n    ],\n    \"error_count\": 1,\n    \"status\": \"invalid\",\n    \"valid\": false\n  }\n}\n```\n",
+  "request_id": "DOT-1355",
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "request-dry-run-summary-compact.v0",
+  "scope": "agentmesh:app:request-dry-run-summary",
+  "source_shape": "unsupported",
+  "summary_version": "request-dry-run-summary.v0",
+  "target_app": "request-dry-run-summary",
+  "valid": false
+}

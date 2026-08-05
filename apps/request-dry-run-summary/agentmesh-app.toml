@@ -1,0 +1,17 @@
+schema_version = "agentmesh-app.v0"
+name = "request-dry-run-summary"
+protocol_version = "2026-07-15"
+
+[plugin]
+logical_name = "agentmesh-request-dry-run-summary"
+
+[schemas]
+input = "schemas/request-dry-run-summary-input-v0.schema.json"
+output = "schemas/request-dry-run-summary-compact-v0.schema.json"
+
+[sidecar]
+retention_class = "owner_local"
+capture_plugin_stderr = false
+
+[conformance]
+cargo_package = "agentmesh-markdown-request-validator"

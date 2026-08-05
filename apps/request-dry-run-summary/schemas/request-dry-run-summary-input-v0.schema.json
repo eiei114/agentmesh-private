@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-dry-run-summary-input-v0.schema.json",
+  "title": "Request Dry-run Summary Input v0",
+  "description": "Adapter-neutral request dry-run preview input. Exactly one request source is supplied as Markdown or normalized request JSON; tracker/Multica issue metadata is intentionally excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "scope", "target_app"],
+  "oneOf": [
+    { "required": ["markdown"], "not": { "required": ["request"] } },
+    { "required": ["request"], "not": { "required": ["markdown"] } }
+  ],
+  "properties": {
+    "schema_version": { "const": "request-dry-run-summary-input.v0" },
+    "request_id": { "type": "string", "minLength": 1 },
+    "scope": { "type": "string", "minLength": 1 },
+    "target_app": { "type": "string", "minLength": 1 },
+    "markdown": { "type": "string", "minLength": 1, "maxLength": 65536 },
+    "request": {
+      "type": "object",
+      "description": "Canonical request frontmatter fields as JSON, with adapter-specific materialization fields omitted."
+    }
+  }
+}
