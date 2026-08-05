@@ -233,7 +233,11 @@ fn parse_markdown_source(
 
 fn parse_frontmatter(markdown: &str) -> Option<&str> {
     let rest = markdown.strip_prefix("---\n")?;
-    let end = rest.find("\n---\n")?;
+    if let Some(end) = rest.find("\n---\n") {
+        return Some(&rest[..end]);
+    }
+
+    let end = rest.strip_suffix("\n---")?.len();
     Some(&rest[..end])
 }
 
@@ -279,6 +283,12 @@ fn parse_frontmatter_fields(frontmatter: &str, errors: &mut Vec<Value>) -> Map<S
 
 fn scalar(raw: &str) -> (Value, Option<String>) {
     let trimmed = raw.trim();
+    if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
+        return (
+            Value::String(trimmed[1..trimmed.len() - 1].to_string()),
+            None,
+        );
+    }
     if trimmed.starts_with('[') {
         return match serde_json::from_str::<Value>(trimmed) {
             Ok(value) => (value, None),
@@ -288,12 +298,11 @@ fn scalar(raw: &str) -> (Value, Option<String>) {
             ),
         };
     }
-    let unquoted = trimmed.trim_matches('"');
-    match unquoted {
+    match trimmed {
         "true" => (Value::Bool(true), None),
         "false" => (Value::Bool(false), None),
-        _ => unquoted.parse::<u64>().map_or_else(
-            |_| (Value::String(unquoted.to_string()), None),
+        _ => trimmed.parse::<u64>().map_or_else(
+            |_| (Value::String(trimmed.to_string()), None),
             |n| (json!(n), None),
         ),
     }
@@ -701,6 +710,41 @@ mod tests {
             output["errors"][1]["message"],
             "sequence_index must be less than or equal to sequence_total"
         );
+    }
+
+    #[test]
+    fn quoted_scalars_remain_strings() {
+        let output = summarize_request_dry_run(&json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "request_id": "DOT-1355",
+            "scope": "agentmesh:app:request-dry-run-summary",
+            "target_app": "request-dry-run-summary",
+            "markdown": "---\ntitle: Example\nready_for_multica: \"true\"\nstatus: ready\nproject_key: \"123\"\nrequest_kind: app\nissue_type: AFK\nsource_prd: docs/prd.md\nsource_design: docs/design.md\nsource_roadmap: docs/roadmap.md\nblocked_by: []\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---"
+        }));
+
+        assert_eq!(
+            output["evidence"]["frontmatter_fields"]["ready_for_multica"],
+            "true"
+        );
+        assert_eq!(
+            output["evidence"]["frontmatter_fields"]["project_key"],
+            "123"
+        );
+    }
+
+    #[test]
+    fn frontmatter_may_end_without_trailing_newline() {
+        let mut input = valid_input();
+        let markdown = input["markdown"].as_str().unwrap();
+        let frontmatter = markdown
+            .split_once("\n---\n")
+            .expect("valid input frontmatter")
+            .0;
+        input["markdown"] = Value::String(format!("{frontmatter}\n---"));
+
+        let output = summarize_request_dry_run(&input);
+        assert_eq!(output["errors"].as_array().unwrap().len(), 0);
+        assert_eq!(output["valid"], true);
     }
 
     #[test]
