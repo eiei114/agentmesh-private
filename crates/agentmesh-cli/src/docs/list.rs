@@ -4,7 +4,7 @@ use super::EMBEDDED_DOCS;
 use serde::Serialize;
 use std::process::ExitCode;
 
-pub const DOCS_LIST_HELP: &str = "Run `agentmesh docs show <name>` to read a document.";
+pub const DOCS_LIST_HELP: &str = "Use `agentmesh docs list` to view embedded document metadata.";
 const LIST_SCHEMA_VERSION: &str = "agentmesh-docs-list.v0";
 
 #[derive(Debug, Serialize)]
