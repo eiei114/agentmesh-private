@@ -828,10 +828,7 @@ mod tests {
         assert_eq!(output["valid"], true);
         let envelope = &output["local_runner_envelope"];
         assert_eq!(envelope["project"], Value::Null);
-        assert_eq!(
-            envelope["id"],
-            "local-runner:///untitled-project-request"
-        );
+        assert_eq!(envelope["id"], "local-runner:///untitled-project-request");
     }
 
     #[test]
