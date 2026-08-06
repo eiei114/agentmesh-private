@@ -295,7 +295,7 @@ fn scalar(raw: &str) -> (Value, Option<String>) {
             Err(err) => (
                 Value::String(trimmed.to_string()),
                 Some(format!(
-                    "frontmatter array value is not valid JSON (offset line {}, column {})",
+                    "frontmatter array value is not valid JSON (at line {}, column {})",
                     err.line(),
                     err.column()
                 )),
