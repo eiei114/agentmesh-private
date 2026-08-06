@@ -15,7 +15,12 @@
     "request_id": { "type": "string", "minLength": 1 },
     "scope": { "type": "string", "minLength": 1 },
     "target_app": { "type": "string", "minLength": 1 },
-    "markdown": { "type": "string", "minLength": 1, "maxLength": 65536 },
+    "markdown": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536,
+      "description": "Request Markdown source. The App additionally rejects sources larger than 65536 bytes."
+    },
     "request": {
       "type": "object",
       "description": "Canonical request frontmatter fields as JSON, with adapter-specific materialization fields omitted."
