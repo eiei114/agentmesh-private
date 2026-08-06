@@ -52,10 +52,10 @@
           "const": ["id", "title", "request_kind", "issue_type", "project", "state", "sources", "dependencies", "sequence", "adapter_metadata"]
         },
         "id": { "type": "string" },
-        "title": { "type": "string" },
-        "request_kind": { "type": "string" },
-        "issue_type": { "type": "string" },
-        "project": { "type": "string" },
+        "title": { "type": ["string", "null"] },
+        "request_kind": { "type": ["string", "null"] },
+        "issue_type": { "type": ["string", "null"] },
+        "project": { "type": ["string", "null"] },
         "state": { "type": "string" },
         "sources": {
           "type": "object",
