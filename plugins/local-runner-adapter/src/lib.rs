@@ -579,17 +579,21 @@ fn canonical_payload(fields: &RequestFields) -> Value {
 }
 
 fn local_runner_envelope(fields: &RequestFields, adapter_passthrough: Value) -> Value {
-    let project = fields.project_key.as_deref().unwrap_or("unassigned");
     let title = fields.title.as_deref().unwrap_or("untitled");
+    let title_slug = slug(title);
+    let id = match fields.project_key.as_deref() {
+        Some(project) => format!("local-runner://{project}/{title_slug}"),
+        None => format!("local-runner:///{title_slug}"),
+    };
     json!({
         "schema_version": ENVELOPE_SCHEMA_VERSION,
         "runner": LOCAL_RUNNER_VERSION,
         "field_order": RUNNER_FIELD_ORDER,
-        "id": format!("local-runner://{project}/{}", slug(title)),
+        "id": id,
         "title": fields.title,
         "request_kind": fields.request_kind,
         "issue_type": fields.issue_type,
-        "project": project,
+        "project": fields.project_key,
         "state": fields.status.as_deref().unwrap_or("draft"),
         "sources": {
             "request_schema_version": REQUEST_SCHEMA_VERSION,
@@ -805,6 +809,26 @@ mod tests {
                 diagnostic["code"] == "request_sequence_out_of_range"
                     && diagnostic["path"] == "$.request.sequence_index"
             }));
+    }
+
+    #[test]
+    fn envelope_id_uses_emitted_project_value() {
+        let output = adapt_request_input(&json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "request": {
+                "title": "Untitled project request",
+                "request_kind": "app",
+                "issue_type": "AFK",
+                "status": "ready",
+                "blocked_by": [],
+                "unblocks": []
+            }
+        }));
+
+        assert_eq!(output["valid"], true);
+        let envelope = &output["local_runner_envelope"];
+        assert_eq!(envelope["project"], Value::Null);
+        assert_eq!(envelope["id"], "local-runner:///untitled-project-request");
     }
 
     #[test]
