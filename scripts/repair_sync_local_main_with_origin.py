@@ -50,6 +50,12 @@ def resolve_repo(repo: Path) -> Path:
     return Path(git_stdout(repo, ["rev-parse", "--show-toplevel"])).resolve()
 
 
+def fetch_remote_branch(repo: Path, branch: str, remote: str) -> None:
+    remote_tracking_ref = f"refs/remotes/{remote}/{branch}"
+    refspec = f"+refs/heads/{branch}:{remote_tracking_ref}"
+    run_git(repo, ["fetch", "--prune", remote, refspec])
+
+
 def divergence(repo: Path, branch: str, remote: str) -> Divergence:
     local_ref = f"refs/heads/{branch}"
     remote_ref = f"refs/remotes/{remote}/{branch}"
@@ -147,7 +153,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo", default=".", help="repository worktree to inspect (default: current directory)")
     parser.add_argument("--remote", default="origin", help="remote name to fetch (default: origin)")
     parser.add_argument("--branch", default="main", help="local branch to align (default: main)")
-    parser.add_argument("--check", action="store_true", help="verify alignment after fetch without mutating refs")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="verify alignment after fetching the remote-tracking ref without fast-forwarding the local branch",
+    )
     return parser.parse_args()
 
 
@@ -155,7 +165,7 @@ def main() -> int:
     args = parse_args()
     try:
         repo = resolve_repo(Path(args.repo))
-        run_git(repo, ["fetch", "--prune", args.remote, args.branch])
+        fetch_remote_branch(repo, args.branch, args.remote)
         before = divergence(repo, args.branch, args.remote)
         if args.check:
             action = "check_only"
