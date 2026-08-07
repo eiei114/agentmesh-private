@@ -2,19 +2,58 @@
 
 use crate::compact::CompactEnvelope;
 use crate::rpc::{InitializeParams, InitializeResult, RunParams, RunResult};
-use schemars::schema_for;
-use serde_json::Value;
+use schemars::{
+    generate::SchemaSettings, transform::ReplaceConstValue, JsonSchema, SchemaGenerator,
+};
+use serde_json::{Map, Value};
 
 /// Generate the Phase 0 host-owned schemas as a single JSON object.
 pub fn generate_schemas() -> Value {
-    serde_json::json!({
+    sort_json_keys(serde_json::json!({
         "protocol_version": crate::versions::PROTOCOL_VERSION,
-        "initialize_params": schema_for!(InitializeParams),
-        "initialize_result": schema_for!(InitializeResult),
-        "run_params": schema_for!(RunParams),
-        "run_result": schema_for!(RunResult),
-        "compact_envelope": schema_for!(CompactEnvelope),
-    })
+        "initialize_params": protocol_schema::<InitializeParams>(),
+        "initialize_result": protocol_schema::<InitializeResult>(),
+        "run_params": protocol_schema::<RunParams>(),
+        "run_result": protocol_schema::<RunResult>(),
+        "compact_envelope": protocol_schema::<CompactEnvelope>(),
+    }))
+}
+
+fn protocol_schema<T: JsonSchema>() -> schemars::Schema {
+    SchemaGenerator::from(SchemaSettings::draft07().with_transform(ReplaceConstValue::default()))
+        .into_root_schema_for::<T>()
+}
+
+fn sort_json_keys(value: Value) -> Value {
+    match value {
+        Value::Object(object) => {
+            let mut entries: Vec<_> = object.into_iter().collect();
+            entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+
+            let mut sorted = Map::new();
+            for (key, value) in entries {
+                let value = sort_json_keys(value);
+                if key == "required" {
+                    sorted.insert(key, sort_required_values(value));
+                } else {
+                    sorted.insert(key, value);
+                }
+            }
+            Value::Object(sorted)
+        }
+        Value::Array(values) => Value::Array(values.into_iter().map(sort_json_keys).collect()),
+        value => value,
+    }
+}
+
+fn sort_required_values(value: Value) -> Value {
+    let Value::Array(mut values) = value else {
+        return value;
+    };
+    if values.iter().all(Value::is_string) {
+        values.sort_unstable_by(|left, right| left.as_str().unwrap().cmp(right.as_str().unwrap()));
+    }
+    Value::Array(values)
 }
 
 /// Pretty-printed schema document bytes.

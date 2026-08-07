@@ -226,15 +226,32 @@ fn validate_fields(fields: &RequestFields, errors: &mut Vec<Value>) {
 
 fn finish(fields: Option<RequestFields>, errors: Vec<Value>) -> (Value, bool) {
     let valid = errors.is_empty();
-    let payload = json!({
+    let payload = sort_json_keys(json!({
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "request_schema_version": REQUEST_SCHEMA_VERSION,
         "valid": valid,
         "canonical": fields.map(canonical_payload),
         "error_count": errors.len(),
         "errors": errors,
-    });
+    }));
     (payload, valid)
+}
+
+fn sort_json_keys(value: Value) -> Value {
+    match value {
+        Value::Object(object) => {
+            let mut entries: Vec<_> = object.into_iter().collect();
+            entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+
+            let mut sorted = Map::new();
+            for (key, value) in entries {
+                sorted.insert(key, sort_json_keys(value));
+            }
+            Value::Object(sorted)
+        }
+        Value::Array(values) => Value::Array(values.into_iter().map(sort_json_keys).collect()),
+        value => value,
+    }
 }
 
 fn canonical_payload(fields: RequestFields) -> Value {
