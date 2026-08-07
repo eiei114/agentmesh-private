@@ -14,9 +14,9 @@ repository state.
 
 ## Reproducible repair path
 
-Use the maintenance repair helper from the worktree where `refs/heads/main` is
-checked out. If `main` is not checked out in any worktree, any repository worktree
-can update the ref:
+Run the maintenance repair helper from the worktree where `refs/heads/main` is
+checked out. If another worktree has `main` checked out, the helper refuses to
+update the ref and instructs you to run the command from that worktree instead.
 
 ```bash
 python scripts/repair_sync_local_main_with_origin.py
@@ -25,21 +25,15 @@ python scripts/repair_sync_local_main_with_origin.py
 The helper fetches `origin/main` into `refs/remotes/origin/main`, reports the
 local `main` ahead/behind distance, fast-forwards the local `main` ref when it is
 a safe ancestor of `origin/main`, and then reports whether `repo_main_behind` is
-still present. For post-repair inspection without fast-forwarding or otherwise
-mutating `refs/heads/main`, run:
+still present. For post-repair inspection without fetching or mutating any refs,
+run:
 
 ```bash
 python scripts/repair_sync_local_main_with_origin.py --check
 ```
 
-`--check` still runs a fetch equivalent to:
-
-```bash
-git fetch --prune origin +refs/heads/main:refs/remotes/origin/main
-```
-
-`refs/remotes/origin/main` and `FETCH_HEAD` can change while `refs/heads/main`
-remains unchanged.
+`--check` compares the existing `refs/heads/main` and `refs/remotes/origin/main`
+refs without running `git fetch` or changing any refs.
 
 ## Reconciliation record
 

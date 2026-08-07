@@ -156,7 +156,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="verify alignment after fetching the remote-tracking ref without fast-forwarding the local branch",
+        help="verify alignment using existing refs without fetching or mutating branch refs",
     )
     return parser.parse_args()
 
@@ -165,7 +165,8 @@ def main() -> int:
     args = parse_args()
     try:
         repo = resolve_repo(Path(args.repo))
-        fetch_remote_branch(repo, args.branch, args.remote)
+        if not args.check:
+            fetch_remote_branch(repo, args.branch, args.remote)
         before = divergence(repo, args.branch, args.remote)
         if args.check:
             action = "check_only"
