@@ -16,7 +16,7 @@ const EVIDENCE_SCHEMA_VERSION: &str = "request-dry-run-summary-evidence.v0";
 const REQUEST_SCHEMA_VERSION: &str = "agentmesh-request.v0";
 const MAX_SOURCE_BYTES: usize = 64 * 1024;
 const ACCEPTED_REQUEST_KINDS: &[&str] = &["app", "repair"];
-const FRONTMATTER_FIELD_ORDER: &[&str] = &[
+const CANONICAL_FRONTMATTER_KEYS: &[&str] = &[
     "title",
     "request_kind",
     "issue_type",
@@ -294,7 +294,11 @@ fn scalar(raw: &str) -> (Value, Option<String>) {
             Ok(value) => (value, None),
             Err(err) => (
                 Value::String(trimmed.to_string()),
-                Some(format!("frontmatter array value is not valid JSON: {err}")),
+                Some(format!(
+                    "frontmatter array value is not valid JSON (at line {}, column {})",
+                    err.line(),
+                    err.column()
+                )),
             ),
         };
     }
@@ -413,7 +417,7 @@ fn field_path(source_shape: &str, key: &str) -> String {
 
 fn normalized_frontmatter(fields: &Map<String, Value>) -> Map<String, Value> {
     let mut normalized = Map::new();
-    for key in FRONTMATTER_FIELD_ORDER {
+    for key in CANONICAL_FRONTMATTER_KEYS {
         normalized.insert(
             (*key).to_string(),
             fields.get(*key).cloned().unwrap_or(Value::Null),
