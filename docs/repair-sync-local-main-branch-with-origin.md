@@ -1,6 +1,6 @@
 # Repair request: sync local main branch with origin
 
-Multica Issues: DOT-974, DOT-1379
+Multica Issues: DOT-974, DOT-1379, DOT-1411
 
 ## Failure code
 
@@ -10,7 +10,9 @@ Multica Issues: DOT-974, DOT-1379
 
 The maintenance inspector reported that the shared local `main` branch was behind
 `origin/main`, which can cause later repair or request generation to inspect stale
-repository state.
+repository state. DOT-1411 was materialized from the same repair family after the
+inspector observed `ahead=1` and `behind=11`; any `behind>0` result is
+repair-required evidence until a sync/check record clears `repo_main_behind`.
 
 ## Reproducible repair path
 
@@ -49,6 +51,20 @@ Multica's repository checkout path. The implementation branch starts at
 than the stale local `main` pointer. DOT-1379 also adds the script above so future
 runs can repair and verify the shared local `main` ref instead of relying on an
 ad-hoc Git command sequence.
+
+## DOT-1411 execution record
+
+- request_id: `DOT-1411`
+- source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-08-08-repair-local-agentmesh-maintenance-repo-main-behind-orig.md`
+- derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-08-08-repair-local-agentmesh-maintenance-repo-main-behind-orig.md`
+- dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-08-08-repair-local-agentmesh-maintenance-repo-main-behind-orig.md`
+- stable scope: `agentmesh:repair:repo_main_behind:v4`
+- request status: `ready_for_multica=true`, `status=ready`
+- audited branch: `main`
+- audited local head: `60f83470771e229441e1e844273427bd44be6343`
+- audited remote head: `60f83470771e229441e1e844273427bd44be6343`
+- repair run: `before_ahead=0`, `before_behind=0`, `repair_action=already_aligned`, `after_ahead=0`, `after_behind=0`
+- post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`
 
 Release tags, package publishing, assets, secrets, permissions, production actions,
 and Multica authority changes are intentionally out of scope for this repair.
