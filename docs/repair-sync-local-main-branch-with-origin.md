@@ -1,6 +1,6 @@
 # Repair request: sync local main branch with origin
 
-Multica Issues: DOT-974, DOT-1379, DOT-1411
+Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411
 
 ## Failure code
 
@@ -37,6 +37,19 @@ python scripts/repair_sync_local_main_with_origin.py --check
 `--check` compares the existing `refs/heads/main` and `refs/remotes/origin/main`
 refs without running `git fetch` or changing any refs.
 
+## PR evidence checklist
+
+For each recurrence, capture these bounded reports in the repair PR so reviewers
+can verify request generation resumed from the current upstream state:
+
+1. Pre-repair inspection with `python scripts/repair_sync_local_main_with_origin.py --check`, including the reported `before_behind` / `after_behind` distance and `repo_main_behind=present`.
+2. Repair run with `python scripts/repair_sync_local_main_with_origin.py`, including `repair_action`, `after_behind=0`, `repo_main_behind=absent`, and `repo_main_aligned=yes`.
+3. Post-repair inspection with `python scripts/repair_sync_local_main_with_origin.py --check`, confirming `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, and `repo_main_aligned=yes`.
+4. The local-only AgentMesh repository checks: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`. For CI matrix parity, Clippy and workspace tests run per target as `cargo clippy --workspace --all-targets --target <matrix.target> -- -D warnings` and `cargo test --workspace --target <matrix.target>`.
+
+Do not resume daily request materialization from a repaired workspace until the
+post-repair inspection reports `repo_main_aligned=yes`.
+
 ## Reconciliation record
 
 This worktree was checked out from `origin/main` after fetching the repository via
@@ -67,6 +80,5 @@ and Multica authority changes are intentionally out of scope for this repair.
 
 - `git status --short --branch`
 - `python scripts/repair_sync_local_main_with_origin.py --check`
-- `cargo fmt --check`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace`
+- Local-only checks: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`
+- CI matrix checks: `cargo clippy --workspace --all-targets --target <matrix.target> -- -D warnings` and `cargo test --workspace --target <matrix.target>`
