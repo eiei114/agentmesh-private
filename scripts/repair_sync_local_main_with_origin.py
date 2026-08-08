@@ -116,16 +116,16 @@ def fast_forward(repo: Path, branch: str, remote: str, before: Divergence) -> st
 
     branch_ref = f"refs/heads/{branch}"
     checked_out = checked_out_worktree(repo, branch_ref)
-    if checked_out is not None:
-        if checked_out != repo.resolve():
-            raise RepairError(
-                f"{branch_ref} is checked out in another worktree; run this command from that worktree"
-            )
-        run_git(repo, ["merge", "--ff-only", f"{remote}/{branch}"])
-        return "fast_forward_worktree"
-
-    run_git(repo, ["update-ref", branch_ref, before.remote_sha, before.local_sha])
-    return "fast_forward_ref"
+    if checked_out is None:
+        raise RepairError(
+            f"{branch_ref} is not checked out in any worktree; run this command from the worktree where {branch} is checked out"
+        )
+    if checked_out != repo.resolve():
+        raise RepairError(
+            f"{branch_ref} is checked out in another worktree; run this command from that worktree"
+        )
+    run_git(repo, ["merge", "--ff-only", f"{remote}/{branch}"])
+    return "fast_forward_worktree"
 
 
 def print_report(branch: str, remote: str, before: Divergence, after: Divergence, action: str) -> None:
@@ -156,7 +156,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="verify alignment after fetching the remote-tracking ref without fast-forwarding the local branch",
+        help="verify alignment using existing refs without fetching or mutating branch refs",
     )
     return parser.parse_args()
 
@@ -165,7 +165,8 @@ def main() -> int:
     args = parse_args()
     try:
         repo = resolve_repo(Path(args.repo))
-        fetch_remote_branch(repo, args.branch, args.remote)
+        if not args.check:
+            fetch_remote_branch(repo, args.branch, args.remote)
         before = divergence(repo, args.branch, args.remote)
         if args.check:
             action = "check_only"
