@@ -619,6 +619,8 @@ pub fn evaluate(
                     "hits": hits,
                     "complete": expected.is_subset(&paths),
                     "source_paths": ordered_paths,
+                    "graph_fresh": packet["health"]["graph_fresh"],
+                    "fallback_reason": packet["fallback_reason"],
                     "provenance_complete": packet["health"]["provenance_complete"],
                     "restricted_leak": packet["evidence"].as_array().into_iter().flatten().any(|item| matches!(item["sensitivity"].as_str(), Some("private" | "restricted"))),
                     "unsupported_claims": packet["claims"].as_array().into_iter().flatten().filter(|claim| claim["support_status"] != "supported").count(),
@@ -634,8 +636,14 @@ pub fn evaluate(
         - qmd["complete_queries"].as_u64().unwrap_or(0) as i64;
     let direct_hit = direct["expected_hit_queries"].as_u64().unwrap_or(0);
     let direct_complete = direct["complete_queries"].as_u64().unwrap_or(0);
+    let qmd_hit = qmd["expected_hit_queries"].as_u64().unwrap_or(0);
+    let qmd_complete = qmd["complete_queries"].as_u64().unwrap_or(0);
     let qmd_no_regression = qmd["expected_hit_queries"].as_u64().unwrap_or(0) >= direct_hit
         && qmd["complete_queries"].as_u64().unwrap_or(0) >= direct_complete;
+    let qmd_baseline = qmd_hit >= 17 && qmd_complete >= 6;
+    let graph_ready = evaluation_runs(&rows)
+        .filter(|run| run["mode"] == "hybrid")
+        .all(|run| run["graph_fresh"] == true);
     let deterministic = evaluation_deterministic(&rows);
     let provenance_complete = evaluation_runs(&rows).all(|run| run["provenance_complete"] == true);
     let no_restricted_leak = evaluation_runs(&rows).all(|run| run["restricted_leak"] == false);
@@ -647,8 +655,8 @@ pub fn evaluate(
     let graph_no_regression = hybrid["expected_hit_queries"].as_u64().unwrap_or(0)
         >= qmd["expected_hit_queries"].as_u64().unwrap_or(0);
     let intrusion_ok = unrelated_count(&rows, "hybrid") <= unrelated_count(&rows, "qmd_fused") + 1;
-    let promotion = direct_hit >= 17
-        && direct_complete >= 6
+    let promotion = qmd_baseline
+        && graph_ready
         && qmd_no_regression
         && deterministic
         && provenance_complete
@@ -669,8 +677,8 @@ pub fn evaluate(
         "qmd_fused": qmd,
         "hybrid": hybrid,
         "incremental_complete": incremental,
-        "gates": {"qmd_no_regression": qmd_no_regression, "deterministic_source_order": deterministic, "privacy": true, "provenance_complete": provenance_complete, "no_restricted_leak": no_restricted_leak, "hard_timeout": hard_timeout, "graph_no_regression": graph_no_regression, "unrelated_intrusion": intrusion_ok},
-        "promotion": {"pass": promotion, "graph_default_enabled": false},
+        "gates": {"qmd_baseline": qmd_baseline, "qmd_no_regression": qmd_no_regression, "graph_ready": graph_ready, "deterministic_source_order": deterministic, "privacy": true, "provenance_complete": provenance_complete, "no_restricted_leak": no_restricted_leak, "hard_timeout": hard_timeout, "graph_no_regression": graph_no_regression, "unrelated_intrusion": intrusion_ok},
+        "promotion": {"pass": promotion, "graph_default_enabled": promotion},
         "fixtures": rows,
     }))
 }

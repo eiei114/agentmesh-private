@@ -21,6 +21,9 @@ All notable changes to this private Phase 0 workspace are documented here.
 
 ### Changed
 
+- Evidence promotion now applies the recorded 17/20 hit and 6/20 complete
+  baseline to fused QMD, requires a fresh graph for every hybrid fixture, and
+  reports graph default enablement only when every promotion gate passes.
 - README workspace list: document `agentmesh-request-evidence` alongside other `crates/` workspace members.
 - README workspace list: document `apps/adapter-error-contract`, `apps/public-0x-readiness`, and their plugin binaries to match the current `apps/` layout.
 
