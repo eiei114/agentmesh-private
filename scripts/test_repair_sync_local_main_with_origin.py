@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT_PATH = Path(__file__).with_name("repair_sync_local_main_with_origin.py")
 SPEC = importlib.util.spec_from_file_location("repair_sync_local_main_with_origin", SCRIPT_PATH)
@@ -78,16 +79,18 @@ class RepairSyncTests(unittest.TestCase):
     def run_script(self, repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return run([sys.executable, str(SCRIPT_PATH), "--repo", str(repo), *args], repo, check=False)
 
-    def test_fast_forward_ref_path_when_main_is_not_checked_out(self) -> None:
+    def test_fast_forward_uses_temporary_worktree_when_main_is_not_checked_out(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self.make_repo(Path(tmp), remote_ahead=True, checkout_work_branch=True)
 
             result = self.run_script(repo)
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("repair_action=fast_forward_ref", result.stdout)
+            self.assertIn("repair_action=fast_forward_temporary_worktree", result.stdout)
             self.assertIn("after_behind=0", result.stdout)
             self.assertIn("request_action=seed_app_requests", result.stdout)
+            worktrees = run(["git", "worktree", "list", "--porcelain"], repo).stdout
+            self.assertNotIn("agentmesh-repair-worktree-", worktrees)
 
     def test_repair_lock_rejects_concurrent_helper_operation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -99,6 +102,85 @@ class RepairSyncTests(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("repair lock already held for refs/heads/main", result.stderr)
+
+    def test_repair_lock_reclaims_dead_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp), remote_ahead=True, checkout_work_branch=True)
+            helper = """
+import sys
+import time
+from pathlib import Path
+sys.path.insert(0, sys.argv[2])
+import repair_sync_local_main_with_origin as repair
+repo = repair.resolve_repo(Path(sys.argv[1]))
+with repair.repair_lock(repo, "main"):
+    print("locked", flush=True)
+    time.sleep(60)
+"""
+            process = subprocess.Popen(
+                [sys.executable, "-c", helper, str(repo), str(SCRIPT_PATH.parent)],
+                cwd=repo,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                assert process.stdout is not None
+                self.assertEqual(process.stdout.readline().strip(), "locked")
+                process.kill()
+                process.communicate(timeout=10)
+
+                lock_dir = repair_sync.git_common_dir(repo) / "agentmesh-repair-main.lock"
+                self.assertTrue(lock_dir.is_dir())
+                result = self.run_script(repo)
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("repair_action=fast_forward_temporary_worktree", result.stdout)
+                self.assertFalse(lock_dir.exists())
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.communicate(timeout=10)
+
+    def test_repair_lock_cleans_up_owner_metadata_write_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp))
+            resolved_repo = repair_sync.resolve_repo(repo)
+            common_dir = repair_sync.git_common_dir(repo)
+
+            with mock.patch.object(Path, "write_text", side_effect=OSError("disk failure")):
+                with self.assertRaisesRegex(repair_sync.RepairError, "could not prepare repair lock"):
+                    with repair_sync.repair_lock(resolved_repo, "main"):
+                        self.fail("lock body must not run")
+
+            leftovers = list(common_dir.glob("*agentmesh-repair-main.lock*"))
+            self.assertEqual(leftovers, [])
+
+    def test_ordinary_checkout_race_does_not_move_branch_behind_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = self.make_repo(tmp_path, remote_ahead=True, checkout_work_branch=True)
+            repair_sync.fetch_remote_branch(repo, "main", "origin")
+            before = repair_sync.divergence(repo, "main", "origin")
+            other = tmp_path / "main-worktree"
+            original_checked_out_worktree = repair_sync.checked_out_worktree
+
+            def checkout_after_inspection(_repo: Path, _branch_ref: str) -> None:
+                run(["git", "worktree", "add", str(other), "main"], repo)
+                return None
+
+            repair_sync.checked_out_worktree = checkout_after_inspection
+            try:
+                with self.assertRaisesRegex(
+                    repair_sync.RepairError, "could not create coordinated temporary worktree"
+                ):
+                    repair_sync.fast_forward(repo, "main", "origin", before)
+            finally:
+                repair_sync.checked_out_worktree = original_checked_out_worktree
+
+            after = run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip()
+            self.assertEqual(after, before.local_sha)
+            self.assertEqual((other / "README.md").read_text(encoding="utf-8"), "initial\n")
 
     def test_check_requires_clean_worktree_before_request_seeding(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
