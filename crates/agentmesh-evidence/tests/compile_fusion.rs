@@ -267,6 +267,7 @@ fn evaluation_persists_fixture_ids_and_metrics_but_not_queries() {
     assert_eq!(report["qmd_only"]["expected_hit_queries"], 20);
     assert_eq!(report["hybrid"]["complete_queries"], 20);
     assert_eq!(report["incremental_complete"], 0);
+    assert_eq!(report["gates"]["graph_ready"], false);
     assert_eq!(report["promotion"]["pass"], false);
     assert_eq!(report["promotion"]["graph_default_enabled"], false);
     let encoded = serde_json::to_string(&report).unwrap();
@@ -274,7 +275,7 @@ fn evaluation_persists_fixture_ids_and_metrics_but_not_queries() {
 }
 
 #[test]
-fn realistic_graph_increment_can_pass_promotion_without_enabling_the_default() {
+fn qmd_fused_baseline_and_graph_increment_enable_the_default() {
     let Ok(node) = which::which("node") else {
         return;
     };
@@ -297,8 +298,11 @@ fn realistic_graph_increment_can_pass_promotion_without_enabling_the_default() {
         r#"
 const match = process.argv.join(' ').match(/fixture (\d+)/);
 const fixture = match ? Number(match[1]) : 0;
+const operation = process.argv[2];
 let results = [];
-if (fixture >= 1 && fixture <= 6) results = [{file:'docs/Standalone.md'},{file:'docs/Filler.md'}];
+if (operation === 'search' && fixture >= 1 && fixture <= 3) results = [{file:'docs/Standalone.md'}];
+else if (operation === 'search') results = [];
+else if (fixture >= 1 && fixture <= 6) results = [{file:'docs/Standalone.md'},{file:'docs/Filler.md'}];
 else if (fixture >= 7 && fixture <= 17) results = [{file:'docs/Keyword.md'},{file:'docs/Filler.md'}];
 else if (fixture === 18) results = [{file:'docs/Seed2.md'},{file:'docs/Filler.md'}];
 console.log(JSON.stringify(results));
@@ -329,13 +333,17 @@ console.log(JSON.stringify(results));
         2,
     )
     .unwrap();
-    assert_eq!(report["direct_qmd"]["expected_hit_queries"], 17);
-    assert_eq!(report["direct_qmd"]["complete_queries"], 6);
+    assert_eq!(report["direct_qmd"]["expected_hit_queries"], 3);
+    assert_eq!(report["direct_qmd"]["complete_queries"], 3);
+    assert_eq!(report["qmd_fused"]["expected_hit_queries"], 17);
+    assert_eq!(report["qmd_fused"]["complete_queries"], 6);
     assert_eq!(report["hybrid"]["expected_hit_queries"], 18);
     assert_eq!(report["hybrid"]["complete_queries"], 18);
     assert_eq!(report["incremental_complete"], 12);
+    assert_eq!(report["gates"]["qmd_baseline"], true);
+    assert_eq!(report["gates"]["graph_ready"], true);
     assert_eq!(report["promotion"]["pass"], true);
-    assert_eq!(report["promotion"]["graph_default_enabled"], false);
+    assert_eq!(report["promotion"]["graph_default_enabled"], true);
 }
 
 #[test]
