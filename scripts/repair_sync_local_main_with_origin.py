@@ -10,8 +10,12 @@ when a new issue worktree starts from the remote branch.
 from __future__ import annotations
 
 import argparse
+import os
+import re
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,6 +48,35 @@ def run_git(repo: Path, args: list[str], *, check: bool = True) -> subprocess.Co
 
 def git_stdout(repo: Path, args: list[str]) -> str:
     return run_git(repo, args).stdout.strip()
+
+
+def git_common_dir(repo: Path) -> Path:
+    common_dir = Path(git_stdout(repo, ["rev-parse", "--git-common-dir"]))
+    if not common_dir.is_absolute():
+        common_dir = repo / common_dir
+    return common_dir.resolve()
+
+
+def repair_lock_name(branch: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "_", branch).strip("._-")
+    return token or "branch"
+
+
+@contextmanager
+def repair_lock(repo: Path, branch: str) -> Iterator[None]:
+    lock_dir = git_common_dir(repo) / f"agentmesh-repair-{repair_lock_name(branch)}.lock"
+    try:
+        lock_dir.mkdir()
+    except FileExistsError as error:
+        raise RepairError(f"repair lock already held for refs/heads/{branch}: {lock_dir}") from error
+
+    owner_file = lock_dir / "owner"
+    try:
+        owner_file.write_text(f"pid={os.getpid()}\nrepo={repo}\nbranch={branch}\n", encoding="utf-8")
+        yield
+    finally:
+        owner_file.unlink(missing_ok=True)
+        lock_dir.rmdir()
 
 
 def dirty_count(repo: Path) -> int:
@@ -144,13 +177,19 @@ def fast_forward(repo: Path, branch: str, remote: str, before: Divergence) -> st
     return "fast_forward_worktree"
 
 
+def request_ready(repo: Path, after: Divergence) -> bool:
+    return after.ahead == 0 and after.behind == 0 and dirty_count(repo) == 0
+
+
 def print_report(repo: Path, branch: str, remote: str, before: Divergence, after: Divergence, action: str) -> None:
     aligned = after.ahead == 0 and after.behind == 0
+    current_dirty_count = dirty_count(repo)
+    clean = current_dirty_count == 0
     print(f"branch={branch}")
     print(f"remote={remote}")
     print(f"current_branch={current_branch(repo)}")
     print(f"current_head={current_head(repo)}")
-    print(f"dirty_count={dirty_count(repo)}")
+    print(f"dirty_count={current_dirty_count}")
     print(f"local_ref=refs/heads/{branch}")
     print(f"remote_ref=refs/remotes/{remote}/{branch}")
     print(f"before_local={before.local_sha}")
@@ -164,7 +203,7 @@ def print_report(repo: Path, branch: str, remote: str, before: Divergence, after
     print(f"after_behind={after.behind}")
     print(f"repo_main_behind={'present' if after.behind else 'absent'}")
     print(f"repo_main_aligned={'yes' if aligned else 'no'}")
-    print(f"request_action={'seed_app_requests' if aligned else 'repair_first'}")
+    print(f"request_action={'seed_app_requests' if aligned and clean else 'repair_first'}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -186,16 +225,18 @@ def main() -> int:
     args = parse_args()
     try:
         repo = resolve_repo(Path(args.repo))
-        if not args.check:
-            fetch_remote_branch(repo, args.branch, args.remote)
-        before = divergence(repo, args.branch, args.remote)
         if args.check:
+            before = divergence(repo, args.branch, args.remote)
             action = "check_only"
+            after = divergence(repo, args.branch, args.remote)
         else:
-            action = fast_forward(repo, args.branch, args.remote, before)
-        after = divergence(repo, args.branch, args.remote)
+            with repair_lock(repo, args.branch):
+                fetch_remote_branch(repo, args.branch, args.remote)
+                before = divergence(repo, args.branch, args.remote)
+                action = fast_forward(repo, args.branch, args.remote, before)
+                after = divergence(repo, args.branch, args.remote)
         print_report(repo, args.branch, args.remote, before, after, action)
-        return 0 if after.ahead == 0 and after.behind == 0 else 1
+        return 0 if request_ready(repo, after) else 1
     except RepairError as error:
         print(f"error={error}", file=sys.stderr)
         return 1
