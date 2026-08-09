@@ -79,6 +79,17 @@ cargo build --release -p agentmesh-cli
 See [`docs/evidence-compiler-v0.md`](docs/evidence-compiler-v0.md) for compile,
 evaluation, QMD version, privacy, and rollback contracts.
 
+Coding agents can discover the documentation embedded in the installed binary without
+repository or network access:
+
+```bash
+agentmesh docs list
+agentmesh docs show protocol-v0
+```
+
+Use exact names from `docs list`. `docs show` returns one compact JSON object whose
+`content` field contains the embedded Markdown verbatim; names are never filesystem paths.
+
 Stdout is exactly one compact JSON envelope. The audit sidecar is written under:
 
 ```text

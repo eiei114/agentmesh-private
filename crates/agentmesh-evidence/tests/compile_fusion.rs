@@ -1,9 +1,11 @@
 use agentmesh_evidence::{
-    compile, evaluate, load_contract, CommandSpec, CompileOptions, EvidenceKind, EvidenceMode,
-    EvidenceRequest,
+    compile, evaluate, health, load_contract, CommandSpec, CompileOptions, EvidenceKind,
+    EvidenceMode, EvidenceRequest,
 };
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn write_contract(root: &Path) -> agentmesh_evidence::Contract {
     let fixtures = (1..=20)
@@ -56,6 +58,14 @@ fn write_decision(root: &Path, name: &str, decision: &str) {
     .unwrap();
 }
 
+fn write_agent_run(root: &Path, name: &str) {
+    fs::write(
+        root.join("docs").join(name),
+        format!("---\nsource_issue: SYNTH-1\nrun_id: run-{name}\nartifact: evidence.json\noutcome: success\n---\n# {name}\n## Evidence\nSynthetic source-linked run evidence.\n"),
+    )
+    .unwrap();
+}
+
 fn write_evaluation(root: &Path) {
     let mut body = String::from("# Evaluation\n```yaml\nevaluation_queries:\n");
     for index in 1..=20 {
@@ -65,6 +75,77 @@ fn write_evaluation(root: &Path) {
     }
     body.push_str("```\n");
     fs::write(root.join("docs/eval.md"), body).unwrap();
+}
+
+fn write_promotion_evaluation(root: &Path) {
+    let mut body = String::from("# Evaluation\n```yaml\nevaluation_queries:\n");
+    for index in 1..=20 {
+        let expected = match index {
+            1..=6 => "[docs/Standalone.md]",
+            7..=17 => "[docs/Keyword.md, docs/Related.md]",
+            18 => "[docs/Related2.md]",
+            _ => "[docs/Missing.md]",
+        };
+        body.push_str(&format!(
+            "  - id: Q{index:02}\n    category: Decision\n    query_ja: fixture {index}\n    expected_evidence_paths: {expected}\n    qmd_top_results: []\n"
+        ));
+    }
+    body.push_str("```\n");
+    fs::write(root.join("docs/eval.md"), body).unwrap();
+}
+
+fn source_hash(path: &Path) -> String {
+    format!(
+        "sha256:{}",
+        hex::encode(Sha256::digest(fs::read(path).unwrap()))
+    )
+}
+
+fn graph_node(root: &Path, id: &str, source_path: &str) -> Value {
+    json!({
+        "id": id,
+        "type": "Decision",
+        "title": id,
+        "source_path": source_path,
+        "source_hash": source_hash(&root.join(source_path)),
+        "namespace": "test",
+        "sensitivity": "internal"
+    })
+}
+
+fn write_promotion_graph(root: &Path) -> PathBuf {
+    let keyword_hash = source_hash(&root.join("docs/Keyword.md"));
+    let seed2_hash = source_hash(&root.join("docs/Seed2.md"));
+    let mut graph = json!({
+        "schema_version": "okf-derived-graph.v2",
+        "node_count": 4,
+        "edge_count": 2,
+        "warning_count": 0,
+        "warnings": [],
+        "normalized_graph_hash": "",
+        "nodes": [
+            graph_node(root, "keyword", "docs/Keyword.md"),
+            graph_node(root, "related", "docs/Related.md"),
+            graph_node(root, "related2", "docs/Related2.md"),
+            graph_node(root, "seed2", "docs/Seed2.md")
+        ],
+        "edges": [
+            {"edge_id":"keyword-related","from_id":"keyword","to_id":"related","relation_type":"derived_from","source_path":"docs/Keyword.md","source_hash":keyword_hash,"origin":"explicit","review_status":"accepted"},
+            {"edge_id":"seed2-related2","from_id":"seed2","to_id":"related2","relation_type":"derived_from","source_path":"docs/Seed2.md","source_hash":seed2_hash,"origin":"explicit","review_status":"accepted"}
+        ]
+    });
+    let mut normalized = graph.clone();
+    normalized
+        .as_object_mut()
+        .unwrap()
+        .remove("normalized_graph_hash");
+    graph["normalized_graph_hash"] = Value::String(format!(
+        "sha256:{}",
+        hex::encode(Sha256::digest(serde_json::to_vec(&normalized).unwrap()))
+    ));
+    let path = PathBuf::from("graph.json");
+    fs::write(root.join(&path), serde_json::to_vec_pretty(&graph).unwrap()).unwrap();
+    path
 }
 
 #[test]
@@ -185,9 +266,76 @@ fn evaluation_persists_fixture_ids_and_metrics_but_not_queries() {
     assert_eq!(report["query_text_persisted"], false);
     assert_eq!(report["qmd_only"]["expected_hit_queries"], 20);
     assert_eq!(report["hybrid"]["complete_queries"], 20);
+    assert_eq!(report["incremental_complete"], 0);
     assert_eq!(report["promotion"]["pass"], false);
+    assert_eq!(report["promotion"]["graph_default_enabled"], false);
     let encoded = serde_json::to_string(&report).unwrap();
     assert!(!encoded.contains("fixture 1"));
+}
+
+#[test]
+fn realistic_graph_increment_can_pass_promotion_without_enabling_the_default() {
+    let Ok(node) = which::which("node") else {
+        return;
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    fs::create_dir(root.join("docs")).unwrap();
+    for name in ["Standalone.md", "Keyword.md", "Related.md", "Filler.md"] {
+        write_decision(root, name, &format!("Use {name} evidence."));
+    }
+    write_agent_run(root, "Seed2.md");
+    write_agent_run(root, "Related2.md");
+    write_promotion_evaluation(root);
+    let contract = write_contract(root);
+    let graph_path = write_promotion_graph(root);
+    let graph_health = health(root, &contract, Some(&graph_path));
+    assert_eq!(graph_health["status"], "ready", "{graph_health:#}");
+    let qmd_script = root.join("promotion-qmd.js");
+    fs::write(
+        &qmd_script,
+        r#"
+const match = process.argv.join(' ').match(/fixture (\d+)/);
+const fixture = match ? Number(match[1]) : 0;
+let results = [];
+if (fixture >= 1 && fixture <= 6) results = [{file:'docs/Standalone.md'},{file:'docs/Filler.md'}];
+else if (fixture >= 7 && fixture <= 17) results = [{file:'docs/Keyword.md'},{file:'docs/Filler.md'}];
+else if (fixture === 18) results = [{file:'docs/Seed2.md'},{file:'docs/Filler.md'}];
+console.log(JSON.stringify(results));
+"#,
+    )
+    .unwrap();
+    let adaptive_script = root.join("promotion-adaptive.js");
+    fs::write(
+        &adaptive_script,
+        "if(process.argv.includes('--help')) console.log('qmd-adaptive-search 1.3.0'); else console.log(JSON.stringify({readOnly:true,results:[]}));\n",
+    )
+    .unwrap();
+    let report = evaluate(
+        root,
+        &contract,
+        &CompileOptions {
+            collection: "test".into(),
+            qmd: Some(CommandSpec {
+                program: node.clone(),
+                prefix_args: vec![qmd_script.into_os_string()],
+            }),
+            adaptive: Some(CommandSpec {
+                program: node,
+                prefix_args: vec![adaptive_script.into_os_string()],
+            }),
+            graph_path: Some(graph_path),
+        },
+        2,
+    )
+    .unwrap();
+    assert_eq!(report["direct_qmd"]["expected_hit_queries"], 17);
+    assert_eq!(report["direct_qmd"]["complete_queries"], 6);
+    assert_eq!(report["hybrid"]["expected_hit_queries"], 18);
+    assert_eq!(report["hybrid"]["complete_queries"], 18);
+    assert_eq!(report["incremental_complete"], 12);
+    assert_eq!(report["promotion"]["pass"], true);
+    assert_eq!(report["promotion"]["graph_default_enabled"], false);
 }
 
 #[test]

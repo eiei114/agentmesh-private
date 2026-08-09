@@ -309,6 +309,7 @@ pub fn compile(
                     if request.mode == EvidenceMode::GraphOnly {
                         selected = graph_seed_paths(&graph, request);
                     }
+                    let lexical_graph_paths = graph_seed_paths(&graph, request);
                     let expansion = graph::expand(
                         &graph,
                         &selected,
@@ -316,9 +317,21 @@ pub fn compile(
                         contract.max_graph_hops,
                         contract.max_visited_nodes,
                     )?;
-                    for path in expansion.paths {
-                        if !selected.contains(&path) {
-                            selected.push(path);
+                    if request.mode == EvidenceMode::Hybrid {
+                        selected.truncate(request.max_sources);
+                        let graph_paths = expansion
+                            .paths
+                            .iter()
+                            .cloned()
+                            .chain(lexical_graph_paths)
+                            .filter(|path| path != "index.md");
+                        selected =
+                            blend_hybrid_candidates(selected, graph_paths, request.max_sources, 4);
+                    } else {
+                        for path in &expansion.paths {
+                            if !selected.contains(path) {
+                                selected.push(path.clone());
+                            }
                         }
                     }
                     relation_edges = expansion.edges;
@@ -852,6 +865,47 @@ fn graph_seed_paths(graph: &Graph, request: &EvidenceRequest) -> Vec<String> {
     rows.into_iter().map(|(_, path)| path).collect()
 }
 
+fn blend_hybrid_candidates(
+    qmd_paths: Vec<String>,
+    graph_paths: impl IntoIterator<Item = String>,
+    max_sources: usize,
+    graph_quota: usize,
+) -> Vec<String> {
+    let target_count = qmd_paths.len().min(max_sources);
+    if target_count == 0 {
+        return graph_paths.into_iter().take(max_sources).collect();
+    }
+    let qmd_set: BTreeSet<&str> = qmd_paths.iter().map(String::as_str).collect();
+    let mut graph_paths: Vec<String> = graph_paths
+        .into_iter()
+        .filter(|path| !path.is_empty() && !qmd_set.contains(path.as_str()))
+        .collect();
+    graph_paths.dedup();
+    let reserve = graph_quota.min(graph_paths.len()).min(target_count);
+    let mut blended: Vec<String> = qmd_paths
+        .iter()
+        .take(target_count - reserve)
+        .cloned()
+        .collect();
+    for path in graph_paths {
+        if blended.len() >= target_count {
+            break;
+        }
+        if !blended.contains(&path) {
+            blended.push(path);
+        }
+    }
+    for path in qmd_paths {
+        if blended.len() >= target_count {
+            break;
+        }
+        if !blended.contains(&path) {
+            blended.push(path);
+        }
+    }
+    blended
+}
+
 fn query_terms(query: &str) -> Vec<String> {
     let mut values = BTreeSet::new();
     for token in query
@@ -1337,6 +1391,48 @@ mod tests {
             normalize_candidate_path("qmd://vault/4-Project/A%20B.md:17"),
             "4_Project/A B.md"
         );
+    }
+
+    #[test]
+    fn hybrid_blend_reserves_graph_slots_without_growing_source_count() {
+        let qmd = (1..=6).map(|index| format!("qmd/{index}.md")).collect();
+        let graph = vec![
+            "graph/relevant-a.md".to_owned(),
+            "qmd/2.md".to_owned(),
+            "graph/relevant-b.md".to_owned(),
+        ];
+
+        let blended = blend_hybrid_candidates(qmd, graph, 6, 2);
+
+        assert_eq!(blended.len(), 6);
+        assert_eq!(
+            &blended[..4],
+            ["qmd/1.md", "qmd/2.md", "qmd/3.md", "qmd/4.md"]
+        );
+        assert!(blended.contains(&"graph/relevant-a.md".to_owned()));
+        assert!(blended.contains(&"graph/relevant-b.md".to_owned()));
+    }
+
+    #[test]
+    fn hybrid_blend_keeps_qmd_bound_when_graph_candidates_duplicate() {
+        let qmd = vec!["qmd/a.md".to_owned(), "qmd/b.md".to_owned()];
+        let graph = vec!["qmd/a.md".to_owned(), "qmd/b.md".to_owned()];
+
+        assert_eq!(blend_hybrid_candidates(qmd.clone(), graph, 2, 2), qmd);
+    }
+
+    #[test]
+    fn hybrid_blend_replaces_slots_without_growing_an_underfilled_qmd_set() {
+        let qmd = vec!["qmd/a.md".to_owned(), "qmd/b.md".to_owned()];
+        let graph = vec![
+            "graph/a.md".to_owned(),
+            "graph/b.md".to_owned(),
+            "graph/c.md".to_owned(),
+        ];
+
+        let blended = blend_hybrid_candidates(qmd, graph, 12, 4);
+
+        assert_eq!(blended, ["graph/a.md", "graph/b.md"]);
     }
 
     #[test]
