@@ -22,6 +22,8 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+const AGENT_DOCS_HINT: &str = "If you are a coding agent, run `agentmesh docs list` and\n`agentmesh docs show <name>` before answering AgentMesh questions\nor troubleshooting errors.";
+
 #[derive(Debug, Default)]
 struct BufferCompactSink {
     bytes: Vec<u8>,
@@ -38,7 +40,8 @@ impl CompactSink for BufferCompactSink {
 #[command(
     name = "agentmesh",
     version,
-    about = "AgentMesh one-shot host and App tooling"
+    about = "AgentMesh one-shot host and App tooling",
+    after_help = AGENT_DOCS_HINT
 )]
 struct Cli {
     #[command(subcommand)]
@@ -258,6 +261,11 @@ enum RequestCommands {
 enum DocsCommands {
     /// List embedded AgentMesh documents available in this binary.
     List,
+    /// Show one embedded AgentMesh document by exact catalog name.
+    Show {
+        /// Exact document name returned by `agentmesh docs list`.
+        name: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -351,6 +359,7 @@ async fn main() -> ExitCode {
         },
         Commands::Docs { command } => match command {
             DocsCommands::List => docs::docs_list_command(),
+            DocsCommands::Show { name } => docs::docs_show_command(&name),
         },
         Commands::Evidence { command } => evidence_command(command),
     }
@@ -510,7 +519,7 @@ fn print_evidence_result(result: Result<serde_json::Value, String>) -> ExitCode 
                         "code": code,
                         "problem": error,
                         "cause": code,
-                        "fix": "Run `agentmesh evidence health`, then verify QMD commands, contract, namespace, and graph paths."
+                        "fix": "Run `agentmesh evidence health`, then verify QMD commands, contract, namespace, and graph paths. Coding agents should run `agentmesh docs list` and `agentmesh docs show <name>` for embedded guidance."
                     }
                 })
             );
@@ -558,6 +567,7 @@ fn request_parse_command(input: PathBuf) -> ExitCode {
         Ok(bytes) => bytes,
         Err(err) => {
             eprintln!("agentmesh request parse: input read failed: {err}");
+            print_agent_docs_hint();
             return ExitCode::from(2);
         }
     };
@@ -589,6 +599,7 @@ fn toolchain_install_command(
             Ok(path) => path,
             Err(err) => {
                 eprintln!("agentmesh toolchain install: {err}");
+                print_agent_docs_hint();
                 return ExitCode::from(2);
             }
         },
@@ -622,6 +633,7 @@ fn toolchain_install_command(
                 println!("{payload}");
             } else {
                 eprintln!("agentmesh toolchain install: {err}");
+                print_agent_docs_hint();
             }
             ExitCode::from(2)
         }
@@ -663,6 +675,7 @@ fn app_validate_command(manifest: PathBuf, toolchain_pin: PathBuf, json: bool) -
                 println!("{payload}");
             } else {
                 eprintln!("agentmesh app validate: {err}");
+                print_agent_docs_hint();
             }
             ExitCode::from(2)
         }
@@ -685,6 +698,7 @@ async fn app_run_command(
         Ok(m) => m,
         Err(msg) => {
             eprintln!("agentmesh app run: {msg}");
+            print_agent_docs_hint();
             return Err(2);
         }
     };
@@ -699,12 +713,14 @@ async fn app_run_command(
         Ok((_app, prepared)) => prepared,
         Err(err) => {
             eprintln!("agentmesh app run: {err}");
+            print_agent_docs_hint();
             return Err(2);
         }
     };
 
     if let Err(err) = write_run_marker(&sidecar_dir, &prepared.run_marker) {
         eprintln!("agentmesh app run: {err}");
+        print_agent_docs_hint();
         return Err(2);
     }
 
@@ -770,7 +786,11 @@ async fn app_run_command(
     let env_bytes = serde_json::to_vec(&outcome.envelope).unwrap_or_default();
     if let Err(e) = std::io::stdout().lock().write_all(&env_bytes) {
         eprintln!("agentmesh app run: stdout write failed: {e}");
+        print_agent_docs_hint();
         return Err(70);
+    }
+    if outcome.exit_code != 0 {
+        print_agent_docs_hint();
     }
     Ok(outcome.exit_code)
 }
@@ -836,6 +856,9 @@ async fn run_command(
     };
 
     let outcome = execute_run(config).await;
+    if outcome.exit_code != 0 {
+        print_agent_docs_hint();
+    }
     Ok(outcome.exit_code)
 }
 
@@ -856,4 +879,9 @@ fn emit_input_failure(run_id: &str, code: FailureCode, message: &str) {
         code,
         code.category()
     );
+    print_agent_docs_hint();
+}
+
+fn print_agent_docs_hint() {
+    eprintln!("{AGENT_DOCS_HINT}");
 }

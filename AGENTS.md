@@ -15,6 +15,18 @@ Do not: change host envelope ownership, promote Multica/`WorkItem` types into `a
 - Malformed framing/JSON fixtures use independent raw writers.
 - No vault paths, Multica types, or secrets in core/fixtures; plugin testdata may use synthetic recorded Multica-shaped JSON only.
 
+## Agent documentation discovery
+
+Prefer the installed binary's offline catalog before searching repository files:
+
+```bash
+agentmesh docs list
+agentmesh docs show <exact-name>
+```
+
+`docs show` accepts catalog names only and returns embedded Markdown in compact JSON. Do not
+pass paths, infer filenames, or depend on the current working directory.
+
 ## Checks before PR
 
 ```bash

@@ -242,6 +242,9 @@ pub fn expand(
         .collect();
     let mut adjacency: BTreeMap<&str, Vec<(&str, &GraphEdge)>> = BTreeMap::new();
     for edge in &graph.edges {
+        if matches!(edge.relation_type.as_str(), "documents" | "references") {
+            continue;
+        }
         adjacency
             .entry(&edge.from_id)
             .or_default()
@@ -326,7 +329,7 @@ mod tests {
             edge_id: id.into(),
             from_id: from.into(),
             to_id: to.into(),
-            relation_type: "references".into(),
+            relation_type: "derived_from".into(),
             source_path: "docs/A.md".into(),
             source_hash: "sha256:test".into(),
             origin: "explicit".into(),
@@ -390,5 +393,42 @@ mod tests {
         assert_eq!(result.paths, ["docs/A.md", "docs/B.md", "docs/C.md"]);
         assert!(!result.paths.contains(&"docs/Private.md".into()));
         assert!(result.edges.len() <= 4);
+    }
+
+    #[test]
+    fn expansion_skips_structural_and_generic_reference_edges() {
+        let mut documents = edge("documents", "a", "b");
+        documents.relation_type = "documents".into();
+        let mut references = edge("references", "a", "c");
+        references.relation_type = "references".into();
+        let graph = Graph {
+            schema_version: "okf-derived-graph.v2".into(),
+            node_count: 3,
+            edge_count: 2,
+            warning_count: 0,
+            warnings: vec![],
+            normalized_graph_hash: String::new(),
+            nodes: vec![
+                node("a", "docs/A.md", "internal"),
+                node("b", "docs/B.md", "internal"),
+                node("c", "docs/C.md", "internal"),
+            ],
+            edges: vec![documents, references],
+            extra: BTreeMap::new(),
+        };
+        let request = EvidenceRequest {
+            kind: crate::EvidenceKind::Decision,
+            query: "test".into(),
+            namespace: "test".into(),
+            sensitivity_ceiling: "internal".into(),
+            max_sources: 6,
+            timeout_ms: 1_000,
+            mode: crate::EvidenceMode::Hybrid,
+        };
+
+        let result = expand(&graph, &["docs/A.md".into()], &request, 2, 100).unwrap();
+
+        assert_eq!(result.paths, ["docs/A.md"]);
+        assert!(result.edges.is_empty());
     }
 }
