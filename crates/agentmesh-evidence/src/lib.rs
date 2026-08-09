@@ -319,14 +319,6 @@ pub fn compile(
                     )?;
                     if request.mode == EvidenceMode::Hybrid {
                         selected.truncate(request.max_sources);
-                        for path in expansion.paths.iter().filter(|path| *path != "index.md") {
-                            if selected.len() >= request.max_sources {
-                                break;
-                            }
-                            if !selected.contains(path) {
-                                selected.push(path.clone());
-                            }
-                        }
                         let graph_paths = expansion
                             .paths
                             .iter()
@@ -1427,6 +1419,20 @@ mod tests {
         let graph = vec!["qmd/a.md".to_owned(), "qmd/b.md".to_owned()];
 
         assert_eq!(blend_hybrid_candidates(qmd.clone(), graph, 2, 2), qmd);
+    }
+
+    #[test]
+    fn hybrid_blend_replaces_slots_without_growing_an_underfilled_qmd_set() {
+        let qmd = vec!["qmd/a.md".to_owned(), "qmd/b.md".to_owned()];
+        let graph = vec![
+            "graph/a.md".to_owned(),
+            "graph/b.md".to_owned(),
+            "graph/c.md".to_owned(),
+        ];
+
+        let blended = blend_hybrid_candidates(qmd, graph, 12, 4);
+
+        assert_eq!(blended, ["graph/a.md", "graph/b.md"]);
     }
 
     #[test]

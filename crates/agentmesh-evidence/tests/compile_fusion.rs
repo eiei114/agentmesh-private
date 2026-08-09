@@ -281,7 +281,7 @@ fn realistic_graph_increment_can_pass_promotion_without_enabling_the_default() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     fs::create_dir(root.join("docs")).unwrap();
-    for name in ["Standalone.md", "Keyword.md", "Related.md"] {
+    for name in ["Standalone.md", "Keyword.md", "Related.md", "Filler.md"] {
         write_decision(root, name, &format!("Use {name} evidence."));
     }
     write_agent_run(root, "Seed2.md");
@@ -298,9 +298,9 @@ fn realistic_graph_increment_can_pass_promotion_without_enabling_the_default() {
 const match = process.argv.join(' ').match(/fixture (\d+)/);
 const fixture = match ? Number(match[1]) : 0;
 let results = [];
-if (fixture >= 1 && fixture <= 6) results = [{file:'docs/Standalone.md'}];
-else if (fixture >= 7 && fixture <= 17) results = [{file:'docs/Keyword.md'}];
-else if (fixture === 18) results = [{file:'docs/Seed2.md'}];
+if (fixture >= 1 && fixture <= 6) results = [{file:'docs/Standalone.md'},{file:'docs/Filler.md'}];
+else if (fixture >= 7 && fixture <= 17) results = [{file:'docs/Keyword.md'},{file:'docs/Filler.md'}];
+else if (fixture === 18) results = [{file:'docs/Seed2.md'},{file:'docs/Filler.md'}];
 console.log(JSON.stringify(results));
 "#,
     )

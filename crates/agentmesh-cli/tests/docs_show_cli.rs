@@ -29,7 +29,16 @@ fn every_catalog_document_can_be_shown_by_exact_name() {
     let catalog: Value = serde_json::from_slice(&listed.stdout).expect("valid list JSON");
     let documents = catalog["results"].as_array().expect("results array");
 
-    for name in CATALOG_NAMES {
+    let listed_names = documents
+        .iter()
+        .map(|document| document["name"].as_str().expect("catalog document name"))
+        .collect::<Vec<_>>();
+    assert_eq!(listed_names, CATALOG_NAMES);
+
+    for listed_document in documents {
+        let name = listed_document["name"]
+            .as_str()
+            .expect("catalog document name");
         let output = show(name);
         assert!(
             output.status.success(),
@@ -37,10 +46,6 @@ fn every_catalog_document_can_be_shown_by_exact_name() {
             String::from_utf8_lossy(&output.stderr)
         );
         let payload: Value = serde_json::from_slice(&output.stdout).expect("valid JSON");
-        let listed_document = documents
-            .iter()
-            .find(|document| document["name"] == name)
-            .expect("name exists in docs list");
         assert_eq!(payload["schema_version"], "agentmesh-docs-show.v0");
         assert_eq!(payload["name"], name);
         assert_eq!(payload["description"], listed_document["description"]);
