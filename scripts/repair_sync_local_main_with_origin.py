@@ -46,6 +46,21 @@ def git_stdout(repo: Path, args: list[str]) -> str:
     return run_git(repo, args).stdout.strip()
 
 
+def dirty_count(repo: Path) -> int:
+    output = git_stdout(repo, ["status", "--porcelain"])
+    if not output:
+        return 0
+    return len(output.splitlines())
+
+
+def current_branch(repo: Path) -> str:
+    return git_stdout(repo, ["rev-parse", "--abbrev-ref", "HEAD"])
+
+
+def current_head(repo: Path) -> str:
+    return git_stdout(repo, ["rev-parse", "HEAD"])
+
+
 def resolve_repo(repo: Path) -> Path:
     return Path(git_stdout(repo, ["rev-parse", "--show-toplevel"])).resolve()
 
@@ -117,20 +132,25 @@ def fast_forward(repo: Path, branch: str, remote: str, before: Divergence) -> st
     branch_ref = f"refs/heads/{branch}"
     checked_out = checked_out_worktree(repo, branch_ref)
     if checked_out is None:
-        raise RepairError(
-            f"{branch_ref} is not checked out in any worktree; run this command from the worktree where {branch} is checked out"
-        )
+        run_git(repo, ["update-ref", branch_ref, before.remote_sha, before.local_sha])
+        return "fast_forward_ref"
     if checked_out != repo.resolve():
         raise RepairError(
             f"{branch_ref} is checked out in another worktree; run this command from that worktree"
         )
+    if dirty_count(repo) != 0:
+        raise RepairError(f"{branch_ref} worktree is dirty; commit or stash changes before syncing")
     run_git(repo, ["merge", "--ff-only", f"{remote}/{branch}"])
     return "fast_forward_worktree"
 
 
-def print_report(branch: str, remote: str, before: Divergence, after: Divergence, action: str) -> None:
+def print_report(repo: Path, branch: str, remote: str, before: Divergence, after: Divergence, action: str) -> None:
+    aligned = after.ahead == 0 and after.behind == 0
     print(f"branch={branch}")
     print(f"remote={remote}")
+    print(f"current_branch={current_branch(repo)}")
+    print(f"current_head={current_head(repo)}")
+    print(f"dirty_count={dirty_count(repo)}")
     print(f"local_ref=refs/heads/{branch}")
     print(f"remote_ref=refs/remotes/{remote}/{branch}")
     print(f"before_local={before.local_sha}")
@@ -143,7 +163,8 @@ def print_report(branch: str, remote: str, before: Divergence, after: Divergence
     print(f"after_ahead={after.ahead}")
     print(f"after_behind={after.behind}")
     print(f"repo_main_behind={'present' if after.behind else 'absent'}")
-    print(f"repo_main_aligned={'yes' if after.ahead == 0 and after.behind == 0 else 'no'}")
+    print(f"repo_main_aligned={'yes' if aligned else 'no'}")
+    print(f"request_action={'seed_app_requests' if aligned else 'repair_first'}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -173,7 +194,7 @@ def main() -> int:
         else:
             action = fast_forward(repo, args.branch, args.remote, before)
         after = divergence(repo, args.branch, args.remote)
-        print_report(args.branch, args.remote, before, after, action)
+        print_report(repo, args.branch, args.remote, before, after, action)
         return 0 if after.ahead == 0 and after.behind == 0 else 1
     except RepairError as error:
         print(f"error={error}", file=sys.stderr)
