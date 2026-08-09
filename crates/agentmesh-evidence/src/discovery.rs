@@ -72,7 +72,7 @@ impl CommandSpec {
     /// Resolve an executable, including safe Node resolution for npm `.cmd` shims.
     pub fn resolve(program: impl AsRef<OsStr>) -> Result<Self, EvidenceError> {
         let requested = PathBuf::from(program.as_ref());
-        let mut resolved = if requested.components().count() > 1 || requested.is_absolute() {
+        let resolved = if requested.components().count() > 1 || requested.is_absolute() {
             requested
         } else {
             which::which(&requested).map_err(|_| {
@@ -80,12 +80,16 @@ impl CommandSpec {
             })?
         };
         #[cfg(windows)]
-        if resolved.extension().is_none() {
+        let resolved = if resolved.extension().is_none() {
             let command_shim = resolved.with_extension("cmd");
             if command_shim.is_file() {
-                resolved = command_shim;
+                command_shim
+            } else {
+                resolved
             }
-        }
+        } else {
+            resolved
+        };
         if resolved.extension().is_some_and(|ext| {
             ext.eq_ignore_ascii_case("js")
                 || ext.eq_ignore_ascii_case("mjs")
