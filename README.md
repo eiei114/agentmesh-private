@@ -65,6 +65,20 @@ cargo build --release -p agentmesh-cli -p agentmesh-multica-selector-shadow
   --sidecar-dir ./.agentmesh/runs
 ```
 
+Evidence Compiler (all QMD streams, read-only canonical source inspection):
+
+```bash
+cargo build --release -p agentmesh-cli
+
+./target/release/agentmesh evidence health \
+  --root C:/vault/obsidian-note \
+  --contract 4_Project/Multica-Agent-Strategy/Research/okf-evidence-compiler-contract-v2.md \
+  --graph 4_Project/Multica-Agent-Strategy/Data/okf-evidence-derived-graph-v2.json
+```
+
+See [`docs/evidence-compiler-v0.md`](docs/evidence-compiler-v0.md) for compile,
+evaluation, QMD version, privacy, and rollback contracts.
+
 Stdout is exactly one compact JSON envelope. The audit sidecar is written under:
 
 ```text
@@ -129,8 +143,9 @@ Production (`default-members`):
 
 - `agentmesh-proto` — wire types, versions, JSON Schema
 - `agentmesh-host` — process supervision, framing, lifecycle, sidecar
-- `agentmesh-cli` — one-shot `run` command and `app` / `toolchain` subcommands
+- `agentmesh-cli` — one-shot `run`, `app`, `toolchain`, and read-only `evidence` commands
 - `agentmesh-app` — App manifest validation, toolchain install, and pinned run policy
+- `agentmesh-evidence` — QMD fusion, namespace/sensitivity policy, graph traversal, and Evidence Packet assembly
 
 Apps / packaging (version-controlled, not `default-members`):
 
@@ -183,3 +198,5 @@ cargo test --workspace
 - `docs/protocol-v0.md` — **Accepted for Phase 0** (private 0.x; not protocol 1.0)
 - `docs/threat-model-v0.md` — **Accepted for Phase 0**
 - `docs/adr/0001-external-stdio-plugins.md` — **Accepted** (Phase 0 exit review)
+- `docs/adr/0002-evidence-compiler-runtime-ownership.md` — **Accepted** (private Evidence Compiler ownership)
+- `docs/evidence-compiler-v0.md` — **Conditional private pilot**

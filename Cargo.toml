@@ -7,6 +7,7 @@ members = [
     "crates/agentmesh-app",
     "crates/agentmesh-conformance",
     "crates/agentmesh-request-evidence",
+    "crates/agentmesh-evidence",
     "test-support/agentmesh-fixture-support",
     "plugins/fixtures/echo",
     "plugins/fixtures/bad-json",
@@ -47,8 +48,10 @@ agentmesh-local-runner-adapter = { path = "plugins/local-runner-adapter" }
 agentmesh-adapter-metadata-canonicalizer = { path = "plugins/adapter-metadata-canonicalizer" }
 agentmesh-app = { path = "crates/agentmesh-app" }
 agentmesh-request-evidence = { path = "crates/agentmesh-request-evidence" }
+agentmesh-evidence = { path = "crates/agentmesh-evidence" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 thiserror = "2.0"
 anyhow = "1.0"
 toml = { version = "1.1", default-features = false, features = ["parse", "display", "serde"] }
