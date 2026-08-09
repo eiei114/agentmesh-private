@@ -148,6 +148,16 @@ fn write_promotion_graph(root: &Path) -> PathBuf {
     path
 }
 
+fn report_runs<'a>(report: &'a Value, mode: &str) -> Vec<&'a Value> {
+    report["fixtures"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|fixture| fixture["runs"].as_array().into_iter().flatten())
+        .filter(|run| run["mode"] == mode)
+        .collect()
+}
+
 #[test]
 fn compile_fuses_keyword_semantic_and_read_only_adaptive_paths_without_query_leak() {
     let Ok(node) = which::which("node") else {
@@ -268,6 +278,15 @@ fn evaluation_persists_fixture_ids_and_metrics_but_not_queries() {
     assert_eq!(report["hybrid"]["complete_queries"], 20);
     assert_eq!(report["incremental_complete"], 0);
     assert_eq!(report["gates"]["graph_ready"], false);
+    let hybrid_runs = report_runs(&report, "hybrid");
+    assert!(hybrid_runs.iter().all(|run| run["graph_fresh"] == false));
+    let fallback_reasons = hybrid_runs
+        .iter()
+        .map(|run| run["fallback_reason"].clone())
+        .collect::<Vec<_>>();
+    assert!(fallback_reasons
+        .iter()
+        .all(|reason| reason == "not_configured"));
     assert_eq!(report["promotion"]["pass"], false);
     assert_eq!(report["promotion"]["graph_default_enabled"], false);
     let encoded = serde_json::to_string(&report).unwrap();
@@ -342,6 +361,11 @@ console.log(JSON.stringify(results));
     assert_eq!(report["incremental_complete"], 12);
     assert_eq!(report["gates"]["qmd_baseline"], true);
     assert_eq!(report["gates"]["graph_ready"], true);
+    let hybrid_runs = report_runs(&report, "hybrid");
+    assert!(hybrid_runs.iter().all(|run| run["graph_fresh"] == true));
+    assert!(hybrid_runs
+        .iter()
+        .all(|run| run["fallback_reason"].is_null() || run["fallback_reason"] == "manifest_scan"));
     assert_eq!(report["promotion"]["pass"], true);
     assert_eq!(report["promotion"]["graph_default_enabled"], true);
 }
