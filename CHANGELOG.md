@@ -6,6 +6,11 @@ All notable changes to this private Phase 0 workspace are documented here.
 
 ### Added
 
+- Offline `agentmesh docs show <name>` lookup with exact-name JSON contracts and
+  coding-agent guidance that preserves existing stdout envelopes.
+- Bounded OKF graph candidate blending for evidence hybrid mode, excluding
+  structural hub relations and keeping graph default enablement behind the
+  existing promotion gates.
 - Read-only `agentmesh evidence compile|health|evaluate` runtime with direct QMD,
   semantic QMD, side-effect-free adaptive discovery, deterministic fusion,
   namespace/sensitivity enforcement, optional v2 graph traversal, and bounded
