@@ -7,13 +7,18 @@ use agentmesh_app::{
     default_toolchain_cache_root, install_toolchain_bundle, prepare_app_run, validate_app_bundle,
     write_run_marker, AppRunMode, AppRunRequest, ResolveMode,
 };
+use agentmesh_evidence::{
+    compile as compile_evidence, evaluate as evaluate_evidence, health as evidence_health,
+    load_contract as load_evidence_contract, secure_source_path, CommandSpec, CompileOptions,
+    EvidenceKind, EvidenceMode, EvidenceRequest,
+};
 use agentmesh_host::audit::FsAuditStore;
 use agentmesh_host::lifecycle::{CancellationToken, RunConfig};
 use agentmesh_host::sidecar::{CompactSink, CompactSinkError};
 use agentmesh_host::{execute_run, execute_run_with};
 use agentmesh_proto::{CompactDiagnostic, CompactEnvelope, FailureCode, Limits};
-use clap::{Parser, Subcommand};
-use std::io::Write;
+use clap::{Args, Parser, Subcommand};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -89,6 +94,108 @@ enum Commands {
         #[command(subcommand)]
         command: DocsCommands,
     },
+    /// Read-only source-linked Decision and AgentRun evidence compilation.
+    Evidence {
+        #[command(subcommand)]
+        command: EvidenceCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum EvidenceCommands {
+    /// Fuse keyword, semantic, and adaptive QMD candidates into an Evidence Packet.
+    Compile(Box<EvidenceCompileArgs>),
+    /// Validate contract and optional graph without running a query.
+    Health(EvidenceHealthArgs),
+    /// Run the canonical blind evaluation without persisting query text.
+    Evaluate(Box<EvidenceEvaluateArgs>),
+}
+
+#[derive(Debug, Args)]
+struct EvidenceCompileArgs {
+    /// Canonical vault root.
+    #[arg(long)]
+    root: PathBuf,
+    /// Vault-relative canonical Markdown contract.
+    #[arg(long)]
+    contract: PathBuf,
+    /// Vault-relative UTF-8 query file. Query text is never emitted or persisted.
+    #[arg(long = "query-file")]
+    query_file: PathBuf,
+    /// Packet kind: Decision or AgentRun.
+    #[arg(long)]
+    kind: String,
+    /// Reviewed namespace key.
+    #[arg(long)]
+    namespace: String,
+    /// Maximum source sensitivity.
+    #[arg(long, default_value = "internal")]
+    sensitivity_ceiling: String,
+    /// Retrieval mode: qmd-only or hybrid.
+    #[arg(long, default_value = "hybrid")]
+    mode: String,
+    /// Optional vault-relative serving-valid v2 graph.
+    #[arg(long)]
+    graph: Option<PathBuf>,
+    /// QMD collection name.
+    #[arg(long, default_value = "obsidian-note")]
+    collection: String,
+    /// qmd executable, npm shim, or Node entrypoint.
+    #[arg(long, default_value = "qmd")]
+    qmd_command: PathBuf,
+    /// qmd-adaptive-search executable, npm shim, or Node entrypoint.
+    #[arg(long, default_value = "qmd-adaptive-search")]
+    adaptive_command: PathBuf,
+    /// Disable adaptive discovery when a read-only-capable command is unavailable.
+    #[arg(long)]
+    no_adaptive: bool,
+    /// Maximum emitted sources.
+    #[arg(long, default_value_t = 6)]
+    max_sources: usize,
+    /// Shared hard timeout in milliseconds.
+    #[arg(long, default_value_t = 30_000)]
+    timeout_ms: u64,
+}
+
+#[derive(Debug, Args)]
+struct EvidenceHealthArgs {
+    /// Canonical vault root.
+    #[arg(long)]
+    root: PathBuf,
+    /// Vault-relative canonical Markdown contract.
+    #[arg(long)]
+    contract: PathBuf,
+    /// Optional vault-relative serving-valid v2 graph.
+    #[arg(long)]
+    graph: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct EvidenceEvaluateArgs {
+    /// Canonical vault root.
+    #[arg(long)]
+    root: PathBuf,
+    /// Vault-relative canonical Markdown contract.
+    #[arg(long)]
+    contract: PathBuf,
+    /// Optional vault-relative serving-valid v2 graph.
+    #[arg(long)]
+    graph: Option<PathBuf>,
+    /// QMD collection name.
+    #[arg(long, default_value = "obsidian-note")]
+    collection: String,
+    /// qmd executable, npm shim, or Node entrypoint.
+    #[arg(long, default_value = "qmd")]
+    qmd_command: PathBuf,
+    /// qmd-adaptive-search executable, npm shim, or Node entrypoint.
+    #[arg(long, default_value = "qmd-adaptive-search")]
+    adaptive_command: PathBuf,
+    /// Disable adaptive discovery.
+    #[arg(long)]
+    no_adaptive: bool,
+    /// Repetitions per mode and fixture.
+    #[arg(long, default_value_t = 3)]
+    repeat: usize,
 }
 
 #[derive(Debug, Subcommand)]
@@ -245,7 +352,205 @@ async fn main() -> ExitCode {
         Commands::Docs { command } => match command {
             DocsCommands::List => docs::docs_list_command(),
         },
+        Commands::Evidence { command } => evidence_command(command),
     }
+}
+
+fn evidence_command(command: EvidenceCommands) -> ExitCode {
+    match command {
+        EvidenceCommands::Compile(arguments) => {
+            let EvidenceCompileArgs {
+                root,
+                contract,
+                query_file,
+                kind,
+                namespace,
+                sensitivity_ceiling,
+                mode,
+                graph,
+                collection,
+                qmd_command,
+                adaptive_command,
+                no_adaptive,
+                max_sources,
+                timeout_ms,
+            } = *arguments;
+            let result = (|| {
+                let root = root
+                    .canonicalize()
+                    .map_err(|error| format!("resolve root: {error}"))?;
+                let contract_path =
+                    secure_source_path(&root, &contract).map_err(|error| error.to_string())?;
+                let query_path =
+                    secure_source_path(&root, &query_file).map_err(|error| error.to_string())?;
+                let contract =
+                    load_evidence_contract(&contract_path).map_err(|error| error.to_string())?;
+                let query = read_bounded_query(&query_path, contract.max_query_bytes)?;
+                let qmd = CommandSpec::resolve(&qmd_command).map_err(|error| error.to_string())?;
+                let adaptive = if no_adaptive {
+                    None
+                } else {
+                    Some(
+                        CommandSpec::resolve(&adaptive_command)
+                            .map_err(|error| error.to_string())?,
+                    )
+                };
+                let request = EvidenceRequest {
+                    kind: EvidenceKind::parse(&kind).map_err(|error| error.to_string())?,
+                    query,
+                    namespace,
+                    sensitivity_ceiling,
+                    max_sources,
+                    timeout_ms,
+                    mode: EvidenceMode::parse(&mode).map_err(|error| error.to_string())?,
+                };
+                compile_evidence(
+                    &root,
+                    &contract,
+                    &request,
+                    &CompileOptions {
+                        collection,
+                        qmd: Some(qmd),
+                        adaptive,
+                        graph_path: graph,
+                    },
+                )
+                .map_err(|error| error.to_string())
+            })();
+            print_evidence_result(result)
+        }
+        EvidenceCommands::Health(EvidenceHealthArgs {
+            root,
+            contract,
+            graph,
+        }) => {
+            let result = (|| {
+                let root = root
+                    .canonicalize()
+                    .map_err(|error| format!("resolve root: {error}"))?;
+                let contract_path =
+                    secure_source_path(&root, &contract).map_err(|error| error.to_string())?;
+                let contract =
+                    load_evidence_contract(&contract_path).map_err(|error| error.to_string())?;
+                Ok(evidence_health(&root, &contract, graph.as_deref()))
+            })();
+            print_evidence_result(result)
+        }
+        EvidenceCommands::Evaluate(arguments) => {
+            let EvidenceEvaluateArgs {
+                root,
+                contract,
+                graph,
+                collection,
+                qmd_command,
+                adaptive_command,
+                no_adaptive,
+                repeat,
+            } = *arguments;
+            let result = (|| {
+                let root = root
+                    .canonicalize()
+                    .map_err(|error| format!("resolve root: {error}"))?;
+                let contract_path =
+                    secure_source_path(&root, &contract).map_err(|error| error.to_string())?;
+                let contract =
+                    load_evidence_contract(&contract_path).map_err(|error| error.to_string())?;
+                let qmd = CommandSpec::resolve(&qmd_command).map_err(|error| error.to_string())?;
+                let adaptive = if no_adaptive {
+                    None
+                } else {
+                    Some(
+                        CommandSpec::resolve(&adaptive_command)
+                            .map_err(|error| error.to_string())?,
+                    )
+                };
+                evaluate_evidence(
+                    &root,
+                    &contract,
+                    &CompileOptions {
+                        collection,
+                        qmd: Some(qmd),
+                        adaptive,
+                        graph_path: graph,
+                    },
+                    repeat,
+                )
+                .map_err(|error| error.to_string())
+            })();
+            print_evidence_result(result)
+        }
+    }
+}
+
+fn print_evidence_result(result: Result<serde_json::Value, String>) -> ExitCode {
+    match result {
+        Ok(payload) => match serde_json::to_string_pretty(&payload) {
+            Ok(encoded) => {
+                println!("{encoded}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": false,
+                        "error": {"code": "serialization_error", "problem": error.to_string()}
+                    })
+                );
+                ExitCode::from(2)
+            }
+        },
+        Err(error) => {
+            let code = classify_evidence_error(&error);
+            eprintln!(
+                "{}",
+                serde_json::json!({
+                    "ok": false,
+                    "error": {
+                        "code": code,
+                        "problem": error,
+                        "cause": code,
+                        "fix": "Run `agentmesh evidence health`, then verify QMD commands, contract, namespace, and graph paths."
+                    }
+                })
+            );
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn classify_evidence_error(problem: &str) -> &'static str {
+    if problem.starts_with("invalid_request:") || problem.starts_with("invalid request:") {
+        "invalid_request"
+    } else if problem.starts_with("invalid contract:") {
+        "invalid_contract"
+    } else if problem.starts_with("invalid graph:") {
+        "invalid_graph"
+    } else if problem.starts_with("path rejected:") {
+        "path_rejected"
+    } else if problem.starts_with("command unavailable:") {
+        "qmd_unavailable"
+    } else if problem.contains("timed out") {
+        "qmd_timeout"
+    } else if problem.starts_with("command protocol error:") {
+        "qmd_protocol_error"
+    } else {
+        "io_error"
+    }
+}
+
+fn read_bounded_query(path: &std::path::Path, max_bytes: usize) -> Result<String, String> {
+    let file = std::fs::File::open(path).map_err(|error| format!("open query file: {error}"))?;
+    let mut bytes = Vec::new();
+    file.take((max_bytes + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("read query file: {error}"))?;
+    if bytes.len() > max_bytes {
+        return Err(format!("invalid_request: query exceeds {max_bytes} bytes"));
+    }
+    let text = String::from_utf8(bytes)
+        .map_err(|_| "invalid_request: query file must be UTF-8".to_owned())?;
+    Ok(text.trim_start_matches('\u{feff}').to_owned())
 }
 
 fn request_parse_command(input: PathBuf) -> ExitCode {

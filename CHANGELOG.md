@@ -6,6 +6,10 @@ All notable changes to this private Phase 0 workspace are documented here.
 
 ### Added
 
+- Read-only `agentmesh evidence compile|health|evaluate` runtime with direct QMD,
+  semantic QMD, side-effect-free adaptive discovery, deterministic fusion,
+  namespace/sensitivity enforcement, optional v2 graph traversal, and bounded
+  source-linked Decision / AgentRun packets.
 - Phase 1.0 shadow-mode Multica selector adapter skeleton (`plugins/multica-selector-shadow`): opaque `agentmesh.run` input/payload, recorded offline fixtures, named shadow compact-shape compare, host roundtrip with audit sidecar. No production cutover.
 - Markdown request validator App (`apps/markdown-request-validator/`, `plugins/markdown-request-validator/`): tool-neutral manifest + deterministic compact payload validation without Multica credentials.
 - Adapter metadata canonicalizer App (`apps/adapter-metadata-canonicalizer/`, `plugins/adapter-metadata-canonicalizer/`): deterministic cross-adapter metadata drift report, canonical stable-field subset, and preserved adapter-specific extensions.
