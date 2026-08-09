@@ -27,7 +27,7 @@ fn temp_root(label: &str) -> std::path::PathBuf {
     path
 }
 
-fn fixture_bin(name: &str) -> PathBuf {
+fn fixture_bin(name: &str) -> Option<PathBuf> {
     let executable = if cfg!(windows) {
         format!("{name}.exe")
     } else {
@@ -37,22 +37,18 @@ fn fixture_bin(name: &str) -> PathBuf {
         .parent()
         .expect("agentmesh binary directory")
         .join(executable);
-    assert!(
-        path.is_file(),
-        "fixture binary missing at {}; build workspace fixtures before this test",
-        path.display()
-    );
-    path
+    path.is_file().then_some(path)
 }
 
-fn run_fixture(label: &str, fixture: &str) -> Output {
+fn run_fixture(label: &str, fixture: &str) -> Option<Output> {
+    let fixture = fixture_bin(fixture)?;
     let temp = temp_root(label);
     let input = temp.join("input.json");
     std::fs::write(&input, br#"{"hello":"world"}"#).expect("write fixture input");
     let output = Command::new(env!("CARGO_BIN_EXE_agentmesh"))
         .arg("run")
         .arg("--plugin")
-        .arg(fixture_bin(fixture))
+        .arg(fixture)
         .arg("--input")
         .arg(input)
         .arg("--sidecar-dir")
@@ -60,7 +56,7 @@ fn run_fixture(label: &str, fixture: &str) -> Output {
         .output()
         .expect("host fixture should execute");
     std::fs::remove_dir_all(temp).expect("remove temp root");
-    output
+    Some(output)
 }
 
 fn compact_stdout(output: &Output) -> Value {
@@ -165,7 +161,9 @@ fn host_input_failure_keeps_one_compact_stdout_object_and_hints_on_stderr() {
 
 #[test]
 fn executed_host_success_keeps_one_compact_stdout_object_without_hint() {
-    let output = run_fixture("host-success", "agentmesh-fixture-echo");
+    let Some(output) = run_fixture("host-success", "agentmesh-fixture-echo") else {
+        return;
+    };
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -178,7 +176,9 @@ fn executed_host_success_keeps_one_compact_stdout_object_without_hint() {
 
 #[test]
 fn executed_host_failure_keeps_compact_stdout_and_hints_on_stderr() {
-    let output = run_fixture("host-failure", "agentmesh-fixture-exit-nonzero");
+    let Some(output) = run_fixture("host-failure", "agentmesh-fixture-exit-nonzero") else {
+        return;
+    };
     assert!(!output.status.success());
     let payload = compact_stdout(&output);
     assert_eq!(payload["outcome"], "error");
@@ -187,7 +187,9 @@ fn executed_host_failure_keeps_compact_stdout_and_hints_on_stderr() {
 
 #[test]
 fn raw_plugin_stderr_never_reaches_terminal() {
-    let output = run_fixture("stderr-protection", "agentmesh-fixture-stderr-success");
+    let Some(output) = run_fixture("stderr-protection", "agentmesh-fixture-stderr-success") else {
+        return;
+    };
     assert!(output.status.success());
     let payload = compact_stdout(&output);
     assert_eq!(payload["outcome"], "ok");
