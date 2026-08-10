@@ -5,6 +5,10 @@ on:
     branches: [main, phase0-contract-spike, campaign/agentmesh-multica-operations]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
