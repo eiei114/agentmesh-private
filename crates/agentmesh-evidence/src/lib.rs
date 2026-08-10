@@ -5,10 +5,15 @@
 //! traverse one serving-valid JSON graph, then reread canonical Markdown.
 
 mod contract;
+mod decision;
 mod discovery;
 mod graph;
 
 pub use contract::{load_contract, load_evaluation, Contract, EvaluationFixture, NamespacePolicy};
+pub use decision::{
+    frontmatter_text, normalize_decision_metadata, normalize_decision_metadata_for_graph,
+    parse_frontmatter, DecisionMetadata, DecisionMetadataError, DecisionScope, DecisionStatus,
+};
 pub use discovery::{
     discover_all, CandidateHit, CandidateStream, CommandSpec, DiscoveryOptions, StreamResult,
 };
@@ -25,6 +30,8 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 use thiserror::Error;
+
+use serde_yaml::Value as YamlValue;
 
 const EXCERPT_LIMIT: usize = 8 * 1024;
 
@@ -43,6 +50,9 @@ pub enum EvidenceError {
     /// Graph cannot be served safely.
     #[error("invalid graph: {0}")]
     InvalidGraph(String),
+    /// A Decision source has malformed lifecycle metadata.
+    #[error("invalid decision record: {0}")]
+    InvalidDecisionRecord(String),
     /// Required discovery executable is unavailable.
     #[error("command unavailable: {0}")]
     CommandUnavailable(String),
@@ -71,6 +81,7 @@ impl EvidenceError {
             Self::InvalidRequest(_) => "invalid_request",
             Self::PathRejected(_) => "path_rejected",
             Self::InvalidGraph(_) => "invalid_graph",
+            Self::InvalidDecisionRecord(_) => "invalid_decision_record",
             Self::CommandUnavailable(_) => "qmd_unavailable",
             Self::CommandTimeout => "qmd_timeout",
             Self::CommandProtocol(_) => "qmd_protocol_error",
@@ -102,7 +113,7 @@ impl EvidenceKind {
 
     const fn fields(self) -> &'static [&'static str] {
         match self {
-            Self::Decision => &["decision", "status", "rationale", "alternatives"],
+            Self::Decision => &["decision", "record_status", "rationale", "alternatives"],
             Self::AgentRun => &["source_issue", "run_id", "artifact", "outcome"],
         }
     }
@@ -191,6 +202,8 @@ pub struct EvidenceRequest {
     pub max_sources: usize,
     /// Shared hard deadline.
     pub timeout_ms: u64,
+    /// Decision lifecycle scope. Ignored for AgentRun packets.
+    pub decision_scope: DecisionScope,
     /// QMD-only or hybrid.
     pub mode: EvidenceMode,
 }
@@ -242,6 +255,16 @@ pub fn validate_request(
             "timeout exceeds contract".into(),
         ));
     }
+    if request.kind == EvidenceKind::Decision
+        && !contract
+            .decision_scopes
+            .contains_key(request.decision_scope.as_str())
+    {
+        return Err(EvidenceError::InvalidRequest(format!(
+            "unknown decision scope {}",
+            request.decision_scope.as_str()
+        )));
+    }
     Ok(())
 }
 
@@ -281,8 +304,13 @@ pub fn compile(
     let policy = contract.namespaces.get(&request.namespace).ok_or_else(|| {
         EvidenceError::InvalidRequest("namespace disappeared after validation".into())
     })?;
-    let (ranked_candidates, rejected) =
+    let (ranked_candidates, mut rejected) =
         fuse_candidates(&stream_results, policy, contract, request.kind);
+    let ranked_candidates = if request.kind == EvidenceKind::Decision {
+        filter_decision_candidates(&root, ranked_candidates, request, contract, &mut rejected)?
+    } else {
+        ranked_candidates
+    };
     let candidate_trace: Vec<Value> = ranked_candidates.iter().take(30).map(|candidate| json!({
         "source_path": candidate.path,
         "rrf_score": candidate.score,
@@ -306,16 +334,21 @@ pub fn compile(
         if let Some(path) = &options.graph_path {
             match graph::load_graph(&root, path, &contract.graph_schema) {
                 Ok(graph) => {
+                    let allowed_decision_statuses = contract
+                        .decision_scopes
+                        .get(request.decision_scope.as_str());
                     if request.mode == EvidenceMode::GraphOnly {
-                        selected = graph_seed_paths(&graph, request);
+                        selected = graph_seed_paths(&graph, request, allowed_decision_statuses);
                     }
-                    let lexical_graph_paths = graph_seed_paths(&graph, request);
-                    let expansion = graph::expand(
+                    let lexical_graph_paths =
+                        graph_seed_paths(&graph, request, allowed_decision_statuses);
+                    let expansion = graph::expand_with_statuses(
                         &graph,
                         &selected,
                         request,
                         contract.max_graph_hops,
                         contract.max_visited_nodes,
+                        allowed_decision_statuses,
                     )?;
                     if request.mode == EvidenceMode::Hybrid {
                         selected.truncate(request.max_sources);
@@ -367,7 +400,10 @@ pub fn compile(
     let mut evidence = Vec::new();
     let mut fields: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let mut source_rejections = Vec::new();
-    for path in selected.into_iter().take(request.max_sources) {
+    for path in selected {
+        if evidence.len() >= request.max_sources {
+            break;
+        }
         if Instant::now() >= deadline {
             break;
         }
@@ -391,6 +427,25 @@ pub fn compile(
             graph_node.map(|node| node.node_type.as_str()),
         ) {
             Ok((item, extracted)) => {
+                if request.kind == EvidenceKind::Decision {
+                    let status = item
+                        .get("record_status")
+                        .and_then(Value::as_str)
+                        .and_then(|value| DecisionStatus::parse(value).ok());
+                    let allowed = status.is_some_and(|status| {
+                        contract
+                            .decision_scopes
+                            .get(request.decision_scope.as_str())
+                            .map_or_else(
+                                || request.decision_scope.allows(status),
+                                |statuses| statuses.contains(&status),
+                            )
+                    });
+                    if !allowed {
+                        source_rejections.push("decision_scope_filtered".to_owned());
+                        continue;
+                    }
+                }
                 if let Some(expected) = graph_node.map(|node| node.source_hash.as_str()) {
                     if item["source_hash"].as_str() != Some(expected) {
                         source_rejections.push("source_changed".to_owned());
@@ -514,6 +569,8 @@ pub fn compile(
         "packet_kind": request.kind.as_str(),
         "status": status,
         "namespace": request.namespace,
+        "decision_scope": (request.kind == EvidenceKind::Decision)
+            .then_some(request.decision_scope.as_str()),
         "generated_at": Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
         "duration_ms": started.elapsed().as_millis(),
         "mode_used": match request.mode {
@@ -599,6 +656,7 @@ pub fn evaluate(
                         sensitivity_ceiling: contract.evaluation_sensitivity_ceiling.clone(),
                         max_sources: contract.max_sources.min(12),
                         timeout_ms: contract.hard_timeout_ms,
+                        decision_scope: contract.default_decision_scope,
                         mode,
                     },
                     options,
@@ -820,6 +878,78 @@ fn fuse_candidates(
     (rows, rejected)
 }
 
+/// Remove non-scope Decision candidates before bounded ranking output.
+fn filter_decision_candidates(
+    root: &Path,
+    candidates: Vec<RankedCandidate>,
+    request: &EvidenceRequest,
+    contract: &Contract,
+    rejected: &mut Vec<String>,
+) -> Result<Vec<RankedCandidate>, EvidenceError> {
+    let Some(allowed_statuses) = contract
+        .decision_scopes
+        .get(request.decision_scope.as_str())
+    else {
+        return Ok(candidates);
+    };
+    let mut accepted = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        match inspect_decision_status(root, &candidate.path, contract.max_source_bytes) {
+            Ok(Some(status)) if allowed_statuses.contains(&status) => accepted.push(candidate),
+            Ok(Some(_)) => rejected.push("decision_scope_filtered".into()),
+            Ok(None) => accepted.push(candidate),
+            Err(error) => rejected.push(error.stable_code().into()),
+        }
+    }
+    Ok(accepted)
+}
+
+/// Read just enough canonical source to classify one Decision candidate.
+fn inspect_decision_status(
+    root: &Path,
+    path: &str,
+    max_source_bytes: u64,
+) -> Result<Option<DecisionStatus>, EvidenceError> {
+    let relative = Path::new(path);
+    if path.is_empty()
+        || relative.is_absolute()
+        || relative.components().any(|part| {
+            matches!(
+                part,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(EvidenceError::PathRejected(path.into()));
+    }
+    let candidate = root.join(relative);
+    if !candidate.exists() {
+        return Ok(None);
+    }
+    let absolute = secure_source_path(root, relative)?;
+    let metadata = fs::metadata(&absolute).map_err(|source| EvidenceError::Io {
+        context: format!("inspect decision source {path}"),
+        source,
+    })?;
+    if metadata.len() > max_source_bytes {
+        return Err(EvidenceError::PathRejected(format!(
+            "source_too_large:{path}"
+        )));
+    }
+    let raw = fs::read(&absolute).map_err(|source| EvidenceError::Io {
+        context: format!("read decision source {path}"),
+        source,
+    })?;
+    let text = std::str::from_utf8(raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw)).map_err(
+        |_| EvidenceError::InvalidDecisionRecord(format!("{path}: source is not UTF-8")),
+    )?;
+    let frontmatter = parse_frontmatter(text)
+        .map_err(|error| EvidenceError::InvalidDecisionRecord(format!("{path}: {error}")))?;
+    let metadata = normalize_decision_metadata(&frontmatter)
+        .map_err(|error| EvidenceError::InvalidDecisionRecord(format!("{path}: {error}")))?;
+    Ok(Some(metadata.decision_status))
+}
+
 fn authority_prior(kind: EvidenceKind, path: &str) -> f64 {
     let lower = path.to_ascii_lowercase();
     match kind {
@@ -848,7 +978,11 @@ fn authority_prior(kind: EvidenceKind, path: &str) -> f64 {
     }
 }
 
-fn graph_seed_paths(graph: &Graph, request: &EvidenceRequest) -> Vec<String> {
+fn graph_seed_paths(
+    graph: &Graph,
+    request: &EvidenceRequest,
+    allowed_statuses: Option<&BTreeSet<DecisionStatus>>,
+) -> Vec<String> {
     let terms = query_terms(&request.query);
     let ceiling = Sensitivity::parse(&request.sensitivity_ceiling).unwrap_or(Sensitivity::Internal);
     let mut rows: Vec<(usize, String)> = graph
@@ -860,6 +994,19 @@ fn graph_seed_paths(graph: &Graph, request: &EvidenceRequest) -> Vec<String> {
                 || node.sensitivity == "restricted"
             {
                 return None;
+            }
+            if node.node_type == "Decision" {
+                let status = graph::decision_node_status(node)
+                    .ok()
+                    .flatten()
+                    .unwrap_or(DecisionStatus::Adopted);
+                let allowed = allowed_statuses.map_or_else(
+                    || request.decision_scope.allows(status),
+                    |set| set.contains(&status),
+                );
+                if !allowed {
+                    return None;
+                }
             }
             let haystack = format!("{} {}", node.title, node.source_path).to_lowercase();
             let score = terms
@@ -1175,7 +1322,27 @@ fn read_evidence(
     })?;
     let text = std::str::from_utf8(raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw))
         .map_err(|_| EvidenceError::PathRejected(format!("source_not_utf8:{path}")))?;
-    let fields = extract_fields(kind, text);
+    let decision_frontmatter =
+        if kind == EvidenceKind::Decision {
+            Some(parse_frontmatter(text).map_err(|error| {
+                EvidenceError::InvalidDecisionRecord(format!("{path}: {error}"))
+            })?)
+        } else {
+            None
+        };
+    let decision_metadata = decision_frontmatter
+        .as_ref()
+        .map(|frontmatter| {
+            normalize_decision_metadata(frontmatter)
+                .map_err(|error| EvidenceError::InvalidDecisionRecord(format!("{path}: {error}")))
+        })
+        .transpose()?;
+    let fields = extract_fields(
+        kind,
+        text,
+        decision_frontmatter.as_ref(),
+        decision_metadata.as_ref(),
+    );
     let title = text
         .lines()
         .find_map(|line| line.strip_prefix("# "))
@@ -1196,28 +1363,53 @@ fn read_evidence(
         || title.to_owned(),
         |value| truncate_chars(value, EXCERPT_LIMIT),
     );
-    let freshness = source_freshness(kind, text);
-    Ok((
-        json!({
-            "evidence_id": evidence_id,
-            "source_path": path,
-            "source_hash": source_hash,
-            "content_hash": content_hash,
-            "heading": Value::Null,
-            "anchor": Value::Null,
-            "excerpt": excerpt,
-            "source_type": graph_source_type.unwrap_or_else(|| kind.as_str()),
-            "freshness": freshness,
-            "sensitivity": sensitivity.as_str(),
-        }),
-        fields,
-    ))
+    let freshness = source_freshness(
+        kind,
+        text,
+        decision_frontmatter.as_ref(),
+        decision_metadata.as_ref(),
+    );
+    let mut item = json!({
+        "evidence_id": evidence_id,
+        "source_path": path,
+        "source_hash": source_hash,
+        "content_hash": content_hash,
+        "heading": Value::Null,
+        "anchor": Value::Null,
+        "excerpt": excerpt,
+        "source_type": graph_source_type.unwrap_or_else(|| kind.as_str()),
+        "freshness": freshness,
+        "sensitivity": sensitivity.as_str(),
+    });
+    if let Some(metadata) = &decision_metadata {
+        item["record_status"] = Value::String(metadata.decision_status.as_str().into());
+        item["decision_status"] = Value::String(metadata.decision_status.as_str().into());
+        item["decision_kind"] = metadata
+            .decision_kind
+            .as_ref()
+            .map_or(Value::Null, |value| Value::String(value.clone()));
+        item["recorded_by"] = Value::String(metadata.recorded_by.clone());
+        item["review_status"] = Value::String(metadata.review_status.clone());
+        item["adoption_mode"] = Value::String(metadata.adoption_mode.clone());
+        item["impact"] = Value::String(metadata.impact.clone());
+        item["source_refs"] = serde_json::to_value(&metadata.source_refs).unwrap_or(Value::Null);
+        item["supersedes"] = serde_json::to_value(&metadata.supersedes).unwrap_or(Value::Null);
+    }
+    Ok((item, fields))
 }
 
-fn source_freshness(kind: EvidenceKind, text: &str) -> &'static str {
-    let (frontmatter, _) = split_frontmatter(text);
-    if let Some(value) = frontmatter.get("stale_after") {
-        if let Ok(date) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+fn source_freshness(
+    kind: EvidenceKind,
+    text: &str,
+    decision_frontmatter: Option<&BTreeMap<String, YamlValue>>,
+    decision_metadata: Option<&DecisionMetadata>,
+) -> &'static str {
+    let (legacy_frontmatter, _) = split_frontmatter(text);
+    let stale_after = decision_frontmatter
+        .and_then(|frontmatter| frontmatter_text(frontmatter, "stale_after"))
+        .or_else(|| legacy_frontmatter.get("stale_after").cloned());
+    if let Some(value) = stale_after {
+        if let Ok(date) = chrono::NaiveDate::parse_from_str(&value, "%Y-%m-%d") {
             return if date < Utc::now().date_naive() {
                 "stale"
             } else {
@@ -1226,9 +1418,8 @@ fn source_freshness(kind: EvidenceKind, text: &str) -> &'static str {
         }
     }
     if kind == EvidenceKind::Decision
-        && frontmatter
-            .get("status")
-            .is_some_and(|status| matches!(status.as_str(), "adopted" | "accepted"))
+        && decision_metadata
+            .is_some_and(|metadata| metadata.decision_status == DecisionStatus::Adopted)
     {
         "timeless"
     } else {
@@ -1236,13 +1427,21 @@ fn source_freshness(kind: EvidenceKind, text: &str) -> &'static str {
     }
 }
 
-fn extract_fields(kind: EvidenceKind, text: &str) -> BTreeMap<String, String> {
-    let (frontmatter, body) = split_frontmatter(text);
+fn extract_fields(
+    kind: EvidenceKind,
+    text: &str,
+    decision_frontmatter: Option<&BTreeMap<String, YamlValue>>,
+    decision_metadata: Option<&DecisionMetadata>,
+) -> BTreeMap<String, String> {
+    let (legacy_frontmatter, body) = split_frontmatter(text);
     let headings = heading_sections(body);
     let aliases: &[(&str, &[&str])] = match kind {
         EvidenceKind::Decision => &[
             ("decision", &["decision", "決定"]),
-            ("status", &["status"]),
+            (
+                "record_status",
+                &["record_status", "decision_status", "status"],
+            ),
             (
                 "rationale",
                 &["rationale", "why", "理由", "背景", "context"],
@@ -1267,11 +1466,12 @@ fn extract_fields(kind: EvidenceKind, text: &str) -> BTreeMap<String, String> {
     };
     let mut output = BTreeMap::new();
     for (field, names) in aliases {
-        if let Some(value) = names
-            .iter()
-            .find_map(|name| frontmatter.get(*name))
-            .filter(|value| !value.is_empty())
-        {
+        let value = names.iter().find_map(|name| {
+            decision_frontmatter
+                .and_then(|frontmatter| frontmatter_text(frontmatter, name))
+                .or_else(|| legacy_frontmatter.get(*name).cloned())
+        });
+        if let Some(value) = value.filter(|value| !value.is_empty()) {
             output.insert((*field).to_owned(), value.clone());
             continue;
         }
@@ -1282,23 +1482,47 @@ fn extract_fields(kind: EvidenceKind, text: &str) -> BTreeMap<String, String> {
             output.insert((*field).to_owned(), truncate_chars(value, EXCERPT_LIMIT));
         }
     }
+    if let Some(metadata) = decision_metadata {
+        output.insert(
+            "record_status".to_owned(),
+            metadata.decision_status.as_str().to_owned(),
+        );
+    }
     output
 }
 
 fn split_frontmatter(text: &str) -> (BTreeMap<String, String>, &str) {
     let normalized = text.strip_prefix("\u{feff}").unwrap_or(text);
-    if let Some(rest) = normalized.strip_prefix("---\n") {
-        if let Some((front, body)) = rest.split_once("\n---\n") {
-            let values = front
-                .lines()
-                .filter_map(|line| {
-                    let (key, value) = line.split_once(':')?;
-                    let value = value.trim().trim_matches(['\'', '"']);
-                    (!value.is_empty()).then(|| (key.trim().to_ascii_lowercase(), value.to_owned()))
-                })
-                .collect();
-            return (values, body);
-        }
+    let open_len = if normalized.starts_with("---\r\n") {
+        5
+    } else if normalized.starts_with("---\n") {
+        4
+    } else {
+        return (BTreeMap::new(), normalized);
+    };
+    let rest = &normalized[open_len..];
+    if let Some(close_newline) = rest.find("\n---") {
+        let close_start = close_newline + 1;
+        let after_marker = &rest[close_start + 3..];
+        let body_start = if after_marker.is_empty() {
+            close_start + 3
+        } else if after_marker.starts_with("\r\n") {
+            close_start + 5
+        } else if after_marker.starts_with('\n') {
+            close_start + 4
+        } else {
+            return (BTreeMap::new(), normalized);
+        };
+        let front = &rest[..close_newline];
+        let values = front
+            .lines()
+            .filter_map(|line| {
+                let (key, value) = line.split_once(':')?;
+                let value = value.trim().trim_matches(['\'', '"']);
+                (!value.is_empty()).then(|| (key.trim().to_ascii_lowercase(), value.to_owned()))
+            })
+            .collect();
+        return (values, &normalized[open_len + body_start..]);
     }
     (BTreeMap::new(), normalized)
 }
@@ -1467,6 +1691,8 @@ mod tests {
             evaluation_source: String::new(),
             evaluation_namespace: "test".into(),
             evaluation_sensitivity_ceiling: "internal".into(),
+            decision_scopes: BTreeMap::new(),
+            default_decision_scope: DecisionScope::Current,
         };
         let streams = vec![
             StreamResult {
@@ -1514,9 +1740,9 @@ mod tests {
     #[test]
     fn extracts_decision_fields_without_summary_invention() {
         let text = "---\nstatus: adopted\n---\n# Choice\n## Decision\nUse JSON.\n## Rationale\nPortable.\n## Alternatives\nSQLite.";
-        let fields = extract_fields(EvidenceKind::Decision, text);
+        let fields = extract_fields(EvidenceKind::Decision, text, None, None);
         assert_eq!(fields["decision"], "Use JSON.");
-        assert_eq!(fields["status"], "adopted");
+        assert_eq!(fields["record_status"], "adopted");
         assert_eq!(fields["rationale"], "Portable.");
         assert_eq!(fields["alternatives"], "SQLite.");
     }
@@ -1545,6 +1771,8 @@ mod tests {
             evaluation_source: String::new(),
             evaluation_namespace: "test".into(),
             evaluation_sensitivity_ceiling: "internal".into(),
+            decision_scopes: BTreeMap::new(),
+            default_decision_scope: DecisionScope::Current,
         };
         assert!(path_allowed("docs/Decision.md", &policy, &contract).is_ok());
         assert_eq!(
@@ -1582,6 +1810,8 @@ mod tests {
             evaluation_source: String::new(),
             evaluation_namespace: "test".into(),
             evaluation_sensitivity_ceiling: "internal".into(),
+            decision_scopes: BTreeMap::new(),
+            default_decision_scope: DecisionScope::Current,
         };
         let request = EvidenceRequest {
             kind: EvidenceKind::Decision,
@@ -1590,6 +1820,7 @@ mod tests {
             sensitivity_ceiling: "internal".into(),
             max_sources: 1,
             timeout_ms: 1_000,
+            decision_scope: DecisionScope::Current,
             mode: EvidenceMode::QmdOnly,
         };
         assert!(matches!(
@@ -1644,6 +1875,8 @@ mod tests {
             evaluation_source: String::new(),
             evaluation_namespace: "test".into(),
             evaluation_sensitivity_ceiling: "internal".into(),
+            decision_scopes: BTreeMap::new(),
+            default_decision_scope: DecisionScope::Current,
         };
         let request = EvidenceRequest {
             kind: EvidenceKind::Decision,
@@ -1652,6 +1885,7 @@ mod tests {
             sensitivity_ceiling: "internal".into(),
             max_sources: 5,
             timeout_ms: 1_000,
+            decision_scope: DecisionScope::Current,
             mode: EvidenceMode::QmdOnly,
         };
         assert!(manifest_scan(vault.path(), &request, &policy, &contract, 10).is_empty());
