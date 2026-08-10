@@ -163,6 +163,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/backlog-promoter/` — reference `agentmesh-app.toml` for the Multica selector App
 - `apps/markdown-request-validator/` — tool-neutral request validator manifest + IO schemas
 - `apps/request-dry-run-summary/` — deterministic request dry-run Markdown preview + evidence schemas
+- `apps/request-fingerprint-manifest/` — deterministic request fingerprint JSON/Markdown manifest + hash schemas
 - `apps/non-multica-request-adapter/` — tracker-neutral request adapter manifest + IO schemas
 - `apps/local-tracker-adapter/` — local taskfile tracker adapter manifest + IO schemas
 - `apps/local-runner-adapter/` — deterministic local-runner compatibility envelope manifest + IO schemas
@@ -190,6 +191,7 @@ Internal / test-only:
 - `agentmesh-adapter-evidence-envelope` — deterministic adapter evidence envelope binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-adapter-evidence-traceability` — deterministic adapter evidence traceability binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-adapter-error-contract` — shared adapter error boundary contract binary (`markdown-request-validator` package)
+- `agentmesh-request-fingerprint-manifest` — deterministic request fingerprint manifest binary (`markdown-request-validator` package)
 - `agentmesh-public-0x-readiness` — public 0.x readiness evidence gate binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-public-0x-readiness-report` — post-dogfood public 0.x readiness report binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-public-0x-rollback-replay` — deterministic public 0.x rollback evidence bundle binary (`adapter-metadata-canonicalizer` package)

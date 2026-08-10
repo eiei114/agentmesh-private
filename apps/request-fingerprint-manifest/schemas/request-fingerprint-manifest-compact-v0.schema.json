@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-fingerprint-manifest-compact-v0.schema.json",
+  "title": "Request Fingerprint Manifest Compact Output v0",
+  "description": "Deterministic JSON/Markdown hybrid fingerprint manifest for agentmesh-request.v0 inputs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_version",
+    "request_schema_version",
+    "valid",
+    "request_id",
+    "scope",
+    "target_app",
+    "source_shape",
+    "manifest_json",
+    "manifest_markdown",
+    "content_hashes",
+    "error_count",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": { "const": "request-fingerprint-manifest-compact.v0" },
+    "manifest_version": { "const": "request-fingerprint-manifest.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "valid": { "type": "boolean" },
+    "request_id": { "type": ["string", "null"] },
+    "scope": { "type": ["string", "null"] },
+    "target_app": { "type": ["string", "null"] },
+    "source_shape": { "enum": ["markdown", "request", "unsupported"] },
+    "manifest_json": { "$ref": "#/$defs/manifest_json" },
+    "manifest_markdown": { "type": "string", "minLength": 1 },
+    "content_hashes": { "$ref": "#/$defs/content_hashes" },
+    "error_count": { "type": "integer", "minimum": 0 },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/error_record" } }
+  },
+  "$defs": {
+    "manifest_json": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "manifest_version",
+        "request_schema_version",
+        "generated_at",
+        "request",
+        "serialization",
+        "canonical_fields",
+        "unknown_fields",
+        "field_hashes",
+        "content_hashes",
+        "validation",
+        "errors"
+      ],
+      "properties": {
+        "schema_version": { "const": "request-fingerprint-manifest-json.v0" },
+        "manifest_version": { "const": "request-fingerprint-manifest.v0" },
+        "request_schema_version": { "const": "agentmesh-request.v0" },
+        "generated_at": { "const": "1970-01-01T00:00:00Z" },
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["request_id", "scope", "target_app", "source_shape"],
+          "properties": {
+            "request_id": { "type": ["string", "null"] },
+            "scope": { "type": ["string", "null"] },
+            "target_app": { "type": ["string", "null"] },
+            "source_shape": { "enum": ["markdown", "request", "unsupported"] }
+          }
+        },
+        "serialization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "format",
+            "object_key_order",
+            "array_order",
+            "canonical_field_order",
+            "required_fields",
+            "timestamp_policy",
+            "hash_algorithm"
+          ],
+          "properties": {
+            "format": { "const": "json_markdown_hybrid" },
+            "object_key_order": { "const": "lexicographic" },
+            "array_order": { "const": "contract-defined" },
+            "canonical_field_order": { "$ref": "#/$defs/canonical_field_order" },
+            "required_fields": { "type": "array", "items": { "type": "string" } },
+            "timestamp_policy": { "const": "generated_at is fixed for deterministic fixtures" },
+            "hash_algorithm": { "const": "sha256" }
+          }
+        },
+        "canonical_fields": { "$ref": "#/$defs/canonical_fields" },
+        "unknown_fields": { "type": "array", "items": { "type": "string" } },
+        "field_hashes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "value_sha256"],
+            "properties": {
+              "key": { "type": "string" },
+              "value_sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        },
+        "content_hashes": { "$ref": "#/$defs/content_hashes" },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["valid", "status", "error_count", "error_codes"],
+          "properties": {
+            "valid": { "type": "boolean" },
+            "status": { "enum": ["valid", "invalid"] },
+            "error_count": { "type": "integer", "minimum": 0 },
+            "error_codes": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "errors": { "type": "array", "items": { "$ref": "#/$defs/error_record" } }
+      }
+    },
+    "canonical_field_order": {
+      "const": [
+        "title",
+        "request_kind",
+        "issue_type",
+        "ready_for_multica",
+        "status",
+        "project_key",
+        "source_prd",
+        "source_design",
+        "source_roadmap",
+        "blocked_by",
+        "unblocks",
+        "sequence_index",
+        "sequence_total"
+      ]
+    },
+    "canonical_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "request_kind",
+        "issue_type",
+        "ready_for_multica",
+        "status",
+        "project_key",
+        "source_prd",
+        "source_design",
+        "source_roadmap",
+        "blocked_by",
+        "unblocks",
+        "sequence_index",
+        "sequence_total"
+      ],
+      "properties": {
+        "title": { "$ref": "#/$defs/frontmatter_value" },
+        "request_kind": { "$ref": "#/$defs/frontmatter_value" },
+        "issue_type": { "$ref": "#/$defs/frontmatter_value" },
+        "ready_for_multica": { "$ref": "#/$defs/frontmatter_value" },
+        "status": { "$ref": "#/$defs/frontmatter_value" },
+        "project_key": { "$ref": "#/$defs/frontmatter_value" },
+        "source_prd": { "$ref": "#/$defs/frontmatter_value" },
+        "source_design": { "$ref": "#/$defs/frontmatter_value" },
+        "source_roadmap": { "$ref": "#/$defs/frontmatter_value" },
+        "blocked_by": { "$ref": "#/$defs/frontmatter_value" },
+        "unblocks": { "$ref": "#/$defs/frontmatter_value" },
+        "sequence_index": { "$ref": "#/$defs/frontmatter_value" },
+        "sequence_total": { "$ref": "#/$defs/frontmatter_value" }
+      }
+    },
+    "content_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "source_sha256", "canonical_fields_sha256"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "source_sha256": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+        "canonical_fields_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "error_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category", "severity", "path", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION",
+            "AGENTMESH_REQUEST_FINGERPRINT_FIELD_DUPLICATE",
+            "AGENTMESH_REQUEST_FINGERPRINT_FIELD_REQUIRED",
+            "AGENTMESH_REQUEST_FINGERPRINT_FRONTMATTER_MALFORMED",
+            "AGENTMESH_REQUEST_FINGERPRINT_INPUT_SCHEMA_INVALID",
+            "AGENTMESH_REQUEST_FINGERPRINT_UNSUPPORTED_SHAPE",
+            "AGENTMESH_REQUEST_FINGERPRINT_FIELD_INVALID"
+          ]
+        },
+        "category": {
+          "enum": [
+            "unknown_schema_version",
+            "duplicate_field",
+            "missing_field",
+            "malformed_frontmatter",
+            "input_schema_invalid",
+            "unsupported_request_shape",
+            "invalid_field_value"
+          ]
+        },
+        "severity": { "const": "error" },
+        "path": { "type": ["string", "null"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "frontmatter_value": {
+      "type": ["string", "boolean", "integer", "number", "array", "object", "null"]
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}
