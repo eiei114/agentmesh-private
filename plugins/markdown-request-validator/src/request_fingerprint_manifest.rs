@@ -312,6 +312,9 @@ fn parse_frontmatter(markdown: &str) -> Option<&str> {
     Some(&rest[..end])
 }
 
+/// Parse the deterministic frontmatter subset: single-line `key: value` entries,
+/// blank lines, and `#` comments. Block scalars, nested maps, and list-item
+/// syntax are reported as `AGENTMESH_REQUEST_FINGERPRINT_FRONTMATTER_MALFORMED`.
 fn parse_frontmatter_fields(frontmatter: &str, errors: &mut Vec<Value>) -> Map<String, Value> {
     let mut fields = Map::new();
     let mut seen = BTreeSet::new();
@@ -966,7 +969,7 @@ mod tests {
             "request_id": "DOT-1435",
             "scope": "agentmesh:app:request-fingerprint-manifest",
             "target_app": "request-fingerprint-manifest",
-            "markdown": "---\ntitle: \"Add a deterministic request fingerprint manifest app\"\nready_for_multica: true\nstatus: ready\nproject_key: agentmesh-private\nissue_type: AFK\nrequest_kind: app\nsource_prd: \"4_Project/OSS/agentmesh-private/Requests/App/2026-08-10-add-a-deterministic-request-fingerprint-manifest-app.md\"\nsource_design: 4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md\nsource_roadmap: 4_Project/OSS/agentmesh-private/ROADMAP.md\nsequence_index: 1\nsequence_total: 1\nblocked_by: []\nunblocks: []\n---\n# Add a deterministic request fingerprint manifest app\n\n## What to build\nBuild it.\n\n## Acceptance criteria\n- Manifest is deterministic.\n"
+            "markdown": "---\ntitle: \"Add a deterministic request fingerprint manifest app\"\nready_for_multica: true\nstatus: ready\nproject_key: agentmesh-private\nissue_type: AFK\nrequest_kind: app\nsource_prd: \"synthetic://requests/request-fingerprint-manifest-prd\"\nsource_design: synthetic://docs/agentmesh-request-operations-v1\nsource_roadmap: synthetic://roadmaps/agentmesh-private\nsequence_index: 1\nsequence_total: 1\nblocked_by: []\nunblocks: []\n---\n# Add a deterministic request fingerprint manifest app\n\n## What to build\nBuild it.\n\n## Acceptance criteria\n- Manifest is deterministic.\n"
         })
     }
 
@@ -976,6 +979,42 @@ mod tests {
             sha256_prefixed(b"abc"),
             "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+        assert_eq!(
+            sha256_prefixed(b""),
+            "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            sha256_prefixed(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+            "sha256:248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+        );
+    }
+
+    #[test]
+    fn request_shape_produces_valid_manifest() {
+        let output = fingerprint_request_manifest(&json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "request_schema_version": REQUEST_SCHEMA_VERSION,
+            "request_id": "DOT-1435",
+            "scope": "agentmesh:app:request-fingerprint-manifest",
+            "target_app": "request-fingerprint-manifest",
+            "request": {
+                "title": "Add a deterministic request fingerprint manifest app",
+                "request_kind": "app",
+                "issue_type": "AFK",
+                "ready_for_multica": true,
+                "status": "ready",
+                "project_key": "agentmesh-private",
+                "source_prd": "synthetic://requests/request-fingerprint-manifest-prd",
+                "source_design": "synthetic://docs/agentmesh-request-operations-v1",
+                "source_roadmap": "synthetic://roadmaps/agentmesh-private",
+                "blocked_by": [],
+                "unblocks": [],
+                "sequence_index": 1,
+                "sequence_total": 1
+            }
+        }));
+        assert_eq!(output["valid"], true, "{}", output["errors"]);
+        assert_eq!(output["source_shape"], "request");
     }
 
     #[test]
@@ -1009,7 +1048,7 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(
             first["content_hashes"]["canonical_fields_sha256"],
-            "sha256:a360541d23b46ef12f75ec2dd5162b13d7ccc46a43f29de8e32f33f8199e727f"
+            "sha256:7ec5629cedc1dd1388d18ea07b70d5a060f9cb616bc2868afef27c6bcd91868e"
         );
         assert_eq!(
             first["manifest_json"]["field_hashes"][0]["value_sha256"],
