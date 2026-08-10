@@ -9,6 +9,14 @@ reviewed explicit graph into source-linked Decision or AgentRun evidence.
 Canonical notes, policy, fixtures, and graph inputs remain outside AgentMesh and
 are supplied at runtime. The compiler never writes them.
 
+For `Decision` packets, AgentMesh normalizes Any Decision Record frontmatter
+without changing the canonical note. Explicit AI records can be
+`decision_status: adopted` immediately; ambiguous records remain
+`candidate`. The default `current` scope serves adopted records only. Use
+`--decision-scope review` for candidate/deferred review work or
+`--decision-scope historical` when inspecting the full lifecycle. Human review
+status is reported separately and is not an adoption gate.
+
 ```text
 ephemeral query file
         |
@@ -51,6 +59,7 @@ agentmesh evidence compile \
   --query-file .scratch/evidence-query.txt \
   --kind Decision \
   --namespace lane:multica-agent-strategy \
+  --decision-scope current \
   --mode hybrid \
   --graph 4_Project/Multica-Agent-Strategy/Data/okf-evidence-derived-graph-v2.json
 ```
@@ -65,6 +74,18 @@ Modes:
 - `qmd-only`: keyword + semantic + read-only adaptive fusion.
 - `hybrid`: fused QMD candidates plus explicit graph traversal.
 - `graph-only`: graph nodes seeded from lexical title/path matches.
+
+Decision scopes:
+
+- `current`: `adopted` only (default).
+- `review`: `candidate` and `deferred` only.
+- `historical`: all lifecycle states, including `rejected` and `superseded`.
+
+Every Decision evidence item carries normalized `record_status`,
+`decision_kind`, `recorded_by`, `review_status`, `adoption_mode`, `impact`,
+`source_refs`, and `supersedes` fields. Malformed AI records without
+`source_refs` are rejected with `invalid_decision_record`; the runtime never
+promotes candidates or writes a correction back to Markdown.
 
 ## Health
 

@@ -27,6 +27,13 @@ AgentMesh applies reviewed namespace/sensitivity policy, validates optional JSON
 graph state, rereads canonical sources, and emits ephemeral packet JSON. It does
 not own QMD learning, Obsidian Markdown, or graph generation.
 
+For Decision packets, the Rust core also normalizes Any Decision Record
+frontmatter. `current` retrieval serves adopted records by default;
+`review` and `historical` are explicit diagnostic scopes. `review_status` is
+reported separately from `decision_status`, so an unreviewed explicit AI
+decision is usable without making human review a runtime gate. Candidate and
+non-adopted nodes never displace current adopted candidates in graph expansion.
+
 ## Consequences
 
 - AgentMesh becomes the install/distribution boundary for the CLI and tests.

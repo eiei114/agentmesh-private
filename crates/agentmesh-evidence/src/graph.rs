@@ -1,4 +1,7 @@
-use crate::{secure_source_path, sha256_prefixed, EvidenceError, EvidenceRequest, Sensitivity};
+use crate::{
+    normalize_decision_metadata_for_graph, secure_source_path, sha256_prefixed, DecisionScope,
+    DecisionStatus, EvidenceError, EvidenceRequest, Sensitivity,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -147,6 +150,7 @@ pub fn validate_graph(
             ));
         }
         Sensitivity::parse(&node.sensitivity)?;
+        validate_decision_node(node)?;
         if node.source_path != "index.md" {
             let source = secure_source_path(root, Path::new(&node.source_path))?;
             let bytes = fs::read(source).map_err(|source| EvidenceError::Io {
@@ -175,6 +179,19 @@ pub fn validate_graph(
                 "unsafe edge {}",
                 edge.edge_id
             )));
+        }
+        if edge.relation_type == "supersedes" {
+            let from = graph.nodes.iter().find(|node| node.id == edge.from_id);
+            let to = graph.nodes.iter().find(|node| node.id == edge.to_id);
+            if edge.from_id == edge.to_id
+                || from.is_none_or(|node| node.node_type != "Decision")
+                || to.is_none_or(|node| node.node_type != "Decision")
+            {
+                return Err(EvidenceError::InvalidGraph(format!(
+                    "supersedes edge must connect distinct Decision nodes: {}",
+                    edge.edge_id
+                )));
+            }
         }
         if edge.source_path != "index.md" {
             let source_path = secure_source_path(root, Path::new(&edge.source_path))?;
@@ -223,12 +240,14 @@ fn normalized_hash(graph: &Graph) -> Result<String, EvidenceError> {
 }
 
 /// Traverse accepted explicit relations up to the reviewed bounds.
-pub fn expand(
+/// Traverse using the status set declared by the reviewed contract.
+pub fn expand_with_statuses(
     graph: &Graph,
     seeds: &[String],
     request: &EvidenceRequest,
     max_hops: usize,
     max_nodes: usize,
+    allowed_statuses: Option<&BTreeSet<DecisionStatus>>,
 ) -> Result<Expansion, EvidenceError> {
     let nodes: BTreeMap<&str, &GraphNode> = graph
         .nodes
@@ -282,6 +301,7 @@ pub fn expand(
         if node.namespace != request.namespace
             || Sensitivity::parse(&node.sensitivity)? > ceiling
             || node.sensitivity == "restricted"
+            || !decision_node_allowed(node, request.decision_scope, allowed_statuses)?
         {
             continue;
         }
@@ -294,10 +314,14 @@ pub fn expand(
             limited = true;
         }
         for (next, edge) in neighbors.into_iter().take(20) {
-            edges
-                .entry(edge.edge_id.clone())
-                .or_insert_with(|| edge.clone());
-            queue.push_back((0, depth + 1, next));
+            if let Some(next_node) = nodes.get(next) {
+                if decision_node_allowed(next_node, request.decision_scope, allowed_statuses)? {
+                    edges
+                        .entry(edge.edge_id.clone())
+                        .or_insert_with(|| edge.clone());
+                    queue.push_back((0, depth + 1, next));
+                }
+            }
         }
     }
     Ok(Expansion {
@@ -305,6 +329,67 @@ pub fn expand(
         edges: edges.into_values().collect(),
         limited,
     })
+}
+
+fn validate_decision_node(node: &GraphNode) -> Result<(), EvidenceError> {
+    if node.node_type != "Decision" {
+        return Ok(());
+    }
+    let frontmatter = node
+        .extra
+        .iter()
+        .map(|(key, value)| {
+            serde_yaml::to_value(value)
+                .map(|value| (key.clone(), value))
+                .map_err(|error| {
+                    EvidenceError::InvalidGraph(format!(
+                        "invalid Decision metadata {}: {error}",
+                        node.source_path
+                    ))
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    normalize_decision_metadata_for_graph(&frontmatter).map_err(|error| {
+        EvidenceError::InvalidGraph(format!(
+            "invalid Decision metadata {}: {error}",
+            node.source_path
+        ))
+    })?;
+    Ok(())
+}
+
+fn decision_node_allowed(
+    node: &GraphNode,
+    scope: DecisionScope,
+    allowed_statuses: Option<&BTreeSet<DecisionStatus>>,
+) -> Result<bool, EvidenceError> {
+    if node.node_type != "Decision" {
+        return Ok(true);
+    }
+    let frontmatter = node
+        .extra
+        .iter()
+        .map(|(key, value)| {
+            serde_yaml::to_value(value)
+                .map(|value| (key.clone(), value))
+                .map_err(|error| {
+                    EvidenceError::InvalidGraph(format!(
+                        "invalid Decision metadata {}: {error}",
+                        node.source_path
+                    ))
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let metadata = normalize_decision_metadata_for_graph(&frontmatter).map_err(|error| {
+        EvidenceError::InvalidGraph(format!(
+            "invalid Decision metadata {}: {error}",
+            node.source_path
+        ))
+    })?;
+    Ok(allowed_statuses.map_or_else(
+        || scope.allows(metadata.decision_status),
+        |statuses| statuses.contains(&metadata.decision_status),
+    ))
 }
 
 #[cfg(test)]
@@ -336,6 +421,20 @@ mod tests {
             review_status: "accepted".into(),
             extra: BTreeMap::new(),
         }
+    }
+
+    fn candidate_node(id: &str, path: &str) -> GraphNode {
+        let mut value = node(id, path, "internal");
+        value
+            .extra
+            .insert("decision_status".into(), Value::String("candidate".into()));
+        value
+            .extra
+            .insert("recorded_by".into(), Value::String("ai".into()));
+        value
+            .extra
+            .insert("source_refs".into(), serde_json::json!(["docs/source.md"]));
+        value
     }
 
     #[test]
@@ -387,9 +486,11 @@ mod tests {
             sensitivity_ceiling: "internal".into(),
             max_sources: 6,
             timeout_ms: 1_000,
+            decision_scope: crate::DecisionScope::Current,
             mode: crate::EvidenceMode::Hybrid,
         };
-        let result = expand(&graph, &["docs/A.md".into()], &request, 2, 100).unwrap();
+        let result =
+            expand_with_statuses(&graph, &["docs/A.md".into()], &request, 2, 100, None).unwrap();
         assert_eq!(result.paths, ["docs/A.md", "docs/B.md", "docs/C.md"]);
         assert!(!result.paths.contains(&"docs/Private.md".into()));
         assert!(result.edges.len() <= 4);
@@ -423,12 +524,62 @@ mod tests {
             sensitivity_ceiling: "internal".into(),
             max_sources: 6,
             timeout_ms: 1_000,
+            decision_scope: crate::DecisionScope::Current,
             mode: crate::EvidenceMode::Hybrid,
         };
 
-        let result = expand(&graph, &["docs/A.md".into()], &request, 2, 100).unwrap();
+        let result =
+            expand_with_statuses(&graph, &["docs/A.md".into()], &request, 2, 100, None).unwrap();
 
         assert_eq!(result.paths, ["docs/A.md"]);
         assert!(result.edges.is_empty());
+    }
+
+    #[test]
+    fn current_expansion_skips_candidate_decision_nodes_and_edges() {
+        let graph = Graph {
+            schema_version: "okf-derived-graph.v2".into(),
+            node_count: 2,
+            edge_count: 1,
+            warning_count: 0,
+            warnings: vec![],
+            normalized_graph_hash: String::new(),
+            nodes: vec![
+                node("a", "docs/A.md", "internal"),
+                candidate_node("b", "docs/B.md"),
+            ],
+            edges: vec![edge("ab", "a", "b")],
+            extra: BTreeMap::new(),
+        };
+        let request = EvidenceRequest {
+            kind: crate::EvidenceKind::Decision,
+            query: "test".into(),
+            namespace: "test".into(),
+            sensitivity_ceiling: "internal".into(),
+            max_sources: 6,
+            timeout_ms: 1_000,
+            decision_scope: crate::DecisionScope::Current,
+            mode: crate::EvidenceMode::Hybrid,
+        };
+
+        let result =
+            expand_with_statuses(&graph, &["docs/A.md".into()], &request, 2, 100, None).unwrap();
+
+        assert_eq!(result.paths, ["docs/A.md"]);
+        assert!(result.edges.is_empty());
+    }
+
+    #[test]
+    fn graph_rejects_malformed_decision_lifecycle_metadata() {
+        let mut malformed = node("bad", "docs/Bad.md", "internal");
+        malformed
+            .extra
+            .insert("decision_status".into(), Value::String("unknown".into()));
+
+        let error = validate_decision_node(&malformed).unwrap_err();
+
+        assert!(
+            matches!(error, EvidenceError::InvalidGraph(message) if message.contains("Bad.md"))
+        );
     }
 }
