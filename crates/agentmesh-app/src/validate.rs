@@ -276,6 +276,7 @@ mod tests {
     }
 
     fn parse_readme_default_members(readme: &str) -> Vec<String> {
+        let readme = readme.replace("\r\n", "\n");
         let workspace_section = readme
             .split_once("## Workspace crates")
             .map(|(_, section)| section)
