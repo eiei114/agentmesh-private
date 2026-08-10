@@ -10,7 +10,7 @@ use agentmesh_app::{
 use agentmesh_evidence::{
     compile as compile_evidence, evaluate as evaluate_evidence, health as evidence_health,
     load_contract as load_evidence_contract, secure_source_path, CommandSpec, CompileOptions,
-    EvidenceKind, EvidenceMode, EvidenceRequest,
+    DecisionScope, EvidenceKind, EvidenceMode, EvidenceRequest,
 };
 use agentmesh_host::audit::FsAuditStore;
 use agentmesh_host::lifecycle::{CancellationToken, RunConfig};
@@ -137,6 +137,13 @@ struct EvidenceCompileArgs {
     /// Retrieval mode: qmd-only or hybrid.
     #[arg(long, default_value = "hybrid")]
     mode: String,
+    /// Decision lifecycle scope: current, review, or historical.
+    #[arg(
+        long,
+        default_value = "current",
+        value_parser = ["current", "review", "historical"]
+    )]
+    decision_scope: String,
     /// Optional vault-relative serving-valid v2 graph.
     #[arg(long)]
     graph: Option<PathBuf>,
@@ -376,6 +383,7 @@ fn evidence_command(command: EvidenceCommands) -> ExitCode {
                 namespace,
                 sensitivity_ceiling,
                 mode,
+                decision_scope,
                 graph,
                 collection,
                 qmd_command,
@@ -411,6 +419,8 @@ fn evidence_command(command: EvidenceCommands) -> ExitCode {
                     sensitivity_ceiling,
                     max_sources,
                     timeout_ms,
+                    decision_scope: DecisionScope::parse(&decision_scope)
+                        .map_err(|error| format!("invalid request: {error}"))?,
                     mode: EvidenceMode::parse(&mode).map_err(|error| error.to_string())?,
                 };
                 compile_evidence(

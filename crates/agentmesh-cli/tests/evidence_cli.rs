@@ -22,5 +22,6 @@ fn compile_help_exposes_all_qmd_stream_controls() {
         .success()
         .stdout(predicate::str::contains("--qmd-command"))
         .stdout(predicate::str::contains("--adaptive-command"))
-        .stdout(predicate::str::contains("--no-adaptive"));
+        .stdout(predicate::str::contains("--no-adaptive"))
+        .stdout(predicate::str::contains("--decision-scope"));
 }

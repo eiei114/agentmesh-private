@@ -4,6 +4,7 @@ use agentmesh_evidence::{
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -62,6 +63,17 @@ fn write_agent_run(root: &Path, name: &str) {
     fs::write(
         root.join("docs").join(name),
         format!("---\nsource_issue: SYNTH-1\nrun_id: run-{name}\nartifact: evidence.json\noutcome: success\n---\n# {name}\n## Evidence\nSynthetic source-linked run evidence.\n"),
+    )
+    .unwrap();
+}
+
+fn write_any_decision(root: &Path, name: &str, status: &str, recorded_by: &str) {
+    fs::write(
+        root.join("docs").join(name),
+        format!(
+            "---\ntype: Decision\ndecision_status: {status}\ndecision_kind: technical\nrecorded_by: {recorded_by}\nreview_status: unreviewed\nadoption_mode: {}\nsource_refs:\n  - docs/source.md\n---\n# {name}\n## Decision\nUse the explicit policy.\n## Rationale\nSource linked.\n## Alternatives\nNone.\n",
+            if status == "candidate" { "candidate" } else { "auto" }
+        ),
     )
     .unwrap();
 }
@@ -205,6 +217,7 @@ console.log(JSON.stringify({readOnly:true,results:[{path:'docs/Adaptive.md',why:
             sensitivity_ceiling: "internal".into(),
             max_sources: 6,
             timeout_ms: 5_000,
+            decision_scope: agentmesh_evidence::DecisionScope::Current,
             mode: EvidenceMode::QmdOnly,
         },
         &CompileOptions {
@@ -228,6 +241,202 @@ console.log(JSON.stringify({readOnly:true,results:[{path:'docs/Adaptive.md',why:
     assert_eq!(packet["health"]["raw_query_persisted"], false);
     assert!(!serde_json::to_string(&packet).unwrap().contains(query));
     assert!(!root.join(".qmd-adaptive-search").exists());
+}
+
+#[test]
+fn current_scope_excludes_candidate_without_starving_adopted_source() {
+    let Ok(node) = which::which("node") else {
+        return;
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    fs::create_dir(root.join("docs")).unwrap();
+    write_any_decision(root, "Candidate.md", "candidate", "ai");
+    write_any_decision(root, "Adopted.md", "adopted", "ai");
+    let contract = write_contract(root);
+    let qmd_script = root.join("decision-scope-qmd.js");
+    fs::write(
+        &qmd_script,
+        "console.log(JSON.stringify([{file:'docs/Candidate.md'},{file:'docs/Adopted.md'}]));\n",
+    )
+    .unwrap();
+
+    let packet = compile(
+        root,
+        &contract,
+        &EvidenceRequest {
+            kind: EvidenceKind::Decision,
+            query: "explicit policy".into(),
+            namespace: "test".into(),
+            sensitivity_ceiling: "internal".into(),
+            max_sources: 1,
+            timeout_ms: 5_000,
+            decision_scope: agentmesh_evidence::DecisionScope::Current,
+            mode: EvidenceMode::DirectQmd,
+        },
+        &CompileOptions {
+            collection: "test".into(),
+            qmd: Some(CommandSpec {
+                program: node,
+                prefix_args: vec![qmd_script.into_os_string()],
+            }),
+            adaptive: None,
+            graph_path: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(packet["decision_scope"], "current");
+    assert_eq!(packet["evidence"].as_array().unwrap().len(), 1);
+    assert_eq!(packet["evidence"][0]["source_path"], "docs/Adopted.md");
+    assert_eq!(packet["evidence"][0]["record_status"], "adopted");
+    assert_eq!(packet["evidence"][0]["recorded_by"], "ai");
+    assert!(!packet["trace"]["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|candidate| candidate["source_path"] == "docs/Candidate.md"));
+    assert!(packet["trace"]["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|stage| stage["reason_codes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|code| code == "decision_scope_filtered")));
+}
+
+#[test]
+fn review_and_historical_scopes_select_their_declared_lifecycle_states() {
+    let Ok(node) = which::which("node") else {
+        return;
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    fs::create_dir(root.join("docs")).unwrap();
+    write_any_decision(root, "Candidate.md", "candidate", "ai");
+    write_any_decision(root, "Adopted.md", "adopted", "ai");
+    write_any_decision(root, "Deferred.md", "deferred", "ai");
+    write_any_decision(root, "Rejected.md", "rejected", "ai");
+    let contract = write_contract(root);
+    let qmd_script = root.join("decision-scope-registry-qmd.js");
+    fs::write(
+        &qmd_script,
+        "console.log(JSON.stringify([{file:'docs/Candidate.md'},{file:'docs/Adopted.md'},{file:'docs/Deferred.md'},{file:'docs/Rejected.md'}]));\n",
+    )
+    .unwrap();
+    let qmd = CommandSpec {
+        program: node,
+        prefix_args: vec![qmd_script.into_os_string()],
+    };
+    let compile_scope = |scope: agentmesh_evidence::DecisionScope, max_sources| {
+        compile(
+            root,
+            &contract,
+            &EvidenceRequest {
+                kind: EvidenceKind::Decision,
+                query: "lifecycle policy".into(),
+                namespace: "test".into(),
+                sensitivity_ceiling: "internal".into(),
+                max_sources,
+                timeout_ms: 5_000,
+                decision_scope: scope,
+                mode: EvidenceMode::DirectQmd,
+            },
+            &CompileOptions {
+                collection: "test".into(),
+                qmd: Some(qmd.clone()),
+                adaptive: None,
+                graph_path: None,
+            },
+        )
+        .unwrap()
+    };
+
+    let review = compile_scope(agentmesh_evidence::DecisionScope::Review, 4);
+    let review_paths: BTreeSet<_> = review["evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["source_path"].as_str())
+        .collect();
+    assert_eq!(review["decision_scope"], "review");
+    assert_eq!(
+        review_paths,
+        BTreeSet::from(["docs/Candidate.md", "docs/Deferred.md"])
+    );
+
+    let historical = compile_scope(agentmesh_evidence::DecisionScope::Historical, 4);
+    let historical_paths: BTreeSet<_> = historical["evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["source_path"].as_str())
+        .collect();
+    assert_eq!(historical["decision_scope"], "historical");
+    assert_eq!(historical_paths.len(), 4);
+    assert!(historical_paths.contains("docs/Adopted.md"));
+    assert!(historical_paths.contains("docs/Rejected.md"));
+}
+
+#[test]
+fn malformed_decision_record_is_rejected_with_stable_reason_code() {
+    let Ok(node) = which::which("node") else {
+        return;
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    fs::create_dir(root.join("docs")).unwrap();
+    fs::write(
+        root.join("docs/Malformed.md"),
+        "---\ntype: Decision\ndecision_status: adopted\nrecorded_by: ai\n---\n# Malformed\n## Decision\nMissing source provenance.\n",
+    )
+    .unwrap();
+    let contract = write_contract(root);
+    let qmd_script = root.join("malformed-decision-qmd.js");
+    fs::write(
+        &qmd_script,
+        "console.log(JSON.stringify([{file:'docs/Malformed.md'}]));\n",
+    )
+    .unwrap();
+
+    let packet = compile(
+        root,
+        &contract,
+        &EvidenceRequest {
+            kind: EvidenceKind::Decision,
+            query: "malformed decision".into(),
+            namespace: "test".into(),
+            sensitivity_ceiling: "internal".into(),
+            max_sources: 1,
+            timeout_ms: 5_000,
+            decision_scope: agentmesh_evidence::DecisionScope::Current,
+            mode: EvidenceMode::DirectQmd,
+        },
+        &CompileOptions {
+            collection: "test".into(),
+            qmd: Some(CommandSpec {
+                program: node,
+                prefix_args: vec![qmd_script.into_os_string()],
+            }),
+            adaptive: None,
+            graph_path: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(packet["status"], "no_evidence");
+    assert_eq!(packet["evidence"].as_array().unwrap().len(), 0);
+    assert!(packet["trace"]["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|stage| stage["reason_codes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|code| code == "invalid_decision_record")));
 }
 
 #[test]
@@ -407,6 +616,7 @@ console.log(JSON.stringify({results:[]}));
             sensitivity_ceiling: "internal".into(),
             max_sources: 3,
             timeout_ms: 5_000,
+            decision_scope: agentmesh_evidence::DecisionScope::Current,
             mode: EvidenceMode::QmdOnly,
         },
         &CompileOptions {
