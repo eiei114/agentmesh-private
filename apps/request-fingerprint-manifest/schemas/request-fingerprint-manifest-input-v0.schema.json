@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-fingerprint-manifest-input-v0.schema.json",
+  "title": "Request Fingerprint Manifest Input v0",
+  "description": "Adapter-neutral input for producing a deterministic agentmesh-request.v0 fingerprint manifest. Exactly one request source is supplied as Markdown or normalized request JSON.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "scope", "target_app"],
+  "oneOf": [
+    { "required": ["markdown"], "not": { "required": ["request"] } },
+    { "required": ["request"], "not": { "required": ["markdown"] } }
+  ],
+  "properties": {
+    "schema_version": { "const": "request-fingerprint-manifest-input.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "request_id": { "type": "string", "minLength": 1 },
+    "scope": { "type": "string", "minLength": 1 },
+    "target_app": { "type": "string", "minLength": 1 },
+    "markdown": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536,
+      "description": "Request Markdown source containing YAML frontmatter. The App normalizes CRLF to LF before hashing."
+    },
+    "request": {
+      "type": "object",
+      "description": "Canonical request frontmatter fields as JSON, with adapter-specific materialization fields omitted."
+    }
+  }
+}

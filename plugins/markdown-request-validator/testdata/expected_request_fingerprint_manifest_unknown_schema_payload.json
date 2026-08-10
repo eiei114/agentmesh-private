@@ -1,0 +1,181 @@
+{
+  "content_hashes": {
+    "algorithm": "sha256",
+    "canonical_fields_sha256": "sha256:4253a0a848241082d473c2be6c3d76513bb7c3ad14789693be60ac3bce6c1f5b",
+    "source_sha256": "sha256:4253a0a848241082d473c2be6c3d76513bb7c3ad14789693be60ac3bce6c1f5b"
+  },
+  "error_count": 2,
+  "errors": [
+    {
+      "category": "unknown_schema_version",
+      "code": "AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION",
+      "message": "schema_version must be request-fingerprint-manifest-input.v0",
+      "path": "$.schema_version",
+      "severity": "error"
+    },
+    {
+      "category": "unknown_schema_version",
+      "code": "AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION",
+      "message": "request_schema_version must be agentmesh-request.v0",
+      "path": "$.request_schema_version",
+      "severity": "error"
+    }
+  ],
+  "manifest_json": {
+    "canonical_fields": {
+      "blocked_by": [],
+      "issue_type": "AFK",
+      "project_key": "agentmesh-private",
+      "ready_for_multica": true,
+      "request_kind": "app",
+      "sequence_index": 1,
+      "sequence_total": 1,
+      "source_design": "Docs/agentmesh-request-operations-v1.md",
+      "source_prd": "Requests/App/request-fingerprint-manifest.md",
+      "source_roadmap": "ROADMAP.md",
+      "status": "ready",
+      "title": "Unknown schema fixture",
+      "unblocks": []
+    },
+    "content_hashes": {
+      "algorithm": "sha256",
+      "canonical_fields_sha256": "sha256:4253a0a848241082d473c2be6c3d76513bb7c3ad14789693be60ac3bce6c1f5b",
+      "source_sha256": "sha256:4253a0a848241082d473c2be6c3d76513bb7c3ad14789693be60ac3bce6c1f5b"
+    },
+    "errors": [
+      {
+        "category": "unknown_schema_version",
+        "code": "AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION",
+        "message": "schema_version must be request-fingerprint-manifest-input.v0",
+        "path": "$.schema_version",
+        "severity": "error"
+      },
+      {
+        "category": "unknown_schema_version",
+        "code": "AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION",
+        "message": "request_schema_version must be agentmesh-request.v0",
+        "path": "$.request_schema_version",
+        "severity": "error"
+      }
+    ],
+    "field_hashes": [
+      {
+        "key": "title",
+        "value_sha256": "sha256:688a4f72a0cccd8ba7d96b0d2ed8bfea5ede0bf588d1f497f120c15ed823786c"
+      },
+      {
+        "key": "request_kind",
+        "value_sha256": "sha256:4e5ef144c51cd25230c144c3e1d8e842b9860b7a3cec2699d4e24e6517fc4b20"
+      },
+      {
+        "key": "issue_type",
+        "value_sha256": "sha256:f4f52ad16f3fd004f7d343bf1687d97c5ab10a1fb6db83d7f0e8597203db94e0"
+      },
+      {
+        "key": "ready_for_multica",
+        "value_sha256": "sha256:b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b"
+      },
+      {
+        "key": "status",
+        "value_sha256": "sha256:40ec7f71ea684c8b976e79e8e425f87779e6de57f4821dcfc8066dbcad2defe0"
+      },
+      {
+        "key": "project_key",
+        "value_sha256": "sha256:b6e0559e84c4a5df4264655ea67129fdb73f0be52ef8dbacb4726857e3aba926"
+      },
+      {
+        "key": "source_prd",
+        "value_sha256": "sha256:c500a0446aac0caa0dc3170d6358280ab65794533a22324f9621fa48a4639a2a"
+      },
+      {
+        "key": "source_design",
+        "value_sha256": "sha256:523d6d0499425ec0db201d05cf3a94d7ce29d72370dc4238db96705b9111d30c"
+      },
+      {
+        "key": "source_roadmap",
+        "value_sha256": "sha256:e31ba4eba7f3af0b0fdd27a2eb9a12d063434492a3083c47e1648ef5dbbefc18"
+      },
+      {
+        "key": "blocked_by",
+        "value_sha256": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "key": "unblocks",
+        "value_sha256": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      {
+        "key": "sequence_index",
+        "value_sha256": "sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+      },
+      {
+        "key": "sequence_total",
+        "value_sha256": "sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+      }
+    ],
+    "generated_at": "1970-01-01T00:00:00Z",
+    "manifest_version": "request-fingerprint-manifest.v0",
+    "request": {
+      "request_id": "DOT-1435",
+      "scope": "agentmesh:app:request-fingerprint-manifest",
+      "source_shape": "request",
+      "target_app": "request-fingerprint-manifest"
+    },
+    "request_schema_version": "agentmesh-request.v0",
+    "schema_version": "request-fingerprint-manifest-json.v0",
+    "serialization": {
+      "array_order": "contract-defined",
+      "canonical_field_order": [
+        "title",
+        "request_kind",
+        "issue_type",
+        "ready_for_multica",
+        "status",
+        "project_key",
+        "source_prd",
+        "source_design",
+        "source_roadmap",
+        "blocked_by",
+        "unblocks",
+        "sequence_index",
+        "sequence_total"
+      ],
+      "format": "json_markdown_hybrid",
+      "hash_algorithm": "sha256",
+      "object_key_order": "lexicographic",
+      "required_fields": [
+        "title",
+        "request_kind",
+        "issue_type",
+        "status",
+        "project_key",
+        "source_prd",
+        "source_design",
+        "source_roadmap",
+        "blocked_by",
+        "unblocks",
+        "sequence_index",
+        "sequence_total"
+      ],
+      "timestamp_policy": "generated_at is fixed for deterministic fixtures"
+    },
+    "unknown_fields": [],
+    "validation": {
+      "error_codes": [
+        "AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION",
+        "AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION"
+      ],
+      "error_count": 2,
+      "status": "invalid",
+      "valid": false
+    }
+  },
+  "manifest_markdown": "## Request Fingerprint Manifest\n\n- request_id: `\"DOT-1435\"`\n- request_schema_version: `agentmesh-request.v0`\n- scope: `\"agentmesh:app:request-fingerprint-manifest\"`\n- target_app: `\"request-fingerprint-manifest\"`\n- source_shape: `\"request\"`\n- generated_at: `1970-01-01T00:00:00Z`\n- canonical_fields_sha256: `sha256:4253a0a848241082d473c2be6c3d76513bb7c3ad14789693be60ac3bce6c1f5b`\n- source_sha256: `\"sha256:4253a0a848241082d473c2be6c3d76513bb7c3ad14789693be60ac3bce6c1f5b\"`\n- validation_status: `invalid`\n\n## Canonical Field Order\n\n1. `title`\n2. `request_kind`\n3. `issue_type`\n4. `ready_for_multica`\n5. `status`\n6. `project_key`\n7. `source_prd`\n8. `source_design`\n9. `source_roadmap`\n10. `blocked_by`\n11. `unblocks`\n12. `sequence_index`\n13. `sequence_total`\n\n## Field Hashes\n\n| Field | SHA-256 |\n| --- | --- |\n| title | `sha256:688a4f72a0cccd8ba7d96b0d2ed8bfea5ede0bf588d1f497f120c15ed823786c` |\n| request_kind | `sha256:4e5ef144c51cd25230c144c3e1d8e842b9860b7a3cec2699d4e24e6517fc4b20` |\n| issue_type | `sha256:f4f52ad16f3fd004f7d343bf1687d97c5ab10a1fb6db83d7f0e8597203db94e0` |\n| ready_for_multica | `sha256:b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b` |\n| status | `sha256:40ec7f71ea684c8b976e79e8e425f87779e6de57f4821dcfc8066dbcad2defe0` |\n| project_key | `sha256:b6e0559e84c4a5df4264655ea67129fdb73f0be52ef8dbacb4726857e3aba926` |\n| source_prd | `sha256:c500a0446aac0caa0dc3170d6358280ab65794533a22324f9621fa48a4639a2a` |\n| source_design | `sha256:523d6d0499425ec0db201d05cf3a94d7ce29d72370dc4238db96705b9111d30c` |\n| source_roadmap | `sha256:e31ba4eba7f3af0b0fdd27a2eb9a12d063434492a3083c47e1648ef5dbbefc18` |\n| blocked_by | `sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945` |\n| unblocks | `sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945` |\n| sequence_index | `sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b` |\n| sequence_total | `sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b` |\n\n## Validation\n\n- valid: `false`\n- error_count: `2`\n- error_codes: `[\"AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION\",\"AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION\"]`\n\n## Errors\n\n| Code | Category | Path | Message |\n| --- | --- | --- | --- |\n| AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION | unknown_schema_version | $.schema_version | schema_version must be request-fingerprint-manifest-input.v0 |\n| AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION | unknown_schema_version | $.request_schema_version | request_schema_version must be agentmesh-request.v0 |\n\n## Normalized JSON Manifest\n\n```json\n{\n  \"canonical_fields\": {\n    \"blocked_by\": [],\n    \"issue_type\": \"AFK\",\n    \"project_key\": \"agentmesh-private\",\n    \"ready_for_multica\": true,\n    \"request_kind\": \"app\",\n    \"sequence_index\": 1,\n    \"sequence_total\": 1,\n    \"source_design\": \"Docs/agentmesh-request-operations-v1.md\",\n    \"source_prd\": \"Requests/App/request-fingerprint-manifest.md\",\n    \"source_roadmap\": \"ROADMAP.md\",\n    \"status\": \"ready\",\n    \"title\": \"Unknown schema fixture\",\n    \"unblocks\": []\n  },\n  \"content_hashes\": {\n    \"algorithm\": \"sha256\",\n    \"canonical_fields_sha256\": \"sha256:4253a0a848241082d473c2be6c3d76513bb7c3ad14789693be60ac3bce6c1f5b\",\n    \"source_sha256\": \"sha256:4253a0a848241082d473c2be6c3d76513bb7c3ad14789693be60ac3bce6c1f5b\"\n  },\n  \"errors\": [\n    {\n      \"category\": \"unknown_schema_version\",\n      \"code\": \"AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION\",\n      \"message\": \"schema_version must be request-fingerprint-manifest-input.v0\",\n      \"path\": \"$.schema_version\",\n      \"severity\": \"error\"\n    },\n    {\n      \"category\": \"unknown_schema_version\",\n      \"code\": \"AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION\",\n      \"message\": \"request_schema_version must be agentmesh-request.v0\",\n      \"path\": \"$.request_schema_version\",\n      \"severity\": \"error\"\n    }\n  ],\n  \"field_hashes\": [\n    {\n      \"key\": \"title\",\n      \"value_sha256\": \"sha256:688a4f72a0cccd8ba7d96b0d2ed8bfea5ede0bf588d1f497f120c15ed823786c\"\n    },\n    {\n      \"key\": \"request_kind\",\n      \"value_sha256\": \"sha256:4e5ef144c51cd25230c144c3e1d8e842b9860b7a3cec2699d4e24e6517fc4b20\"\n    },\n    {\n      \"key\": \"issue_type\",\n      \"value_sha256\": \"sha256:f4f52ad16f3fd004f7d343bf1687d97c5ab10a1fb6db83d7f0e8597203db94e0\"\n    },\n    {\n      \"key\": \"ready_for_multica\",\n      \"value_sha256\": \"sha256:b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b\"\n    },\n    {\n      \"key\": \"status\",\n      \"value_sha256\": \"sha256:40ec7f71ea684c8b976e79e8e425f87779e6de57f4821dcfc8066dbcad2defe0\"\n    },\n    {\n      \"key\": \"project_key\",\n      \"value_sha256\": \"sha256:b6e0559e84c4a5df4264655ea67129fdb73f0be52ef8dbacb4726857e3aba926\"\n    },\n    {\n      \"key\": \"source_prd\",\n      \"value_sha256\": \"sha256:c500a0446aac0caa0dc3170d6358280ab65794533a22324f9621fa48a4639a2a\"\n    },\n    {\n      \"key\": \"source_design\",\n      \"value_sha256\": \"sha256:523d6d0499425ec0db201d05cf3a94d7ce29d72370dc4238db96705b9111d30c\"\n    },\n    {\n      \"key\": \"source_roadmap\",\n      \"value_sha256\": \"sha256:e31ba4eba7f3af0b0fdd27a2eb9a12d063434492a3083c47e1648ef5dbbefc18\"\n    },\n    {\n      \"key\": \"blocked_by\",\n      \"value_sha256\": \"sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\"\n    },\n    {\n      \"key\": \"unblocks\",\n      \"value_sha256\": \"sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945\"\n    },\n    {\n      \"key\": \"sequence_index\",\n      \"value_sha256\": \"sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b\"\n    },\n    {\n      \"key\": \"sequence_total\",\n      \"value_sha256\": \"sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b\"\n    }\n  ],\n  \"generated_at\": \"1970-01-01T00:00:00Z\",\n  \"manifest_version\": \"request-fingerprint-manifest.v0\",\n  \"request\": {\n    \"request_id\": \"DOT-1435\",\n    \"scope\": \"agentmesh:app:request-fingerprint-manifest\",\n    \"source_shape\": \"request\",\n    \"target_app\": \"request-fingerprint-manifest\"\n  },\n  \"request_schema_version\": \"agentmesh-request.v0\",\n  \"schema_version\": \"request-fingerprint-manifest-json.v0\",\n  \"serialization\": {\n    \"array_order\": \"contract-defined\",\n    \"canonical_field_order\": [\n      \"title\",\n      \"request_kind\",\n      \"issue_type\",\n      \"ready_for_multica\",\n      \"status\",\n      \"project_key\",\n      \"source_prd\",\n      \"source_design\",\n      \"source_roadmap\",\n      \"blocked_by\",\n      \"unblocks\",\n      \"sequence_index\",\n      \"sequence_total\"\n    ],\n    \"format\": \"json_markdown_hybrid\",\n    \"hash_algorithm\": \"sha256\",\n    \"object_key_order\": \"lexicographic\",\n    \"required_fields\": [\n      \"title\",\n      \"request_kind\",\n      \"issue_type\",\n      \"status\",\n      \"project_key\",\n      \"source_prd\",\n      \"source_design\",\n      \"source_roadmap\",\n      \"blocked_by\",\n      \"unblocks\",\n      \"sequence_index\",\n      \"sequence_total\"\n    ],\n    \"timestamp_policy\": \"generated_at is fixed for deterministic fixtures\"\n  },\n  \"unknown_fields\": [],\n  \"validation\": {\n    \"error_codes\": [\n      \"AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION\",\n      \"AGENTMESH_REQUEST_FINGERPRINT_UNKNOWN_SCHEMA_VERSION\"\n    ],\n    \"error_count\": 2,\n    \"status\": \"invalid\",\n    \"valid\": false\n  }\n}\n```\n",
+  "manifest_version": "request-fingerprint-manifest.v0",
+  "request_id": "DOT-1435",
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "request-fingerprint-manifest-compact.v0",
+  "scope": "agentmesh:app:request-fingerprint-manifest",
+  "source_shape": "request",
+  "target_app": "request-fingerprint-manifest",
+  "valid": false
+}

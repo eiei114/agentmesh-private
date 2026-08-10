@@ -1,0 +1,22 @@
+{
+  "schema_version": "request-fingerprint-manifest-input.v1",
+  "request_schema_version": "agentmesh-request.v9",
+  "request_id": "DOT-1435",
+  "scope": "agentmesh:app:request-fingerprint-manifest",
+  "target_app": "request-fingerprint-manifest",
+  "request": {
+    "title": "Unknown schema fixture",
+    "request_kind": "app",
+    "issue_type": "AFK",
+    "ready_for_multica": true,
+    "status": "ready",
+    "project_key": "agentmesh-private",
+    "source_prd": "Requests/App/request-fingerprint-manifest.md",
+    "source_design": "Docs/agentmesh-request-operations-v1.md",
+    "source_roadmap": "ROADMAP.md",
+    "blocked_by": [],
+    "unblocks": [],
+    "sequence_index": 1,
+    "sequence_total": 1
+  }
+}

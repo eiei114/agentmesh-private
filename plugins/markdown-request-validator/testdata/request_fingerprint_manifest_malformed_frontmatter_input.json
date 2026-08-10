@@ -1,0 +1,8 @@
+{
+  "schema_version": "request-fingerprint-manifest-input.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "request_id": "DOT-1435",
+  "scope": "agentmesh:app:request-fingerprint-manifest",
+  "target_app": "request-fingerprint-manifest",
+  "markdown": "---\ntitle: One\ntitle: Two\nrequest_kind app\nissue_type: AFK\nstatus: ready\nproject_key: agentmesh-private\nsource_prd: Requests/App/request-fingerprint-manifest.md\nsource_design: Docs/agentmesh-request-operations-v1.md\nsource_roadmap: ROADMAP.md\nblocked_by: [\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---\n# Bad manifest\n"
+}

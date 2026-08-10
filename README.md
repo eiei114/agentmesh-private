@@ -163,6 +163,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/backlog-promoter/` — reference `agentmesh-app.toml` for the Multica selector App
 - `apps/markdown-request-validator/` — tool-neutral request validator manifest + IO schemas
 - `apps/request-dry-run-summary/` — deterministic request dry-run Markdown preview + evidence schemas
+- `apps/request-fingerprint-manifest/` — deterministic request fingerprint JSON/Markdown manifest + hash schemas
 - `apps/non-multica-request-adapter/` — tracker-neutral request adapter manifest + IO schemas
 - `apps/local-tracker-adapter/` — local taskfile tracker adapter manifest + IO schemas
 - `apps/local-runner-adapter/` — deterministic local-runner compatibility envelope manifest + IO schemas
