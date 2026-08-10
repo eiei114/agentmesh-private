@@ -21,6 +21,7 @@ All notable changes to this private Phase 0 workspace are documented here.
 
 ### Changed
 
+- README workspace list: move `agentmesh-evidence` out of the `default-members` section to match root `Cargo.toml`.
 - Evidence promotion now applies the recorded 17/20 hit and 6/20 complete
   baseline to fused QMD, requires a fresh graph for every hybrid fixture, and
   reports graph default enablement only when every promotion gate passes.

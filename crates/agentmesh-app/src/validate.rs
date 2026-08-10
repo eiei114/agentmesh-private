@@ -239,6 +239,76 @@ mod tests {
     }
 
     #[test]
+    fn readme_default_members_match_cargo_toml() {
+        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let cargo_toml = std::fs::read_to_string(workspace_root.join("Cargo.toml"))
+            .expect("Cargo.toml readable");
+        let readme =
+            std::fs::read_to_string(workspace_root.join("README.md")).expect("README.md readable");
+
+        let default_members = parse_default_members(&cargo_toml);
+        let readme_members = parse_readme_default_members(&readme);
+
+        assert_eq!(
+            readme_members, default_members,
+            "README Production (`default-members`) must match root Cargo.toml default-members"
+        );
+    }
+
+    fn parse_default_members(cargo_toml: &str) -> Vec<String> {
+        let section = cargo_toml
+            .split("default-members")
+            .nth(1)
+            .and_then(|rest| rest.split(']').next())
+            .expect("default-members section");
+        let mut members = section
+            .split('"')
+            .filter(|part| part.starts_with("crates/") || part.starts_with("plugins/"))
+            .map(|path| {
+                path.rsplit('/')
+                    .next()
+                    .expect("workspace member path")
+                    .to_string()
+            })
+            .collect::<Vec<_>>();
+        members.sort();
+        members
+    }
+
+    fn parse_readme_default_members(readme: &str) -> Vec<String> {
+        let workspace_section = readme
+            .split_once("## Workspace crates")
+            .map(|(_, section)| section)
+            .expect("README.md workspace crates section");
+        let production_section = workspace_section
+            .split_once("Production (`default-members`):")
+            .and_then(|(_, section)| {
+                section.split_once("\n\nAdditional production workspace crates")
+            })
+            .map(|(section, _)| section)
+            .or_else(|| {
+                workspace_section
+                    .split_once("Production (`default-members`):")
+                    .and_then(|(_, section)| section.split_once("\n\nApps / packaging"))
+                    .map(|(section, _)| section)
+            })
+            .expect("README.md Production (`default-members`) section");
+
+        let mut members = production_section
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim_start();
+                trimmed
+                    .strip_prefix("- `agentmesh-")
+                    .and_then(|rest| rest.split('`').next())
+                    .map(|name| format!("agentmesh-{name}"))
+            })
+            .collect::<Vec<_>>();
+        members.sort();
+        members
+    }
+
+    #[test]
     fn readme_lists_all_workspace_crates() {
         let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let readme =
