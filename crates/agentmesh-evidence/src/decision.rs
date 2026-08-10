@@ -51,7 +51,7 @@ impl DecisionStatus {
 }
 
 /// Retrieval scope for Decision evidence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DecisionScope {
     /// Current adopted decisions only.
     Current,
@@ -84,11 +84,22 @@ impl DecisionScope {
     }
 
     /// Whether a status participates in this scope.
-    pub const fn allows(self, status: DecisionStatus) -> bool {
+    pub fn allows(self, status: DecisionStatus) -> bool {
+        self.default_statuses().contains(&status)
+    }
+
+    /// Default status membership used when a contract omits its registry.
+    pub const fn default_statuses(self) -> &'static [DecisionStatus] {
         match self {
-            Self::Current => matches!(status, DecisionStatus::Adopted),
-            Self::Review => matches!(status, DecisionStatus::Candidate | DecisionStatus::Deferred),
-            Self::Historical => true,
+            Self::Current => &[DecisionStatus::Adopted],
+            Self::Review => &[DecisionStatus::Candidate, DecisionStatus::Deferred],
+            Self::Historical => &[
+                DecisionStatus::Candidate,
+                DecisionStatus::Adopted,
+                DecisionStatus::Rejected,
+                DecisionStatus::Deferred,
+                DecisionStatus::Superseded,
+            ],
         }
     }
 }
@@ -152,12 +163,22 @@ pub fn parse_frontmatter(text: &str) -> Result<BTreeMap<String, Value>, Decision
     let Some(rest) = normalized.strip_prefix("---\n") else {
         return Ok(BTreeMap::new());
     };
-    let Some(end) = rest.find("\n---\n") else {
+    let Some(close_newline) = rest.find("\n---") else {
         return Err(DecisionMetadataError::Frontmatter(
             "closing YAML fence is missing".into(),
         ));
     };
-    let mapping: Mapping = serde_yaml::from_str(&rest[..end])
+    let close_start = close_newline + 1;
+    let after_marker = &rest[close_start + 3..];
+    if !after_marker.is_empty()
+        && !after_marker.starts_with('\n')
+        && !after_marker.starts_with("\r\n")
+    {
+        return Err(DecisionMetadataError::Frontmatter(
+            "closing YAML fence is malformed".into(),
+        ));
+    }
+    let mapping: Mapping = serde_yaml::from_str(&rest[..close_newline])
         .map_err(|error| DecisionMetadataError::Frontmatter(error.to_string()))?;
     let mut output = BTreeMap::new();
     for (key, value) in mapping {
@@ -169,6 +190,11 @@ pub fn parse_frontmatter(text: &str) -> Result<BTreeMap<String, Value>, Decision
         output.insert(key.to_ascii_lowercase(), value);
     }
     Ok(output)
+}
+
+/// Return a scalar frontmatter value without lifecycle normalization.
+pub fn frontmatter_text(frontmatter: &BTreeMap<String, Value>, key: &str) -> Option<String> {
+    scalar_text(frontmatter.get(key))
 }
 
 /// Normalize and validate Decision Record frontmatter.
@@ -370,6 +396,14 @@ mod tests {
         let frontmatter = parse_frontmatter("---\nrecorded_by: ai\n---\n").unwrap();
         let error = normalize_decision_metadata(&frontmatter).unwrap_err();
         assert!(error.to_string().contains("source_refs"));
+    }
+
+    #[test]
+    fn graph_normalization_allows_legacy_ai_node_without_source_refs() {
+        let frontmatter = parse_frontmatter("---\nrecorded_by: ai\n---").unwrap();
+        let metadata = normalize_decision_metadata_for_graph(&frontmatter).unwrap();
+        assert_eq!(metadata.recorded_by, "ai");
+        assert!(metadata.source_refs.is_empty());
     }
 
     #[test]

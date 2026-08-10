@@ -81,7 +81,8 @@ Decision scopes:
 - `review`: `candidate` and `deferred` only.
 - `historical`: all lifecycle states, including `rejected` and `superseded`.
 
-Every Decision evidence item carries normalized `record_status`,
+Every Decision evidence item carries normalized `record_status`
+(`decision_status` is retained as a deprecated compatibility alias),
 `decision_kind`, `recorded_by`, `review_status`, `adoption_mode`, `impact`,
 `source_refs`, and `supersedes` fields. Malformed AI records without
 `source_refs` are rejected with `invalid_decision_record`; the runtime never

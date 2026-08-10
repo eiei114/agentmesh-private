@@ -1,6 +1,6 @@
 use crate::{
-    normalize_decision_metadata_for_graph, secure_source_path, sha256_prefixed, DecisionScope,
-    DecisionStatus, EvidenceError, EvidenceRequest, Sensitivity,
+    normalize_decision_metadata_for_graph, secure_source_path, sha256_prefixed, DecisionMetadata,
+    DecisionScope, DecisionStatus, EvidenceError, EvidenceRequest, Sensitivity,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -165,6 +165,11 @@ pub fn validate_graph(
             }
         }
     }
+    let nodes_by_id: BTreeMap<&str, &GraphNode> = graph
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect();
     for edge in &graph.edges {
         if edge.edge_id.is_empty()
             || edge.relation_type.is_empty()
@@ -180,19 +185,7 @@ pub fn validate_graph(
                 edge.edge_id
             )));
         }
-        if edge.relation_type == "supersedes" {
-            let from = graph.nodes.iter().find(|node| node.id == edge.from_id);
-            let to = graph.nodes.iter().find(|node| node.id == edge.to_id);
-            if edge.from_id == edge.to_id
-                || from.is_none_or(|node| node.node_type != "Decision")
-                || to.is_none_or(|node| node.node_type != "Decision")
-            {
-                return Err(EvidenceError::InvalidGraph(format!(
-                    "supersedes edge must connect distinct Decision nodes: {}",
-                    edge.edge_id
-                )));
-            }
-        }
+        validate_supersedes_edge(edge, &nodes_by_id)?;
         if edge.source_path != "index.md" {
             let source_path = secure_source_path(root, Path::new(&edge.source_path))?;
             let bytes = fs::read(source_path).map_err(|source| EvidenceError::Io {
@@ -214,6 +207,28 @@ fn valid_hash(value: &str) -> bool {
     value.strip_prefix("sha256:").is_some_and(|digest| {
         digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
     })
+}
+
+/// Enforce that a supersession relation connects two distinct Decision nodes.
+fn validate_supersedes_edge(
+    edge: &GraphEdge,
+    nodes_by_id: &BTreeMap<&str, &GraphNode>,
+) -> Result<(), EvidenceError> {
+    if edge.relation_type != "supersedes" {
+        return Ok(());
+    }
+    let from = nodes_by_id.get(edge.from_id.as_str());
+    let to = nodes_by_id.get(edge.to_id.as_str());
+    if edge.from_id == edge.to_id
+        || from.is_none_or(|node| node.node_type != "Decision")
+        || to.is_none_or(|node| node.node_type != "Decision")
+    {
+        return Err(EvidenceError::InvalidGraph(format!(
+            "supersedes edge must connect distinct Decision nodes: {}",
+            edge.edge_id
+        )));
+    }
+    Ok(())
 }
 
 fn normalized_hash(graph: &Graph) -> Result<String, EvidenceError> {
@@ -276,6 +291,14 @@ pub fn expand_with_statuses(
     for values in adjacency.values_mut() {
         values.sort_by_key(|(id, edge)| (*id, edge.edge_id.as_str()));
     }
+    let allowed_nodes: BTreeMap<&str, bool> = graph
+        .nodes
+        .iter()
+        .map(|node| {
+            decision_node_allowed(node, request.decision_scope, allowed_statuses)
+                .map(|allowed| (node.id.as_str(), allowed))
+        })
+        .collect::<Result<_, _>>()?;
     let mut queue = VecDeque::new();
     for (rank, seed) in seeds.iter().enumerate() {
         if let Some(id) = by_path.get(seed.as_str()) {
@@ -301,7 +324,7 @@ pub fn expand_with_statuses(
         if node.namespace != request.namespace
             || Sensitivity::parse(&node.sensitivity)? > ceiling
             || node.sensitivity == "restricted"
-            || !decision_node_allowed(node, request.decision_scope, allowed_statuses)?
+            || !allowed_nodes.get(node_id).copied().unwrap_or(false)
         {
             continue;
         }
@@ -315,7 +338,11 @@ pub fn expand_with_statuses(
         }
         for (next, edge) in neighbors.into_iter().take(20) {
             if let Some(next_node) = nodes.get(next) {
-                if decision_node_allowed(next_node, request.decision_scope, allowed_statuses)? {
+                if allowed_nodes
+                    .get(next_node.id.as_str())
+                    .copied()
+                    .unwrap_or(false)
+                {
                     edges
                         .entry(edge.edge_id.clone())
                         .or_insert_with(|| edge.clone());
@@ -331,40 +358,31 @@ pub fn expand_with_statuses(
     })
 }
 
+/// Validate lifecycle metadata copied into one derived Decision node.
 fn validate_decision_node(node: &GraphNode) -> Result<(), EvidenceError> {
-    if node.node_type != "Decision" {
-        return Ok(());
-    }
-    let frontmatter = node
-        .extra
-        .iter()
-        .map(|(key, value)| {
-            serde_yaml::to_value(value)
-                .map(|value| (key.clone(), value))
-                .map_err(|error| {
-                    EvidenceError::InvalidGraph(format!(
-                        "invalid Decision metadata {}: {error}",
-                        node.source_path
-                    ))
-                })
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
-    normalize_decision_metadata_for_graph(&frontmatter).map_err(|error| {
-        EvidenceError::InvalidGraph(format!(
-            "invalid Decision metadata {}: {error}",
-            node.source_path
-        ))
-    })?;
+    decision_metadata(node)?;
     Ok(())
 }
 
+/// Check one graph node against the request and contract lifecycle scope.
 fn decision_node_allowed(
     node: &GraphNode,
     scope: DecisionScope,
     allowed_statuses: Option<&BTreeSet<DecisionStatus>>,
 ) -> Result<bool, EvidenceError> {
-    if node.node_type != "Decision" {
+    let Some(metadata) = decision_metadata(node)? else {
         return Ok(true);
+    };
+    Ok(allowed_statuses.map_or_else(
+        || scope.allows(metadata.decision_status),
+        |statuses| statuses.contains(&metadata.decision_status),
+    ))
+}
+
+/// Normalize one graph node's copied Decision metadata once.
+fn decision_metadata(node: &GraphNode) -> Result<Option<DecisionMetadata>, EvidenceError> {
+    if node.node_type != "Decision" {
+        return Ok(None);
     }
     let frontmatter = node
         .extra
@@ -386,10 +404,14 @@ fn decision_node_allowed(
             node.source_path
         ))
     })?;
-    Ok(allowed_statuses.map_or_else(
-        || scope.allows(metadata.decision_status),
-        |statuses| statuses.contains(&metadata.decision_status),
-    ))
+    Ok(Some(metadata))
+}
+
+/// Return a validated graph Decision status for lexical seeding.
+pub(crate) fn decision_node_status(
+    node: &GraphNode,
+) -> Result<Option<DecisionStatus>, EvidenceError> {
+    Ok(decision_metadata(node)?.map(|metadata| metadata.decision_status))
 }
 
 #[cfg(test)]
@@ -580,6 +602,20 @@ mod tests {
 
         assert!(
             matches!(error, EvidenceError::InvalidGraph(message) if message.contains("Bad.md"))
+        );
+    }
+
+    #[test]
+    fn graph_rejects_self_supersedes_edge() {
+        let source = node("bad", "docs/Bad.md", "internal");
+        let nodes = BTreeMap::from([("bad", &source)]);
+        let mut edge = edge("self", "bad", "bad");
+        edge.relation_type = "supersedes".into();
+
+        let error = validate_supersedes_edge(&edge, &nodes).unwrap_err();
+
+        assert!(
+            matches!(error, EvidenceError::InvalidGraph(message) if message.contains("distinct"))
         );
     }
 }

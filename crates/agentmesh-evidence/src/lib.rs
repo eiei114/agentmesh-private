@@ -11,8 +11,8 @@ mod graph;
 
 pub use contract::{load_contract, load_evaluation, Contract, EvaluationFixture, NamespacePolicy};
 pub use decision::{
-    normalize_decision_metadata, normalize_decision_metadata_for_graph, parse_frontmatter,
-    DecisionMetadata, DecisionMetadataError, DecisionScope, DecisionStatus,
+    frontmatter_text, normalize_decision_metadata, normalize_decision_metadata_for_graph,
+    parse_frontmatter, DecisionMetadata, DecisionMetadataError, DecisionScope, DecisionStatus,
 };
 pub use discovery::{
     discover_all, CandidateHit, CandidateStream, CommandSpec, DiscoveryOptions, StreamResult,
@@ -30,6 +30,8 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 use thiserror::Error;
+
+use serde_yaml::Value as YamlValue;
 
 const EXCERPT_LIMIT: usize = 8 * 1024;
 
@@ -434,7 +436,10 @@ pub fn compile(
                         contract
                             .decision_scopes
                             .get(request.decision_scope.as_str())
-                            .is_some_and(|statuses| statuses.contains(&status))
+                            .map_or_else(
+                                || request.decision_scope.allows(status),
+                                |statuses| statuses.contains(&status),
+                            )
                     });
                     if !allowed {
                         source_rejections.push("decision_scope_filtered".to_owned());
@@ -873,6 +878,7 @@ fn fuse_candidates(
     (rows, rejected)
 }
 
+/// Remove non-scope Decision candidates before bounded ranking output.
 fn filter_decision_candidates(
     root: &Path,
     candidates: Vec<RankedCandidate>,
@@ -898,16 +904,29 @@ fn filter_decision_candidates(
     Ok(accepted)
 }
 
+/// Read just enough canonical source to classify one Decision candidate.
 fn inspect_decision_status(
     root: &Path,
     path: &str,
     max_source_bytes: u64,
 ) -> Result<Option<DecisionStatus>, EvidenceError> {
-    let candidate = root.join(path);
+    let relative = Path::new(path);
+    if path.is_empty()
+        || relative.is_absolute()
+        || relative.components().any(|part| {
+            matches!(
+                part,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(EvidenceError::PathRejected(path.into()));
+    }
+    let candidate = root.join(relative);
     if !candidate.exists() {
         return Ok(None);
     }
-    let absolute = secure_source_path(root, Path::new(path))?;
+    let absolute = secure_source_path(root, relative)?;
     let metadata = fs::metadata(&absolute).map_err(|source| EvidenceError::Io {
         context: format!("inspect decision source {path}"),
         source,
@@ -977,13 +996,9 @@ fn graph_seed_paths(
                 return None;
             }
             if node.node_type == "Decision" {
-                let status = node
-                    .extra
-                    .get("record_status")
-                    .or_else(|| node.extra.get("decision_status"))
-                    .or_else(|| node.extra.get("status"))
-                    .and_then(Value::as_str)
-                    .and_then(|value| DecisionStatus::parse(value).ok())
+                let status = graph::decision_node_status(node)
+                    .ok()
+                    .flatten()
                     .unwrap_or(DecisionStatus::Adopted);
                 let allowed = allowed_statuses.map_or_else(
                     || request.decision_scope.allows(status),
@@ -1307,18 +1322,27 @@ fn read_evidence(
     })?;
     let text = std::str::from_utf8(raw.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&raw))
         .map_err(|_| EvidenceError::PathRejected(format!("source_not_utf8:{path}")))?;
-    let decision_metadata = if kind == EvidenceKind::Decision {
-        let frontmatter = parse_frontmatter(text)
-            .map_err(|error| EvidenceError::InvalidDecisionRecord(format!("{path}: {error}")))?;
-        Some(
-            normalize_decision_metadata(&frontmatter).map_err(|error| {
+    let decision_frontmatter =
+        if kind == EvidenceKind::Decision {
+            Some(parse_frontmatter(text).map_err(|error| {
                 EvidenceError::InvalidDecisionRecord(format!("{path}: {error}"))
-            })?,
-        )
-    } else {
-        None
-    };
-    let fields = extract_fields(kind, text, decision_metadata.as_ref());
+            })?)
+        } else {
+            None
+        };
+    let decision_metadata = decision_frontmatter
+        .as_ref()
+        .map(|frontmatter| {
+            normalize_decision_metadata(frontmatter)
+                .map_err(|error| EvidenceError::InvalidDecisionRecord(format!("{path}: {error}")))
+        })
+        .transpose()?;
+    let fields = extract_fields(
+        kind,
+        text,
+        decision_frontmatter.as_ref(),
+        decision_metadata.as_ref(),
+    );
     let title = text
         .lines()
         .find_map(|line| line.strip_prefix("# "))
@@ -1339,7 +1363,12 @@ fn read_evidence(
         || title.to_owned(),
         |value| truncate_chars(value, EXCERPT_LIMIT),
     );
-    let freshness = source_freshness(kind, text, decision_metadata.as_ref());
+    let freshness = source_freshness(
+        kind,
+        text,
+        decision_frontmatter.as_ref(),
+        decision_metadata.as_ref(),
+    );
     let mut item = json!({
         "evidence_id": evidence_id,
         "source_path": path,
@@ -1372,11 +1401,15 @@ fn read_evidence(
 fn source_freshness(
     kind: EvidenceKind,
     text: &str,
+    decision_frontmatter: Option<&BTreeMap<String, YamlValue>>,
     decision_metadata: Option<&DecisionMetadata>,
 ) -> &'static str {
-    let (frontmatter, _) = split_frontmatter(text);
-    if let Some(value) = frontmatter.get("stale_after") {
-        if let Ok(date) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+    let (legacy_frontmatter, _) = split_frontmatter(text);
+    let stale_after = decision_frontmatter
+        .and_then(|frontmatter| frontmatter_text(frontmatter, "stale_after"))
+        .or_else(|| legacy_frontmatter.get("stale_after").cloned());
+    if let Some(value) = stale_after {
+        if let Ok(date) = chrono::NaiveDate::parse_from_str(&value, "%Y-%m-%d") {
             return if date < Utc::now().date_naive() {
                 "stale"
             } else {
@@ -1397,9 +1430,10 @@ fn source_freshness(
 fn extract_fields(
     kind: EvidenceKind,
     text: &str,
+    decision_frontmatter: Option<&BTreeMap<String, YamlValue>>,
     decision_metadata: Option<&DecisionMetadata>,
 ) -> BTreeMap<String, String> {
-    let (frontmatter, body) = split_frontmatter(text);
+    let (legacy_frontmatter, body) = split_frontmatter(text);
     let headings = heading_sections(body);
     let aliases: &[(&str, &[&str])] = match kind {
         EvidenceKind::Decision => &[
@@ -1432,11 +1466,12 @@ fn extract_fields(
     };
     let mut output = BTreeMap::new();
     for (field, names) in aliases {
-        if let Some(value) = names
-            .iter()
-            .find_map(|name| frontmatter.get(*name))
-            .filter(|value| !value.is_empty())
-        {
+        let value = names.iter().find_map(|name| {
+            decision_frontmatter
+                .and_then(|frontmatter| frontmatter_text(frontmatter, name))
+                .or_else(|| legacy_frontmatter.get(*name).cloned())
+        });
+        if let Some(value) = value.filter(|value| !value.is_empty()) {
             output.insert((*field).to_owned(), value.clone());
             continue;
         }
@@ -1469,7 +1504,9 @@ fn split_frontmatter(text: &str) -> (BTreeMap<String, String>, &str) {
     if let Some(close_newline) = rest.find("\n---") {
         let close_start = close_newline + 1;
         let after_marker = &rest[close_start + 3..];
-        let body_start = if after_marker.starts_with("\r\n") {
+        let body_start = if after_marker.is_empty() {
+            close_start + 3
+        } else if after_marker.starts_with("\r\n") {
             close_start + 5
         } else if after_marker.starts_with('\n') {
             close_start + 4
@@ -1703,7 +1740,7 @@ mod tests {
     #[test]
     fn extracts_decision_fields_without_summary_invention() {
         let text = "---\nstatus: adopted\n---\n# Choice\n## Decision\nUse JSON.\n## Rationale\nPortable.\n## Alternatives\nSQLite.";
-        let fields = extract_fields(EvidenceKind::Decision, text, None);
+        let fields = extract_fields(EvidenceKind::Decision, text, None, None);
         assert_eq!(fields["decision"], "Use JSON.");
         assert_eq!(fields["record_status"], "adopted");
         assert_eq!(fields["rationale"], "Portable.");

@@ -138,7 +138,11 @@ struct EvidenceCompileArgs {
     #[arg(long, default_value = "hybrid")]
     mode: String,
     /// Decision lifecycle scope: current, review, or historical.
-    #[arg(long, default_value = "current")]
+    #[arg(
+        long,
+        default_value = "current",
+        value_parser = ["current", "review", "historical"]
+    )]
     decision_scope: String,
     /// Optional vault-relative serving-valid v2 graph.
     #[arg(long)]

@@ -232,23 +232,23 @@ fn validate_raw(raw: RawContract) -> Result<Contract, EvidenceError> {
             .map_err(|error| EvidenceError::InvalidContract(error.to_string()))?;
     let mut decision_scopes = BTreeMap::new();
     let raw_decision_scopes = if raw.decision_scopes.is_empty() {
-        BTreeMap::from([
-            ("current".to_owned(), vec!["adopted".to_owned()]),
+        [
+            DecisionScope::Current,
+            DecisionScope::Review,
+            DecisionScope::Historical,
+        ]
+        .into_iter()
+        .map(|scope| {
             (
-                "review".to_owned(),
-                vec!["candidate".to_owned(), "deferred".to_owned()],
-            ),
-            (
-                "historical".to_owned(),
-                vec![
-                    "candidate".to_owned(),
-                    "adopted".to_owned(),
-                    "rejected".to_owned(),
-                    "deferred".to_owned(),
-                    "superseded".to_owned(),
-                ],
-            ),
-        ])
+                scope.as_str().to_owned(),
+                scope
+                    .default_statuses()
+                    .iter()
+                    .map(|status| status.as_str().to_owned())
+                    .collect(),
+            )
+        })
+        .collect()
     } else {
         raw.decision_scopes
     };
@@ -272,6 +272,12 @@ fn validate_raw(raw: RawContract) -> Result<Contract, EvidenceError> {
                 "duplicate decision scope".into(),
             ));
         }
+    }
+    if !decision_scopes.contains_key(default_decision_scope.as_str()) {
+        return Err(EvidenceError::InvalidContract(format!(
+            "default decision scope {} is not registered",
+            default_decision_scope.as_str()
+        )));
     }
     let mut namespaces = BTreeMap::new();
     for entry in raw.namespace_registry {
@@ -361,8 +367,7 @@ mod tests {
             .map(|index| format!("Q{index:02}"))
             .collect::<Vec<_>>()
             .join(", ");
-        writeln!(
-            file,
+        let body = format!(
             r#"```yaml
 evidence_compiler_contract:
   schema_version: okf-evidence-contract.v2
@@ -398,8 +403,8 @@ evidence_compiler_contract:
     default_sensitivity_ceiling: internal
 ```
 "#
-        )
-        .unwrap();
+        );
+        writeln!(file, "{body}").unwrap();
 
         let contract = load_contract(file.path()).unwrap();
 
@@ -408,5 +413,14 @@ evidence_compiler_contract:
             contract.decision_scopes["review"],
             BTreeSet::from([DecisionStatus::Candidate, DecisionStatus::Deferred])
         );
+
+        let mut invalid_file = tempfile::NamedTempFile::new().unwrap();
+        let invalid_body = body.replace("current: [adopted]", "current: []");
+        writeln!(invalid_file, "{invalid_body}").unwrap();
+        assert!(matches!(
+            load_contract(invalid_file.path()),
+            Err(EvidenceError::InvalidContract(message))
+                if message.contains("has no statuses")
+        ));
     }
 }

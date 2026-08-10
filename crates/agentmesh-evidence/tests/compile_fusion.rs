@@ -4,6 +4,7 @@ use agentmesh_evidence::{
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -304,6 +305,79 @@ fn current_scope_excludes_candidate_without_starving_adopted_source() {
             .into_iter()
             .flatten()
             .any(|code| code == "decision_scope_filtered")));
+}
+
+#[test]
+fn review_and_historical_scopes_select_their_declared_lifecycle_states() {
+    let Ok(node) = which::which("node") else {
+        return;
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    fs::create_dir(root.join("docs")).unwrap();
+    write_any_decision(root, "Candidate.md", "candidate", "ai");
+    write_any_decision(root, "Adopted.md", "adopted", "ai");
+    write_any_decision(root, "Deferred.md", "deferred", "ai");
+    write_any_decision(root, "Rejected.md", "rejected", "ai");
+    let contract = write_contract(root);
+    let qmd_script = root.join("decision-scope-registry-qmd.js");
+    fs::write(
+        &qmd_script,
+        "console.log(JSON.stringify([{file:'docs/Candidate.md'},{file:'docs/Adopted.md'},{file:'docs/Deferred.md'},{file:'docs/Rejected.md'}]));\n",
+    )
+    .unwrap();
+    let qmd = CommandSpec {
+        program: node,
+        prefix_args: vec![qmd_script.into_os_string()],
+    };
+    let compile_scope = |scope: agentmesh_evidence::DecisionScope, max_sources| {
+        compile(
+            root,
+            &contract,
+            &EvidenceRequest {
+                kind: EvidenceKind::Decision,
+                query: "lifecycle policy".into(),
+                namespace: "test".into(),
+                sensitivity_ceiling: "internal".into(),
+                max_sources,
+                timeout_ms: 5_000,
+                decision_scope: scope,
+                mode: EvidenceMode::DirectQmd,
+            },
+            &CompileOptions {
+                collection: "test".into(),
+                qmd: Some(qmd.clone()),
+                adaptive: None,
+                graph_path: None,
+            },
+        )
+        .unwrap()
+    };
+
+    let review = compile_scope(agentmesh_evidence::DecisionScope::Review, 4);
+    let review_paths: BTreeSet<_> = review["evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["source_path"].as_str())
+        .collect();
+    assert_eq!(review["decision_scope"], "review");
+    assert_eq!(
+        review_paths,
+        BTreeSet::from(["docs/Candidate.md", "docs/Deferred.md"])
+    );
+
+    let historical = compile_scope(agentmesh_evidence::DecisionScope::Historical, 4);
+    let historical_paths: BTreeSet<_> = historical["evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["source_path"].as_str())
+        .collect();
+    assert_eq!(historical["decision_scope"], "historical");
+    assert_eq!(historical_paths.len(), 4);
+    assert!(historical_paths.contains("docs/Adopted.md"));
+    assert!(historical_paths.contains("docs/Rejected.md"));
 }
 
 #[test]
