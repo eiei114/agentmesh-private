@@ -1,6 +1,6 @@
 # Repair request: sync local main branch with origin
 
-Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411
+Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450
 
 ## Failure code
 
@@ -72,6 +72,20 @@ ad-hoc Git command sequence.
 - audited remote head: `60f83470771e229441e1e844273427bd44be6343`
 - repair run: `before_ahead=0`, `before_behind=0`, `repair_action=already_aligned`, `after_ahead=0`, `after_behind=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`
+
+## DOT-1450 execution record
+
+- request_id: `DOT-1450`
+- source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-08-11-repair-local-agentmesh-maintenance-branch-behind-origin.md`
+- derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-08-11-repair-local-agentmesh-maintenance-branch-behind-origin.md`
+- dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-08-11-repair-local-agentmesh-maintenance-branch-behind-origin.md`
+- stable scope: `agentmesh:repair:repo-main-behind:v5`
+- request status: `ready_for_multica=true`, `status=ready`
+- audited branch: `main`
+- pre-repair check: `before_ahead=0`, `before_behind=13`, `repo_main_behind=present`, `request_action=repair_first`
+- repair run: `before_ahead=0`, `before_behind=13`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`
+- post-repair repo metadata: `current_branch=agent/codex-release-engineer/39eaa8ca`, `current_head=c77e3f79cecc83ca52c65df0da3eed3e1ad3a973`, `branch=main`, `head=c77e3f79cecc83ca52c65df0da3eed3e1ad3a973`, `ahead=0`, `behind=0`, `dirty_count=0`
+- post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
 Release tags, package publishing, assets, secrets, permissions, production actions,
 and Multica authority changes are intentionally out of scope for this repair.
