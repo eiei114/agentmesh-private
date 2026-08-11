@@ -156,6 +156,9 @@ Production (`default-members`):
 - `agentmesh-host` — process supervision, framing, lifecycle, sidecar
 - `agentmesh-cli` — one-shot `run`, `app`, `toolchain`, and read-only `evidence` commands
 - `agentmesh-app` — App manifest validation, toolchain install, and pinned run policy
+
+Additional production workspace crates (not `default-members`):
+
 - `agentmesh-evidence` — QMD fusion, namespace/sensitivity policy, graph traversal, and Evidence Packet assembly
 
 Apps / packaging (version-controlled, not `default-members`):
