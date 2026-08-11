@@ -16,9 +16,12 @@ repair-required evidence until a sync/check record clears `repo_main_behind`.
 
 ## Reproducible repair path
 
-Run the maintenance repair helper from the worktree where `refs/heads/main` is
-checked out. If another worktree has `main` checked out, the helper refuses to
-update the ref and instructs you to run the command from that worktree instead.
+Run the maintenance repair helper from any clean maintenance worktree. When
+`refs/heads/main` is not checked out in any worktree, the helper creates a
+coordinated temporary worktree, fast-forwards `main` there, removes that worktree
+afterward, and reports `fast_forward_temporary_worktree`. If another worktree has
+`main` checked out, the helper refuses to update the ref and instructs you to run
+the command from that worktree instead.
 
 ```bash
 python scripts/repair_sync_local_main_with_origin.py
@@ -79,11 +82,12 @@ ad-hoc Git command sequence.
 - source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-08-11-repair-local-agentmesh-maintenance-branch-behind-origin.md`
 - derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-08-11-repair-local-agentmesh-maintenance-branch-behind-origin.md`
 - dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-08-11-repair-local-agentmesh-maintenance-branch-behind-origin.md`
-- stable scope: `agentmesh:repair:repo-main-behind:v5`
+- stable scope: `agentmesh:repair:repo_main_behind:v5`
 - request status: `ready_for_multica=true`, `status=ready`
 - audited branch: `main`
 - pre-repair check: `before_ahead=0`, `before_behind=13`, `repo_main_behind=present`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=13`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`
+- repair path: `refs/heads/main` was not checked out in any existing worktree, so the helper created a temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left `git worktree list` clean
 - post-repair repo metadata: `current_branch=agent/codex-release-engineer/39eaa8ca`, `current_head=c77e3f79cecc83ca52c65df0da3eed3e1ad3a973`, `branch=main`, `head=c77e3f79cecc83ca52c65df0da3eed3e1ad3a973`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
