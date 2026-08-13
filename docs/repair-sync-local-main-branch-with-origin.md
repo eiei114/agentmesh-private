@@ -1,6 +1,6 @@
 # Repair request: sync local main branch with origin
 
-Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466
+Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506
 
 ## Failure code
 
@@ -61,6 +61,21 @@ Multica's repository checkout path. The implementation branch starts at
 than the stale local `main` pointer. DOT-1379 also adds the script above so future
 runs can repair and verify the shared local `main` ref instead of relying on an
 ad-hoc Git command sequence.
+
+## DOT-1506 execution record
+
+- request_id: `DOT-1506`
+- source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-08-13-repair-local-agentmesh-maintenance-branch-behind-origin.md`
+- derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-08-13-repair-local-agentmesh-maintenance-branch-behind-origin.md`
+- dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-08-13-repair-local-agentmesh-maintenance-branch-behind-origin.md`
+- stable scope: `agentmesh:repair:repo-main-behind:v7`
+- request status: `ready_for_multica=true`, `status=ready`
+- audited branch: `main`
+- pre-repair check: `before_ahead=0`, `before_behind=1`, `after_behind=1`, `repo_main_behind=present`, `request_action=repair_first`
+- repair run: `before_ahead=0`, `before_behind=1`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`
+- repair path: `refs/heads/main` was not checked out in any existing worktree, so the helper created a temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- post-repair repo metadata: `current_branch=agent/codex-release-engineer/86e988b0`, `current_head=2820cba047a569a788948feaebae2651c77aa1b7`, `branch=main`, `head=2820cba047a569a788948feaebae2651c77aa1b7`, `ahead=0`, `behind=0`, `dirty_count=0`
+- post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
 ## DOT-1466 execution record
 
