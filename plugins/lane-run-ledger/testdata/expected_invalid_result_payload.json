@@ -1,0 +1,17 @@
+{
+  "schema_version": "lane-run-ledger-output.v0",
+  "app_version": "lane-run-ledger.v0",
+  "operation": "record",
+  "valid": false,
+  "bucket_month": null,
+  "line": null,
+  "feedback_code": null,
+  "observation_count": null,
+  "self_reported_count": null,
+  "candidate_count": null,
+  "candidates": [],
+  "issue_count": 1,
+  "issues": [
+    {"code": "unknown_result", "message": "record.result must be one of [\"done\", \"split_required\", \"blocked\"]"}
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/lane-run-ledger-output-v0.schema.json",
+  "title": "Lane Run Ledger Compact Output v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "app_version",
+    "operation",
+    "valid",
+    "bucket_month",
+    "line",
+    "feedback_code",
+    "observation_count",
+    "self_reported_count",
+    "candidate_count",
+    "candidates",
+    "issue_count",
+    "issues"
+  ],
+  "properties": {
+    "schema_version": { "const": "lane-run-ledger-output.v0" },
+    "app_version": { "const": "lane-run-ledger.v0" },
+    "operation": { "enum": ["record", "classify"] },
+    "valid": { "type": "boolean" },
+    "bucket_month": { "type": ["string", "null"] },
+    "line": { "type": ["string", "null"] },
+    "feedback_code": { "type": ["string", "null"] },
+    "observation_count": { "type": ["integer", "null"], "minimum": 0 },
+    "self_reported_count": { "type": ["integer", "null"], "minimum": 0 },
+    "candidate_count": { "type": ["integer", "null"], "minimum": 0 },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["session_id", "session_ref", "total_tokens", "suggestion"],
+        "properties": {
+          "session_id": { "type": "string" },
+          "session_ref": { "type": ["string", "null"] },
+          "total_tokens": { "type": "integer", "minimum": 0 },
+          "suggestion": { "type": "string" }
+        }
+      }
+    },
+    "issue_count": { "type": "integer", "minimum": 0 },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" }
+        }
+      }
+    }
+  }
+}
