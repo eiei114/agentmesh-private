@@ -1,0 +1,15 @@
+{
+  "schema_version": "lane-run-ledger-output.v0",
+  "app_version": "lane-run-ledger.v0",
+  "operation": "record",
+  "valid": true,
+  "bucket_month": "2026-08",
+  "line": "{\"event_type\":\"lane_run_record\",\"feedback_version\":1,\"lane\":\"direct\",\"pr_url\":\"https://example.test/pr/1\",\"result_type\":\"done\",\"scope_key\":\"demo:01\",\"session_ref\":\"C:/sessions/s1.jsonl\",\"ts\":\"2026-08-22T10:00:00+09:00\"}",
+  "feedback_code": "lane_run_record_done",
+  "observation_count": null,
+  "self_reported_count": null,
+  "candidate_count": null,
+  "candidates": [],
+  "issue_count": 0,
+  "issues": []
+}

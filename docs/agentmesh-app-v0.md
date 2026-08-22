@@ -381,6 +381,33 @@ agentmesh app run \
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-public-0x-rollback-replay`.
 
+## Lane run ledger App
+
+`apps/lane-run-ledger/agentmesh-app.toml` declares a deterministic execution-run ledger App. It is pure: the plugin never touches the filesystem; callers own storage and append policy. Two operations share one envelope input:
+
+- `operation: "record"` validates one execution-run record (`ts`, `result` enum `done | split_required | blocked`, optional `lane`, `scope_key`, `pr_url`, `session_ref`, bounded `note`) and returns the exact canonical JSON `line` plus `bucket_month` (from `ts[:7]`) the caller should append to its own month-bucketed JSONL ledger, with a deterministic `feedback_code` such as `lane_run_record_done`. Unknown result values produce stable error codes (`unknown_result`) instead of exceptions.
+- `operation: "classify"` accepts a bounded `ledger` array of already-recorded events, deduplicates observation records (`result_type == "orphan_session"`, latest `ts` wins), subtracts observations whose session references were self-reported by a recorded lane run (`event_type == "lane_run_record"`), and returns unclassified candidates ranked deterministically by `total_tokens` descending then `session_id` ascending. Empty ledgers return an empty candidate list.
+
+The compact output schema is `lane-run-ledger-output.v0`; every key is always present so callers can bind strictly.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-lane-run-ledger
+agentmesh app validate \
+  --manifest apps/lane-run-ledger/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/lane-run-ledger/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/lane-run-ledger/testdata/classify_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-lane-run-ledger
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-lane-run-ledger`.
+
 ## Run
 
 Production/canary (default) resolves the logical plugin under the local toolchain cache,

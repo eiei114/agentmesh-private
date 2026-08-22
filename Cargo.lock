@@ -56,6 +56,7 @@ version = "0.1.0"
 dependencies = [
  "agentmesh-adapter-metadata-canonicalizer",
  "agentmesh-host",
+ "agentmesh-lane-run-ledger",
  "agentmesh-markdown-request-validator",
  "agentmesh-multica-selector-shadow",
  "agentmesh-proto",
@@ -159,6 +160,17 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "agentmesh-lane-run-ledger"
+version = "0.1.0"
+dependencies = [
+ "agentmesh-fixture-support",
+ "agentmesh-proto",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

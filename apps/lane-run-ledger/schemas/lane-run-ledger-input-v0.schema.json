@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/lane-run-ledger-input-v0.schema.json",
+  "title": "Lane Run Ledger Input v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation"],
+  "properties": {
+    "schema_version": { "const": "lane-run-ledger-input.v0" },
+    "operation": { "enum": ["record", "classify"] },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ts", "result"],
+      "properties": {
+        "ts": { "type": "string", "minLength": 11, "maxLength": 64 },
+        "result": { "type": "string", "enum": ["done", "split_required", "blocked"] },
+        "lane": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "scope_key": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "pr_url": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "session_ref": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "note": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "ledger": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": { "type": "object" }
+    }
+  }
+}

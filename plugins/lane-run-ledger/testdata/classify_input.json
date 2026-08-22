@@ -1,0 +1,5 @@
+{"schema_version":"lane-run-ledger-input.v0","operation":"classify","ledger":[
+  {"ts":"2026-08-20T01:00:00+09:00","result_type":"orphan_session","session_id":"s-reported","session_file":"C:/sessions/s-reported.jsonl","total_tokens":400000},
+  {"ts":"2026-08-19T01:00:00+09:00","result_type":"orphan_session","session_id":"s-big","total_tokens":900000},
+  {"ts":"2026-08-21T01:00:00+09:00","event_type":"lane_run_record","result_type":"done","lane":"direct","session_ref":"C:/sessions/s-reported.jsonl"}
+]}

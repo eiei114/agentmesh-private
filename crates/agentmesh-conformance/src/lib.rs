@@ -4,6 +4,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 /// Resolve a built fixture binary from `CARGO_TARGET_DIR` / relative target.
+///
+/// Probes plain `debug`/`release` plus every `target/<triple>/{debug,release}`
+/// layout so tests find binaries under `cargo test --workspace --target <triple>`.
 pub fn fixture_bin(name: &str) -> PathBuf {
     let exe = if cfg!(windows) {
         format!("{name}.exe")
@@ -12,16 +15,26 @@ pub fn fixture_bin(name: &str) -> PathBuf {
     };
     let mut candidates = Vec::new();
     if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        candidates.push(PathBuf::from(dir).join("debug").join(&exe));
-        candidates.push(
-            PathBuf::from(std::env::var("CARGO_TARGET_DIR").unwrap())
-                .join("release")
-                .join(&exe),
-        );
+        let dir = PathBuf::from(dir);
+        candidates.push(dir.join("debug").join(&exe));
+        candidates.push(dir.join("release").join(&exe));
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                candidates.push(entry.path().join("debug").join(&exe));
+                candidates.push(entry.path().join("release").join(&exe));
+            }
+        }
     }
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    candidates.push(manifest_dir.join("../../target/debug").join(&exe));
-    candidates.push(manifest_dir.join("../../target/release").join(&exe));
+    let target_root = manifest_dir.join("../../target");
+    candidates.push(target_root.join("debug").join(&exe));
+    candidates.push(target_root.join("release").join(&exe));
+    if let Ok(entries) = std::fs::read_dir(&target_root) {
+        for entry in entries.flatten() {
+            candidates.push(entry.path().join("debug").join(&exe));
+            candidates.push(entry.path().join("release").join(&exe));
+        }
+    }
     candidates
         .into_iter()
         .find(|p| p.exists())
@@ -484,5 +497,153 @@ mod tests {
         assert!(outcome.sidecar_path.expect("sidecar").is_file());
         compare_compact_shadow(&outcome.envelope.payload, &expected)
             .expect("shadow compact payload mismatch");
+    }
+}
+
+#[cfg(test)]
+mod lane_run_ledger_tests {
+    use super::*;
+    use agentmesh_host::execute_run_with;
+    use agentmesh_host::lifecycle::RunConfig;
+    use agentmesh_host::sidecar::VecCompactSink;
+    use agentmesh_host::{CancellationToken, FsAuditStore};
+    use agentmesh_proto::{CompactOutcome, Limits};
+
+    fn abs_plugin(name: &str) -> PathBuf {
+        let mut plugin = fixture_bin(name);
+        if !plugin.exists() {
+            // cargo test does not build dependency packages' bin targets, so
+            // build the plugin on demand instead of silently skipping.
+            let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+            let status = Command::new(cargo)
+                .args(["build", "-p", name])
+                .current_dir(workspace_root())
+                .status()
+                .expect("failed to spawn cargo build for required plugin");
+            assert!(status.success(), "cargo build -p {name} failed");
+            plugin = fixture_bin(name);
+        }
+        assert!(
+            plugin.exists(),
+            "required plugin binary missing: {} (build it before running conformance tests)",
+            plugin.display()
+        );
+        std::fs::canonicalize(&plugin).unwrap_or(plugin)
+    }
+
+    #[tokio::test]
+    async fn lane_run_ledger_record_roundtrip() {
+        use agentmesh_lane_run_ledger::run_lane_ledger;
+
+        let plugin = abs_plugin("agentmesh-lane-run-ledger");
+        if !plugin.exists() {
+            eprintln!(
+                "skip: lane-run-ledger plugin not built at {}",
+                plugin.display()
+            );
+            return;
+        }
+        let testdata = workspace_root().join("plugins/lane-run-ledger/testdata");
+        let input = std::fs::read(testdata.join("valid_record_input.json")).unwrap();
+        let expected: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(testdata.join("expected_valid_record_payload.json")).unwrap(),
+        )
+        .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = VecCompactSink::default();
+        let mut limits = Limits::default();
+        limits.run_timeout_ms = 5_000;
+        let outcome = execute_run_with(
+            RunConfig {
+                plugin,
+                input,
+                sidecar_dir: dir.path().to_path_buf(),
+                plugin_env_keys: vec![],
+                redact_pointers: vec![],
+                capture_plugin_stderr: false,
+                limits,
+                run_id: Some("test-lane-run-ledger-record".into()),
+            },
+            &FsAuditStore,
+            &mut sink,
+            CancellationToken::new(),
+        )
+        .await;
+
+        assert_eq!(outcome.exit_code, 0);
+        assert_eq!(outcome.envelope.outcome, CompactOutcome::Ok);
+        assert_eq!(outcome.envelope.payload, expected);
+        assert_eq!(
+            run_lane_ledger(
+                &serde_json::from_slice(
+                    &std::fs::read(testdata.join("valid_record_input.json")).unwrap()
+                )
+                .unwrap()
+            ),
+            expected
+        );
+    }
+
+    #[tokio::test]
+    async fn lane_run_ledger_classify_roundtrip() {
+        use agentmesh_lane_run_ledger::run_lane_ledger;
+
+        let plugin = abs_plugin("agentmesh-lane-run-ledger");
+        if !plugin.exists() {
+            eprintln!(
+                "skip: lane-run-ledger plugin not built at {}",
+                plugin.display()
+            );
+            return;
+        }
+        let testdata = workspace_root().join("plugins/lane-run-ledger/testdata");
+        for (input_name, expected_name) in [
+            ("classify_input.json", "expected_classify_payload.json"),
+            (
+                "invalid_result_input.json",
+                "expected_invalid_result_payload.json",
+            ),
+            ("malformed_input.json", "expected_malformed_payload.json"),
+            (
+                "unknown_field_input.json",
+                "expected_unknown_field_payload.json",
+            ),
+        ] {
+            let input = std::fs::read(testdata.join(input_name)).unwrap();
+            let expected: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(testdata.join(expected_name)).unwrap())
+                    .unwrap_or_else(|err| panic!("bad fixture {expected_name}: {err}"));
+
+            let dir = tempfile::tempdir().unwrap();
+            let mut sink = VecCompactSink::default();
+            let outcome = execute_run_with(
+                RunConfig {
+                    plugin: plugin.clone(),
+                    input,
+                    sidecar_dir: dir.path().to_path_buf(),
+                    plugin_env_keys: vec![],
+                    redact_pointers: vec![],
+                    capture_plugin_stderr: false,
+                    limits: Limits::default(),
+                    run_id: Some(format!("test-lane-run-ledger-{input_name}")),
+                },
+                &FsAuditStore,
+                &mut sink,
+                CancellationToken::new(),
+            )
+            .await;
+
+            assert_eq!(outcome.exit_code, 0, "{input_name}");
+            assert_eq!(outcome.envelope.payload, expected, "{input_name}");
+            assert_eq!(
+                run_lane_ledger(
+                    &serde_json::from_slice(&std::fs::read(testdata.join(input_name)).unwrap())
+                        .unwrap()
+                ),
+                expected,
+                "{input_name}"
+            );
+        }
     }
 }
