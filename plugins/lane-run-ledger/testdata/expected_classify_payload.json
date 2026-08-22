@@ -1,0 +1,22 @@
+{
+  "schema_version": "lane-run-ledger-output.v0",
+  "app_version": "lane-run-ledger.v0",
+  "operation": "classify",
+  "valid": true,
+  "bucket_month": null,
+  "line": null,
+  "feedback_code": null,
+  "observation_count": 2,
+  "self_reported_count": 1,
+  "candidate_count": 1,
+  "candidates": [
+    {
+      "session_id": "s-big",
+      "session_ref": null,
+      "total_tokens": 900000,
+      "suggestion": "review_then_record_lane_event"
+    }
+  ],
+  "issue_count": 0,
+  "issues": []
+}

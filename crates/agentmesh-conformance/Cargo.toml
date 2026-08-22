@@ -16,6 +16,7 @@ tokio = { workspace = true }
 [dev-dependencies]
 agentmesh-multica-selector-shadow = { workspace = true }
 agentmesh-markdown-request-validator = { workspace = true }
+agentmesh-lane-run-ledger = { workspace = true }
 agentmesh-adapter-metadata-canonicalizer = { workspace = true }
 proptest = { workspace = true }
 
