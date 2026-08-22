@@ -510,7 +510,19 @@ mod lane_run_ledger_tests {
     use agentmesh_proto::{CompactOutcome, Limits};
 
     fn abs_plugin(name: &str) -> PathBuf {
-        let plugin = fixture_bin(name);
+        let mut plugin = fixture_bin(name);
+        if !plugin.exists() {
+            // cargo test does not build dependency packages' bin targets, so
+            // build the plugin on demand instead of silently skipping.
+            let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+            let status = Command::new(cargo)
+                .args(["build", "-p", name])
+                .current_dir(workspace_root())
+                .status()
+                .expect("failed to spawn cargo build for required plugin");
+            assert!(status.success(), "cargo build -p {name} failed");
+            plugin = fixture_bin(name);
+        }
         assert!(
             plugin.exists(),
             "required plugin binary missing: {} (build it before running conformance tests)",
