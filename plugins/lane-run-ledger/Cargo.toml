@@ -3,7 +3,7 @@ name = "agentmesh-lane-run-ledger"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-publish.workspace = true
+publish = false
 rust-version.workspace = true
 description = "Deterministic append-only execution-run ledger App plugin (unstable)"
 

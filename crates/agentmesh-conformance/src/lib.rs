@@ -4,6 +4,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 /// Resolve a built fixture binary from `CARGO_TARGET_DIR` / relative target.
+///
+/// Probes plain `debug`/`release` plus every `target/<triple>/{debug,release}`
+/// layout so tests find binaries under `cargo test --workspace --target <triple>`.
 pub fn fixture_bin(name: &str) -> PathBuf {
     let exe = if cfg!(windows) {
         format!("{name}.exe")
@@ -12,16 +15,26 @@ pub fn fixture_bin(name: &str) -> PathBuf {
     };
     let mut candidates = Vec::new();
     if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        candidates.push(PathBuf::from(dir).join("debug").join(&exe));
-        candidates.push(
-            PathBuf::from(std::env::var("CARGO_TARGET_DIR").unwrap())
-                .join("release")
-                .join(&exe),
-        );
+        let dir = PathBuf::from(dir);
+        candidates.push(dir.join("debug").join(&exe));
+        candidates.push(dir.join("release").join(&exe));
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                candidates.push(entry.path().join("debug").join(&exe));
+                candidates.push(entry.path().join("release").join(&exe));
+            }
+        }
     }
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    candidates.push(manifest_dir.join("../../target/debug").join(&exe));
-    candidates.push(manifest_dir.join("../../target/release").join(&exe));
+    let target_root = manifest_dir.join("../../target");
+    candidates.push(target_root.join("debug").join(&exe));
+    candidates.push(target_root.join("release").join(&exe));
+    if let Ok(entries) = std::fs::read_dir(&target_root) {
+        for entry in entries.flatten() {
+            candidates.push(entry.path().join("debug").join(&exe));
+            candidates.push(entry.path().join("release").join(&exe));
+        }
+    }
     candidates
         .into_iter()
         .find(|p| p.exists())
@@ -497,8 +510,13 @@ mod lane_run_ledger_tests {
     use agentmesh_proto::{CompactOutcome, Limits};
 
     fn abs_plugin(name: &str) -> PathBuf {
-        let p = fixture_bin(name);
-        std::fs::canonicalize(&p).unwrap_or(p)
+        let plugin = fixture_bin(name);
+        assert!(
+            plugin.exists(),
+            "required plugin binary missing: {} (build it before running conformance tests)",
+            plugin.display()
+        );
+        std::fs::canonicalize(&plugin).unwrap_or(plugin)
     }
 
     #[tokio::test]
@@ -575,6 +593,10 @@ mod lane_run_ledger_tests {
                 "expected_invalid_result_payload.json",
             ),
             ("malformed_input.json", "expected_malformed_payload.json"),
+            (
+                "unknown_field_input.json",
+                "expected_unknown_field_payload.json",
+            ),
         ] {
             let input = std::fs::read(testdata.join(input_name)).unwrap();
             let expected: serde_json::Value =

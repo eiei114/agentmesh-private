@@ -1,7 +1,7 @@
 {
   "schema_version": "lane-run-ledger-output.v0",
   "app_version": "lane-run-ledger.v0",
-  "operation": "record",
+  "operation": "explode",
   "valid": false,
   "bucket_month": null,
   "line": null,
@@ -12,6 +12,9 @@
   "candidates": [],
   "issue_count": 1,
   "issues": [
-    {"code": "input_invalid", "message": "input must match lane-run-ledger-input.v0 with operation record|classify"}
+    {
+      "code": "unknown_operation",
+      "message": "operation must be record or classify"
+    }
   ]
 }
