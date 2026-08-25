@@ -45,7 +45,7 @@ refs without running `git fetch` or changing any refs.
 For each recurrence, capture these bounded reports in the repair PR so reviewers
 can verify request generation resumed from the current upstream state:
 
-1. Pre-repair inspection with `python scripts/repair_sync_local_main_with_origin.py --check`, including the reported `before_behind` / `after_behind` distance and `repo_main_behind=present`.
+1. Pre-repair inspection with `python scripts/repair_sync_local_main_with_origin.py --check`, including the reported `before_behind` / `after_behind` distance and `repo_main_behind=present` when behind drift triggered the repair; an already-aligned no-op path may record `repo_main_behind=absent`.
 2. Repair run with `python scripts/repair_sync_local_main_with_origin.py`, including `repair_action`, `after_behind=0`, `repo_main_behind=absent`, and `repo_main_aligned=yes`.
 3. Post-repair inspection with `python scripts/repair_sync_local_main_with_origin.py --check`, confirming `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, and `repo_main_aligned=yes`.
 4. The local-only AgentMesh repository checks: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`. For CI matrix parity, Clippy and workspace tests run per target as `cargo clippy --workspace --all-targets --target <matrix.target> -- -D warnings` and `cargo test --workspace --target <matrix.target>`.
