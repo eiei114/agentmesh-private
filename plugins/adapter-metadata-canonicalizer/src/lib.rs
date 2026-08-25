@@ -63,6 +63,46 @@ const READINESS_REPORT_DEFAULT_FIELDS: &[&str] = &[
     "source_roadmap",
 ];
 
+/// Plugin/schema version exposed by the deterministic adapter parity report binary.
+pub const ADAPTER_PARITY_REPORT_VERSION: &str = "adapter-parity-report.v0";
+const PARITY_REPORT_INPUT_SCHEMA_VERSION: &str = "adapter-parity-report-input.v0";
+const PARITY_REPORT_OUTPUT_SCHEMA_VERSION: &str = "adapter-parity-report-compact.v0";
+const PARITY_REPORT_REQUEST_SCHEMA_VERSION: &str = "agentmesh-request.v0";
+const PARITY_CANONICAL_FIELDS: &[&str] = &[
+    "title",
+    "request_kind",
+    "issue_type",
+    "status",
+    "project_key",
+    "source_prd",
+    "source_design",
+    "source_roadmap",
+    "ready_for_multica",
+    "sequence_index",
+    "sequence_total",
+    "blocked_by",
+    "unblocks",
+];
+const PARITY_COMMON_RESULT_FIELDS: &[&str] = &[
+    "schema_version",
+    "app_version",
+    "adapter_version",
+    "request_schema_version",
+    "valid",
+    "canonical",
+    "evidence_digest",
+    "error_count",
+    "errors",
+    "issue_count",
+    "issues",
+    "diagnostic_model",
+    "diagnostic_count",
+    "diagnostics",
+    "deterministic_diagnostics",
+    "adapter_error",
+    "result_class",
+];
+
 const STABLE_FIELDS: &[&str] = &[
     "title",
     "request_kind",
@@ -103,6 +143,49 @@ struct AdapterPayload {
     #[serde(default)]
     request_id: Option<String>,
     metadata: Map<String, Value>,
+}
+
+#[derive(Debug, Clone)]
+struct ParitySide {
+    side: &'static str,
+    adapter_id: String,
+    request_id: Option<String>,
+    result: Map<String, Value>,
+}
+
+#[derive(Debug)]
+struct ParityReportParts {
+    request_id: Option<String>,
+    canonical_field_order: Vec<String>,
+    matching_canonical_fields: Vec<Value>,
+    canonical_mismatches: Vec<Value>,
+    matching_extension_paths: Vec<String>,
+    extension_mismatches: Vec<Value>,
+    adapters: Vec<Value>,
+    normalized_errors: Vec<Value>,
+    error_mismatches: Vec<Value>,
+    diagnostics: Vec<Value>,
+}
+
+impl ParityReportParts {
+    fn empty(
+        request_id: Option<String>,
+        canonical_field_order: Vec<String>,
+        diagnostics: Vec<Value>,
+    ) -> Self {
+        Self {
+            request_id,
+            canonical_field_order,
+            matching_canonical_fields: Vec::new(),
+            canonical_mismatches: Vec::new(),
+            matching_extension_paths: Vec::new(),
+            extension_mismatches: Vec::new(),
+            adapters: Vec::new(),
+            normalized_errors: Vec::new(),
+            error_mismatches: Vec::new(),
+            diagnostics,
+        }
+    }
 }
 
 /// Compare opaque plugin input and return deterministic compact JSON.
@@ -277,6 +360,759 @@ fn compact(
 
 fn issue(code: &str, message: impl Into<String>) -> Value {
     json!({"code": code, "message": message.into()})
+}
+
+/// Build a deterministic parity report for two validated adapter result payloads.
+///
+/// The report compares only the shared canonical projection as common contract
+/// data. Everything outside that projection is retained under adapter
+/// extensions and compared separately, so local and non-Multica runners can
+/// identify drift without importing tracker-specific types.
+pub fn build_adapter_parity_report_input(value: &Value) -> Value {
+    let mut diagnostics = Vec::new();
+    let mut request_id = None;
+    let mut canonical_field_order: Vec<String> = PARITY_CANONICAL_FIELDS
+        .iter()
+        .map(|field| (*field).to_string())
+        .collect();
+
+    let Some(object) = value.as_object() else {
+        diagnostics.push(parity_diagnostic(
+            "input_invalid",
+            "input must be a JSON object",
+            Some("/"),
+        ));
+        return adapter_parity_compact(ParityReportParts::empty(
+            request_id,
+            canonical_field_order,
+            diagnostics,
+        ));
+    };
+
+    if object.get("schema_version").and_then(Value::as_str)
+        != Some(PARITY_REPORT_INPUT_SCHEMA_VERSION)
+    {
+        diagnostics.push(parity_diagnostic(
+            "unsupported_schema_version",
+            format!("schema_version must be {PARITY_REPORT_INPUT_SCHEMA_VERSION}"),
+            Some("/schema_version"),
+        ));
+    }
+
+    request_id = required_parity_string(object, "request_id", "/request_id", &mut diagnostics);
+    if let Some(fields) = object.get("canonical_fields") {
+        canonical_field_order = parse_parity_field_order(fields, &mut diagnostics);
+    }
+
+    let left = parse_parity_side("left", object.get("left"), &mut diagnostics);
+    let right = parse_parity_side("right", object.get("right"), &mut diagnostics);
+
+    let Some(left) = left else {
+        return adapter_parity_compact(ParityReportParts::empty(
+            request_id,
+            canonical_field_order,
+            diagnostics,
+        ));
+    };
+    let Some(right) = right else {
+        return adapter_parity_compact(ParityReportParts::empty(
+            request_id,
+            canonical_field_order,
+            diagnostics,
+        ));
+    };
+
+    if left.adapter_id == right.adapter_id {
+        diagnostics.push(parity_diagnostic(
+            "adapter_id_duplicate",
+            "left.adapter_id and right.adapter_id must identify different adapters",
+            Some("/right/adapter_id"),
+        ));
+    }
+
+    let left_canonical =
+        parity_canonical_projection(&left, &canonical_field_order, &mut diagnostics);
+    let right_canonical =
+        parity_canonical_projection(&right, &canonical_field_order, &mut diagnostics);
+    let (matching_canonical_fields, canonical_mismatches) = compare_parity_canonical_fields(
+        request_id.as_deref(),
+        &left,
+        &right,
+        &left_canonical,
+        &right_canonical,
+        &canonical_field_order,
+    );
+
+    let left_extensions = parity_extension_projection(&left, &canonical_field_order);
+    let right_extensions = parity_extension_projection(&right, &canonical_field_order);
+    let left_extension_paths = parity_flatten_paths(&left_extensions);
+    let right_extension_paths = parity_flatten_paths(&right_extensions);
+    let (matching_extension_paths, extension_mismatches) =
+        compare_parity_extensions(&left_extension_paths, &right_extension_paths);
+
+    let (left_errors, left_error_signature) = parity_error_summary(&left);
+    let (right_errors, right_error_signature) = parity_error_summary(&right);
+    let mut error_mismatches = Vec::new();
+    if left_error_signature != right_error_signature {
+        error_mismatches.push(json!({
+            "code": "error_class_mismatch",
+            "left_signature": left_error_signature,
+            "right_signature": right_error_signature,
+        }));
+    }
+
+    let adapters = vec![
+        parity_adapter_summary(
+            &left,
+            left_extensions,
+            left_extension_paths.keys().cloned().collect(),
+        ),
+        parity_adapter_summary(
+            &right,
+            right_extensions,
+            right_extension_paths.keys().cloned().collect(),
+        ),
+    ];
+
+    adapter_parity_compact(ParityReportParts {
+        request_id,
+        canonical_field_order,
+        matching_canonical_fields,
+        canonical_mismatches,
+        matching_extension_paths,
+        extension_mismatches,
+        adapters,
+        normalized_errors: vec![left_errors, right_errors],
+        error_mismatches,
+        diagnostics,
+    })
+}
+
+fn parse_parity_side(
+    side: &'static str,
+    value: Option<&Value>,
+    diagnostics: &mut Vec<Value>,
+) -> Option<ParitySide> {
+    let path = format!("/{side}");
+    let Some(value) = value else {
+        diagnostics.push(parity_diagnostic(
+            "adapter_result_missing",
+            format!("{side} adapter result is required"),
+            Some(&path),
+        ));
+        return None;
+    };
+    let Some(object) = value.as_object() else {
+        diagnostics.push(parity_diagnostic(
+            "adapter_result_invalid",
+            format!("{side} must be a JSON object"),
+            Some(&path),
+        ));
+        return None;
+    };
+
+    let adapter_id = required_parity_string(
+        object,
+        "adapter_id",
+        &format!("/{side}/adapter_id"),
+        diagnostics,
+    );
+    let result_value = object.get("result");
+    let Some(result) = result_value.and_then(Value::as_object) else {
+        diagnostics.push(parity_diagnostic(
+            "adapter_result_invalid",
+            format!("{side}.result must be a JSON object"),
+            Some(&format!("/{side}/result")),
+        ));
+        return None;
+    };
+    let request_id = optional_parity_string(
+        object,
+        "request_id",
+        &format!("/{side}/request_id"),
+        diagnostics,
+    )
+    .or_else(|| adapter_result_request_id(result));
+
+    adapter_id.map(|adapter_id| ParitySide {
+        side,
+        adapter_id,
+        request_id,
+        result: result.clone(),
+    })
+}
+
+fn required_parity_string(
+    object: &Map<String, Value>,
+    field: &str,
+    path: &str,
+    diagnostics: &mut Vec<Value>,
+) -> Option<String> {
+    match object.get(field) {
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.clone()),
+        Some(_) => {
+            diagnostics.push(parity_diagnostic(
+                "required_field_invalid",
+                format!("{path} must be a non-empty string"),
+                Some(path),
+            ));
+            None
+        }
+        None => {
+            diagnostics.push(parity_diagnostic(
+                "required_field_missing",
+                format!("{path} is required"),
+                Some(path),
+            ));
+            None
+        }
+    }
+}
+
+fn optional_parity_string(
+    object: &Map<String, Value>,
+    field: &str,
+    path: &str,
+    diagnostics: &mut Vec<Value>,
+) -> Option<String> {
+    match object.get(field) {
+        Some(Value::String(value)) if !value.trim().is_empty() => Some(value.clone()),
+        Some(_) => {
+            diagnostics.push(parity_diagnostic(
+                "optional_field_invalid",
+                format!("{path} must be a non-empty string when provided"),
+                Some(path),
+            ));
+            None
+        }
+        None => None,
+    }
+}
+
+fn parse_parity_field_order(value: &Value, diagnostics: &mut Vec<Value>) -> Vec<String> {
+    let Some(items) = value.as_array() else {
+        diagnostics.push(parity_diagnostic(
+            "canonical_fields_invalid",
+            "canonical_fields must be an array of non-empty strings",
+            Some("/canonical_fields"),
+        ));
+        return PARITY_CANONICAL_FIELDS
+            .iter()
+            .map(|field| (*field).to_string())
+            .collect();
+    };
+
+    let mut fields = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (index, item) in items.iter().enumerate() {
+        let Some(field) = item.as_str().filter(|field| !field.trim().is_empty()) else {
+            diagnostics.push(parity_diagnostic(
+                "canonical_fields_invalid",
+                format!("canonical_fields[{index}] must be a non-empty string"),
+                Some(&format!("/canonical_fields/{index}")),
+            ));
+            continue;
+        };
+        if seen.insert(field.to_string()) {
+            fields.push(field.to_string());
+        } else {
+            diagnostics.push(parity_diagnostic(
+                "canonical_fields_duplicate",
+                format!("canonical field {field:?} is duplicated"),
+                Some(&format!("/canonical_fields/{index}")),
+            ));
+        }
+    }
+
+    if fields.is_empty() {
+        diagnostics.push(parity_diagnostic(
+            "canonical_fields_invalid",
+            "canonical_fields must contain at least one field",
+            Some("/canonical_fields"),
+        ));
+        PARITY_CANONICAL_FIELDS
+            .iter()
+            .map(|field| (*field).to_string())
+            .collect()
+    } else {
+        fields
+    }
+}
+
+fn adapter_result_request_id(result: &Map<String, Value>) -> Option<String> {
+    result
+        .get("request_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            result
+                .get("canonical")
+                .and_then(|canonical| canonical.get("request_id"))
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            result
+                .get("canonical")
+                .and_then(|canonical| canonical.get("fields"))
+                .and_then(|fields| fields.get("id"))
+                .and_then(Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_string)
+        })
+}
+
+fn parity_canonical_projection(
+    side: &ParitySide,
+    field_order: &[String],
+    diagnostics: &mut Vec<Value>,
+) -> BTreeMap<String, Value> {
+    let mut projection = BTreeMap::new();
+    let Some(canonical) = side.result.get("canonical") else {
+        diagnostics.push(parity_diagnostic(
+            "canonical_missing",
+            format!(
+                "{}.result.canonical is required for canonical parity",
+                side.side
+            ),
+            Some(&format!("/{}/result/canonical", side.side)),
+        ));
+        return projection;
+    };
+    let Some(canonical_object) = canonical.as_object() else {
+        diagnostics.push(parity_diagnostic(
+            "canonical_invalid",
+            format!("{}.result.canonical must be a JSON object", side.side),
+            Some(&format!("/{}/result/canonical", side.side)),
+        ));
+        return projection;
+    };
+
+    let field_source = canonical_object
+        .get("fields")
+        .and_then(Value::as_object)
+        .unwrap_or(canonical_object);
+    for field in field_order {
+        if let Some(value) = field_source.get(field) {
+            projection.insert(field.clone(), canonical_json(value));
+        }
+    }
+    projection
+}
+
+fn parity_canonical_extra(side: &ParitySide, field_order: &[String]) -> Map<String, Value> {
+    let mut extras = Map::new();
+    let field_set: BTreeSet<&str> = field_order.iter().map(String::as_str).collect();
+    let Some(canonical_object) = side.result.get("canonical").and_then(Value::as_object) else {
+        return extras;
+    };
+    let field_source = canonical_object
+        .get("fields")
+        .and_then(Value::as_object)
+        .unwrap_or(canonical_object);
+    for (key, value) in field_source {
+        if key == "schema_version" || key == "request_schema_version" || key == "field_order" {
+            continue;
+        }
+        if !field_set.contains(key.as_str()) {
+            extras.insert(key.clone(), canonical_json(value));
+        }
+    }
+    extras
+}
+
+fn compare_parity_canonical_fields(
+    request_id: Option<&str>,
+    left: &ParitySide,
+    right: &ParitySide,
+    left_canonical: &BTreeMap<String, Value>,
+    right_canonical: &BTreeMap<String, Value>,
+    field_order: &[String],
+) -> (Vec<Value>, Vec<Value>) {
+    let mut matches = Vec::new();
+    let mut mismatches = Vec::new();
+
+    compare_parity_request_ids(request_id, left, right, &mut mismatches);
+
+    for field in field_order {
+        match (left_canonical.get(field), right_canonical.get(field)) {
+            (Some(left_value), Some(right_value)) if left_value == right_value => {
+                matches.push(json!({"field": field, "value": left_value}));
+            }
+            (Some(left_value), Some(right_value)) => mismatches.push(json!({
+                "code": "canonical_value_mismatch",
+                "field": field,
+                "left": left_value,
+                "right": right_value,
+            })),
+            (Some(left_value), None) => mismatches.push(json!({
+                "code": "canonical_presence_mismatch",
+                "field": field,
+                "left_present": true,
+                "right_present": false,
+                "left": left_value,
+                "right": Value::Null,
+            })),
+            (None, Some(right_value)) => mismatches.push(json!({
+                "code": "canonical_presence_mismatch",
+                "field": field,
+                "left_present": false,
+                "right_present": true,
+                "left": Value::Null,
+                "right": right_value,
+            })),
+            (None, None) => {}
+        }
+    }
+
+    (matches, mismatches)
+}
+
+fn compare_parity_request_ids(
+    request_id: Option<&str>,
+    left: &ParitySide,
+    right: &ParitySide,
+    mismatches: &mut Vec<Value>,
+) {
+    if let (Some(left_id), Some(right_id)) = (&left.request_id, &right.request_id) {
+        if left_id != right_id {
+            mismatches.push(json!({
+                "code": "request_id_mismatch",
+                "field": "request_id",
+                "left": left_id,
+                "right": right_id,
+            }));
+        }
+    }
+
+    for side in [left, right] {
+        let Some(expected) = request_id else {
+            continue;
+        };
+        if let Some(actual) = &side.request_id {
+            if actual != expected {
+                mismatches.push(json!({
+                    "code": "request_id_mismatch",
+                    "field": "request_id",
+                    "side": side.side,
+                    "expected": expected,
+                    "actual": actual,
+                }));
+            }
+        }
+    }
+}
+
+fn parity_extension_projection(side: &ParitySide, field_order: &[String]) -> Value {
+    let common_fields: BTreeSet<&str> = PARITY_COMMON_RESULT_FIELDS.iter().copied().collect();
+    let mut extensions = Map::new();
+    for (key, value) in &side.result {
+        if common_fields.contains(key.as_str()) {
+            continue;
+        }
+        extensions.insert(key.clone(), canonical_json(value));
+    }
+
+    let canonical_extra = parity_canonical_extra(side, field_order);
+    if !canonical_extra.is_empty() {
+        extensions.insert("canonical_extra".into(), Value::Object(canonical_extra));
+    }
+
+    Value::Object(extensions)
+}
+
+fn parity_flatten_paths(value: &Value) -> BTreeMap<String, Value> {
+    let mut paths = BTreeMap::new();
+    if let Some(object) = value.as_object() {
+        for (key, child) in object {
+            flatten_extension_path(key, child, &mut paths);
+        }
+    }
+    paths
+}
+
+fn flatten_extension_path(path: &str, value: &Value, paths: &mut BTreeMap<String, Value>) {
+    match value {
+        Value::Object(object) if !object.is_empty() => {
+            for (key, child) in object {
+                flatten_extension_path(&format!("{path}.{key}"), child, paths);
+            }
+        }
+        _ => {
+            paths.insert(path.to_string(), canonical_json(value));
+        }
+    }
+}
+
+fn compare_parity_extensions(
+    left: &BTreeMap<String, Value>,
+    right: &BTreeMap<String, Value>,
+) -> (Vec<String>, Vec<Value>) {
+    let mut matches = Vec::new();
+    let mut mismatches = Vec::new();
+    let keys: BTreeSet<&String> = left.keys().chain(right.keys()).collect();
+    for key in keys {
+        match (left.get(key), right.get(key)) {
+            (Some(left_value), Some(right_value)) if left_value == right_value => {
+                matches.push(key.clone());
+            }
+            (Some(left_value), Some(right_value)) => mismatches.push(json!({
+                "code": "extension_value_mismatch",
+                "path": key,
+                "left": left_value,
+                "right": right_value,
+            })),
+            (Some(left_value), None) => mismatches.push(json!({
+                "code": "extension_presence_mismatch",
+                "path": key,
+                "left_present": true,
+                "right_present": false,
+                "left": left_value,
+                "right": Value::Null,
+            })),
+            (None, Some(right_value)) => mismatches.push(json!({
+                "code": "extension_presence_mismatch",
+                "path": key,
+                "left_present": false,
+                "right_present": true,
+                "left": Value::Null,
+                "right": right_value,
+            })),
+            (None, None) => {}
+        }
+    }
+    (matches, mismatches)
+}
+
+fn parity_error_summary(side: &ParitySide) -> (Value, Vec<String>) {
+    let result_class = parity_result_class(&side.result);
+    let valid = side.result.get("valid").and_then(Value::as_bool);
+    let mut records: BTreeMap<(String, String, String, String), u64> = BTreeMap::new();
+    collect_error_records(side.result.get("errors"), "adapter", &mut records);
+    collect_error_records(side.result.get("issues"), "adapter", &mut records);
+    collect_error_records(side.result.get("diagnostics"), "adapter", &mut records);
+    collect_error_records(
+        side.result
+            .get("deterministic_diagnostics")
+            .and_then(|diagnostics| diagnostics.get("items")),
+        "adapter",
+        &mut records,
+    );
+    collect_error_records(
+        side.result
+            .get("adapter_error")
+            .and_then(|adapter_error| adapter_error.get("errors")),
+        "adapter",
+        &mut records,
+    );
+
+    let records: Vec<Value> = records
+        .iter()
+        .map(|((taxonomy_code, code, severity, source), count)| {
+            json!({
+                "taxonomy_code": taxonomy_code,
+                "code": code,
+                "severity": severity,
+                "source": source,
+                "count": count,
+            })
+        })
+        .collect();
+    let mut signature = vec![format!("result_class={result_class}")];
+    signature.extend(records.iter().map(|record| {
+        format!(
+            "{}|{}|{}|{}|{}",
+            record["taxonomy_code"].as_str().unwrap_or("unknown"),
+            record["code"].as_str().unwrap_or("unknown"),
+            record["severity"].as_str().unwrap_or("error"),
+            record["source"].as_str().unwrap_or("adapter"),
+            record["count"].as_u64().unwrap_or(0),
+        )
+    }));
+
+    (
+        json!({
+            "side": side.side,
+            "adapter_id": side.adapter_id,
+            "valid": valid,
+            "result_class": result_class,
+            "error_count": records.iter().map(|record| record["count"].as_u64().unwrap_or(0)).sum::<u64>(),
+            "records": records,
+        }),
+        signature,
+    )
+}
+
+fn parity_result_class(result: &Map<String, Value>) -> String {
+    if let Some(class) = result
+        .get("result_class")
+        .and_then(Value::as_str)
+        .filter(|class| !class.trim().is_empty())
+    {
+        return class.to_string();
+    }
+    match result.get("valid").and_then(Value::as_bool) {
+        Some(true) => "success".into(),
+        Some(false) if has_error_records(result) => "adapter_error".into(),
+        Some(false) => "malformed_input".into(),
+        None => "unknown".into(),
+    }
+}
+
+fn has_error_records(result: &Map<String, Value>) -> bool {
+    ["errors", "issues", "diagnostics"].iter().any(|key| {
+        result
+            .get(*key)
+            .and_then(Value::as_array)
+            .is_some_and(|items| !items.is_empty())
+    }) || result
+        .get("deterministic_diagnostics")
+        .and_then(|diagnostics| diagnostics.get("items"))
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+        || result
+            .get("adapter_error")
+            .and_then(|adapter_error| adapter_error.get("errors"))
+            .and_then(Value::as_array)
+            .is_some_and(|items| !items.is_empty())
+}
+
+fn collect_error_records(
+    value: Option<&Value>,
+    default_source: &str,
+    records: &mut BTreeMap<(String, String, String, String), u64>,
+) {
+    let Some(items) = value.and_then(Value::as_array) else {
+        return;
+    };
+    for item in items {
+        let Some(record) = item.as_object() else {
+            continue;
+        };
+        let code = record
+            .get("code")
+            .and_then(Value::as_str)
+            .filter(|code| !code.trim().is_empty())
+            .unwrap_or("unknown")
+            .to_string();
+        let taxonomy_code = record
+            .get("taxonomy_code")
+            .and_then(Value::as_str)
+            .filter(|code| !code.trim().is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| parity_taxonomy_code(&code));
+        let severity = record
+            .get("severity")
+            .and_then(Value::as_str)
+            .filter(|severity| !severity.trim().is_empty())
+            .unwrap_or("error")
+            .to_string();
+        let source = record
+            .get("source")
+            .and_then(Value::as_str)
+            .filter(|source| !source.trim().is_empty())
+            .unwrap_or(default_source)
+            .to_string();
+        *records
+            .entry((taxonomy_code, code, severity, source))
+            .or_insert(0) += 1;
+    }
+}
+
+fn parity_taxonomy_code(code: &str) -> String {
+    match code {
+        "AGENTMESH_INPUT_SCHEMA_INVALID" | "input_invalid" | "unsupported_schema_version" => {
+            "request.input_schema_invalid".into()
+        }
+        "AGENTMESH_MARKDOWN_INVALID" | "markdown_invalid" => "request.markdown_invalid".into(),
+        "AGENTMESH_FIELD_REQUIRED" | "field_required" | "required_field_missing" => {
+            "request.field_required".into()
+        }
+        "AGENTMESH_CAPABILITY_UNKNOWN" | "capability_unknown" => {
+            "request.capability_unknown".into()
+        }
+        "AGENTMESH_BOUNDARY_EXCEEDED" | "boundary_exceeded" => "request.boundary_exceeded".into(),
+        "adapter_parity_mismatch" | "canonical_value_mismatch" | "extension_value_mismatch" => {
+            "adapter.parity_mismatch".into()
+        }
+        "adapter_timeout" => "adapter.timeout".into(),
+        "adapter_rate_limited" => "adapter.rate_limited".into(),
+        "adapter_auth_failed" => "adapter.auth_failed".into(),
+        "AGENTMESH_EXTERNAL_ADAPTER_FAILURE" | "adapter_external_failure" => {
+            "adapter.external_failure".into()
+        }
+        other => other.to_ascii_lowercase().replace('_', "."),
+    }
+}
+
+fn parity_adapter_summary(
+    side: &ParitySide,
+    extensions: Value,
+    extension_paths: Vec<String>,
+) -> Value {
+    json!({
+        "side": side.side,
+        "adapter_id": side.adapter_id,
+        "request_id": side.request_id,
+        "schema_version": side.result.get("schema_version").and_then(Value::as_str),
+        "adapter_version": side
+            .result
+            .get("adapter_version")
+            .or_else(|| side.result.get("app_version"))
+            .and_then(Value::as_str),
+        "extension_paths": extension_paths,
+        "extensions": extensions,
+    })
+}
+
+fn adapter_parity_compact(parts: ParityReportParts) -> Value {
+    let mismatch_count = parts.canonical_mismatches.len()
+        + parts.extension_mismatches.len()
+        + parts.error_mismatches.len();
+    let valid = parts.diagnostics.is_empty() && mismatch_count == 0;
+    let parity_status = if parts.diagnostics.is_empty() {
+        if mismatch_count == 0 {
+            "match"
+        } else {
+            "mismatch"
+        }
+    } else {
+        "input_invalid"
+    };
+
+    json!({
+        "schema_version": PARITY_REPORT_OUTPUT_SCHEMA_VERSION,
+        "app_version": ADAPTER_PARITY_REPORT_VERSION,
+        "request_schema_version": PARITY_REPORT_REQUEST_SCHEMA_VERSION,
+        "valid": valid,
+        "parity_status": parity_status,
+        "request_id": parts.request_id,
+        "canonical_field_order": parts.canonical_field_order,
+        "matching_canonical_fields": parts.matching_canonical_fields,
+        "canonical_mismatch_count": parts.canonical_mismatches.len(),
+        "canonical_mismatches": parts.canonical_mismatches,
+        "matching_extension_paths": parts.matching_extension_paths,
+        "extension_mismatch_count": parts.extension_mismatches.len(),
+        "extension_mismatches": parts.extension_mismatches,
+        "normalized_errors": parts.normalized_errors,
+        "error_mismatch_count": parts.error_mismatches.len(),
+        "error_mismatches": parts.error_mismatches,
+        "adapters": parts.adapters,
+        "mismatch_count": mismatch_count,
+        "diagnostic_count": parts.diagnostics.len(),
+        "diagnostics": parts.diagnostics,
+    })
+}
+
+fn parity_diagnostic(code: &str, message: impl Into<String>, path: Option<&str>) -> Value {
+    json!({
+        "code": code,
+        "severity": "error",
+        "path": path,
+        "message": message.into(),
+    })
 }
 
 /// Evaluate deterministic public 0.x readiness evidence.
@@ -3084,6 +3920,101 @@ mod tests {
                 "{input_name} should match {expected_name}"
             );
         }
+    }
+
+    #[test]
+    fn adapter_parity_report_fixtures_are_deterministic() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        for (input_name, expected_name) in [
+            (
+                "adapter_parity_full_input.json",
+                "expected_adapter_parity_full_payload.json",
+            ),
+            (
+                "adapter_parity_canonical_mismatch_input.json",
+                "expected_adapter_parity_canonical_mismatch_payload.json",
+            ),
+            (
+                "adapter_parity_extension_mismatch_input.json",
+                "expected_adapter_parity_extension_mismatch_payload.json",
+            ),
+            (
+                "adapter_parity_invalid_input.json",
+                "expected_adapter_parity_invalid_payload.json",
+            ),
+        ] {
+            let input: Value =
+                serde_json::from_slice(&std::fs::read(root.join(input_name)).unwrap()).unwrap();
+            let expected: Value =
+                serde_json::from_slice(&std::fs::read(root.join(expected_name)).unwrap()).unwrap();
+            assert_eq!(
+                build_adapter_parity_report_input(&input),
+                expected,
+                "{input_name} should match {expected_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn adapter_parity_error_classes_are_reported_separately() {
+        let output = build_adapter_parity_report_input(&json!({
+            "schema_version": PARITY_REPORT_INPUT_SCHEMA_VERSION,
+            "request_id": "REQ-001",
+            "canonical_fields": ["title"],
+            "left": {
+                "adapter_id": "markdown",
+                "request_id": "REQ-001",
+                "result": {
+                    "valid": true,
+                    "canonical": {"title": "Add parity report"}
+                }
+            },
+            "right": {
+                "adapter_id": "local",
+                "request_id": "REQ-001",
+                "result": {
+                    "valid": false,
+                    "canonical": {"title": "Add parity report"},
+                    "errors": [{"code": "required_field_missing", "message": "status is required"}]
+                }
+            }
+        }));
+
+        assert_eq!(output["valid"], false);
+        assert_eq!(output["canonical_mismatch_count"], 0);
+        assert_eq!(output["extension_mismatch_count"], 0);
+        assert_eq!(
+            output["error_mismatches"][0]["code"],
+            "error_class_mismatch"
+        );
+        assert_eq!(
+            output["normalized_errors"][1]["records"][0]["taxonomy_code"],
+            "request.field_required"
+        );
+    }
+
+    #[test]
+    fn adapter_parity_success_serializes_byte_identically_for_object_order() {
+        let left_order = json!({
+            "schema_version": PARITY_REPORT_INPUT_SCHEMA_VERSION,
+            "request_id": "REQ-001",
+            "canonical_fields": ["title", "status"],
+            "left": {"adapter_id": "a", "result": {"valid": true, "canonical": {"title": "App", "status": "ready"}, "extension": {"b": 2, "a": 1}}},
+            "right": {"adapter_id": "b", "result": {"valid": true, "canonical": {"title": "App", "status": "ready"}, "extension": {"a": 1, "b": 2}}}
+        });
+        let right_order = json!({
+            "right": {"result": {"extension": {"b": 2, "a": 1}, "canonical": {"status": "ready", "title": "App"}, "valid": true}, "adapter_id": "b"},
+            "left": {"result": {"extension": {"a": 1, "b": 2}, "canonical": {"status": "ready", "title": "App"}, "valid": true}, "adapter_id": "a"},
+            "canonical_fields": ["title", "status"],
+            "request_id": "REQ-001",
+            "schema_version": PARITY_REPORT_INPUT_SCHEMA_VERSION
+        });
+
+        let left_bytes = serde_json::to_string(&build_adapter_parity_report_input(&left_order))
+            .expect("left output serializes");
+        let right_bytes = serde_json::to_string(&build_adapter_parity_report_input(&right_order))
+            .expect("right output serializes");
+        assert_eq!(left_bytes, right_bytes);
     }
 
     #[test]

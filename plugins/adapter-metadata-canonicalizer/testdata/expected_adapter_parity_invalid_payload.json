@@ -1,0 +1,43 @@
+{
+  "adapters": [],
+  "app_version": "adapter-parity-report.v0",
+  "canonical_field_order": [
+    "title",
+    "request_kind",
+    "issue_type",
+    "status",
+    "project_key",
+    "source_prd",
+    "source_design",
+    "source_roadmap",
+    "ready_for_multica",
+    "sequence_index",
+    "sequence_total",
+    "blocked_by",
+    "unblocks"
+  ],
+  "canonical_mismatch_count": 0,
+  "canonical_mismatches": [],
+  "diagnostic_count": 1,
+  "diagnostics": [
+    {
+      "code": "adapter_result_missing",
+      "message": "right adapter result is required",
+      "path": "/right",
+      "severity": "error"
+    }
+  ],
+  "error_mismatch_count": 0,
+  "error_mismatches": [],
+  "extension_mismatch_count": 0,
+  "extension_mismatches": [],
+  "matching_canonical_fields": [],
+  "matching_extension_paths": [],
+  "mismatch_count": 0,
+  "normalized_errors": [],
+  "parity_status": "input_invalid",
+  "request_id": "REQ-001",
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "adapter-parity-report-compact.v0",
+  "valid": false
+}

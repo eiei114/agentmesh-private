@@ -1,0 +1,43 @@
+{
+  "schema_version": "adapter-parity-report-input.v0",
+  "request_id": "REQ-001",
+  "canonical_fields": ["title", "request_kind", "status"],
+  "left": {
+    "adapter_id": "markdown",
+    "request_id": "REQ-001",
+    "result": {
+      "schema_version": "non-multica-request-adapter-compact.v0",
+      "adapter_version": "non-multica-request-adapter.v0",
+      "request_schema_version": "agentmesh-request.v0",
+      "valid": true,
+      "canonical": {
+        "title": "Add parity report",
+        "request_kind": "app",
+        "status": "ready"
+      },
+      "adapter_specific": {
+        "queue": "local",
+        "labels": ["adapter", "parity"]
+      }
+    }
+  },
+  "right": {
+    "adapter_id": "local",
+    "request_id": "REQ-001",
+    "result": {
+      "schema_version": "local-tracker-adapter-compact.v0",
+      "adapter_version": "local-tracker-adapter.v0",
+      "request_schema_version": "agentmesh-request.v0",
+      "valid": true,
+      "canonical": {
+        "status": "ready",
+        "request_kind": "app",
+        "title": "Add parity report"
+      },
+      "adapter_specific": {
+        "labels": ["adapter", "parity"],
+        "queue": "local"
+      }
+    }
+  }
+}

@@ -20,6 +20,8 @@ The request Markdown normalizer App (`agentmesh-request-markdown-normalizer`) em
 
 The adapter metadata canonicalizer App (`agentmesh-adapter-metadata-canonicalizer`) compares two adapter request metadata payloads, promotes only equal stable fields into a deterministic canonical subset, and preserves adapter-specific extensions separately.
 
+The adapter parity report App (`agentmesh-adapter-parity-report`) compares two validated adapter result payloads for one request and separates canonical-field drift, adapter extension drift, and normalized error-class drift in a compact deterministic report.
+
 The adapter evidence envelope App (`agentmesh-adapter-evidence-envelope`) normalizes validation/execution evidence into stable request id, capability hash, adapter identity, result class, diagnostics, and replay transcript digest fields.
 
 The adapter evidence traceability App (`agentmesh-adapter-evidence-traceability`) emits a deterministic request → parser → adapter → evidence correlation graph with canonical stage digests, artifact references, and explicit missing-data conditions.
@@ -174,6 +176,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/local-tracker-adapter/` — local taskfile tracker adapter manifest + IO schemas
 - `apps/local-runner-adapter/` — deterministic local-runner compatibility envelope manifest + IO schemas
 - `apps/adapter-metadata-canonicalizer/` — adapter metadata comparison/canonicalization manifest + IO schemas
+- `apps/adapter-parity-report/` — deterministic adapter result parity report manifest + IO schemas
 - `apps/lane-run-ledger/` — deterministic execution-run ledger record + orphan classification manifest + IO schemas
 - `apps/adapter-evidence-envelope/` — deterministic adapter evidence envelope manifest + IO schemas
 - `apps/adapter-evidence-traceability/` — deterministic adapter evidence traceability graph manifest + IO schemas
@@ -195,6 +198,7 @@ Internal / test-only:
 - `agentmesh-local-tracker-adapter` — local taskfile tracker adapter contract (plugin-owned types only)
 - `agentmesh-local-runner-adapter` — local-runner compatibility envelope contract (plugin-owned types only)
 - `agentmesh-adapter-metadata-canonicalizer` — deterministic adapter metadata drift comparison and canonical subset emitter (plugin-owned types only)
+- `agentmesh-adapter-parity-report` — deterministic adapter result parity report binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-adapter-evidence-envelope` — deterministic adapter evidence envelope binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-adapter-evidence-traceability` — deterministic adapter evidence traceability binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-adapter-error-contract` — shared adapter error boundary contract binary (`markdown-request-validator` package)
