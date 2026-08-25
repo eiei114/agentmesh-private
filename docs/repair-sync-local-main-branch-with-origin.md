@@ -1,6 +1,6 @@
 # Repair request: sync local main branch with origin
 
-Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555
+Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555, DOT-1578
 
 ## Failure code
 
@@ -45,7 +45,7 @@ refs without running `git fetch` or changing any refs.
 For each recurrence, capture these bounded reports in the repair PR so reviewers
 can verify request generation resumed from the current upstream state:
 
-1. Pre-repair inspection with `python scripts/repair_sync_local_main_with_origin.py --check`, including the reported `before_behind` / `after_behind` distance and `repo_main_behind=present`.
+1. Pre-repair inspection with `python scripts/repair_sync_local_main_with_origin.py --check`, including the reported `before_behind` / `after_behind` distance and `repo_main_behind=present` when behind drift triggered the repair; an already-aligned no-op path may record `repo_main_behind=absent`.
 2. Repair run with `python scripts/repair_sync_local_main_with_origin.py`, including `repair_action`, `after_behind=0`, `repo_main_behind=absent`, and `repo_main_aligned=yes`.
 3. Post-repair inspection with `python scripts/repair_sync_local_main_with_origin.py --check`, confirming `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, and `repo_main_aligned=yes`.
 4. The local-only AgentMesh repository checks: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`. For CI matrix parity, Clippy and workspace tests run per target as `cargo clippy --workspace --all-targets --target <matrix.target> -- -D warnings` and `cargo test --workspace --target <matrix.target>`.
@@ -75,6 +75,22 @@ ad-hoc Git command sequence.
 - repair run: `before_ahead=0`, `before_behind=1`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`
 - repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/codex-release-engineer/9fc5dfc3e08f`, `current_head=4416f08fae5fc40a82ed00af90f5f22486703b2e`, `branch=main`, `head=4416f08fae5fc40a82ed00af90f5f22486703b2e`, `ahead=0`, `behind=0`, `dirty_count=0`
+- post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
+
+## DOT-1578 execution record
+
+- request_id: `DOT-1578`
+- source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-08-22-repair-local-maintenance-branch-behind-origin-main.md`
+- derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-08-22-repair-local-maintenance-branch-behind-origin-main.md`
+- dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-08-22-repair-local-maintenance-branch-behind-origin-main.md`
+- stable scope: `agentmesh:repair:repo_main_behind:v11`
+- request status: `ready_for_multica=true`, `status=ready`
+- audited branch: `main`
+- trigger evidence: DOT-1578 was materialized from a `repo_main_behind` report that said the local maintenance branch was 8 commits behind `origin/main`.
+- live pre-repair check: `before_ahead=0`, `before_behind=0`, `after_behind=0`, `repo_main_behind=absent`, `request_action=seed_app_requests`
+- repair run: `before_ahead=0`, `before_behind=0`, `repair_action=already_aligned`, `after_ahead=0`, `after_behind=0`
+- repair path: no branch movement was required; DOT-1578 reached implementation after DOT-1517 had already fast-forwarded the shared local `main` ref and merged the evidence PR.
+- post-repair repo metadata: `current_branch=agent/codex-release-engineer/30570e6a1116`, `current_head=4416f08fae5fc40a82ed00af90f5f22486703b2e`, `branch=main`, `head=4416f08fae5fc40a82ed00af90f5f22486703b2e`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
 ## DOT-1517 execution record
