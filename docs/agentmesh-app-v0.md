@@ -231,6 +231,42 @@ agentmesh app run \
 
 Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-adapter-metadata-canonicalizer`.
 
+## Adapter parity report App
+
+`apps/adapter-parity-report/agentmesh-app.toml` declares a tool-neutral parity App for comparing two already-validated adapter result payloads for one request. The input supplies a shared `request_id`, an optional ordered `canonical_fields` projection, and left/right adapter result wrappers:
+
+```json
+{
+  "schema_version": "adapter-parity-report-input.v0",
+  "request_id": "REQ-001",
+  "canonical_fields": ["title", "request_kind", "status"],
+  "left": {"adapter_id": "markdown", "result": {"valid": true, "canonical": {"title": "Add parity report", "request_kind": "app", "status": "ready"}}},
+  "right": {"adapter_id": "local", "result": {"valid": true, "canonical": {"title": "Add parity report", "request_kind": "app", "status": "ready"}}}
+}
+```
+
+The compact payload is `adapter-parity-report-compact.v0`. It emits fixed sections for `matching_canonical_fields`, `canonical_mismatches`, `matching_extension_paths`, `extension_mismatches`, `normalized_errors`, and `error_mismatches`. Canonical fields are compared only from the declared/common projection; all other adapter result keys, plus non-projected canonical fields, are retained under `adapters[].extensions` and compared by stable extension paths. Error-like records from `errors`, `issues`, `diagnostics`, `deterministic_diagnostics.items`, and nested `adapter_error.errors` are reduced to deterministic taxonomy/code/severity/source classes before comparison.
+
+A local or non-Multica runner can consume the report by first checking `valid` and `parity_status`, then reading the mismatch buckets independently: `canonical_*` means shared request contract drift, `extension_*` means adapter-owned payload drift, and `error_*` means normalized failure-class drift. The report does not require Multica metadata, credentials, or live tracker state; callers own retention of the compact JSON and any host sidecar.
+
+Development smoke:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-adapter-metadata-canonicalizer
+agentmesh app validate \
+  --manifest apps/adapter-parity-report/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/adapter-parity-report/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/adapter-metadata-canonicalizer/testdata/adapter_parity_full_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-adapter-parity-report
+```
+
+Pinned production smoke uses the same manifest/input without `--mode development --dev-plugin` after installing a verified bundle that contains `agentmesh-adapter-parity-report`.
+
 ## Adapter evidence envelope App
 
 `apps/adapter-evidence-envelope/agentmesh-app.toml` declares an adapter-neutral App for normalizing validation and execution evidence. It consumes a request id, phase (`validation` or `execution`), adapter identity, capability descriptor, result class, deterministic diagnostics, and replay transcript facts:

@@ -1,0 +1,94 @@
+{
+  "adapters": [
+    {
+      "adapter_id": "markdown",
+      "adapter_version": "non-multica-request-adapter.v0",
+      "extension_paths": [
+        "adapter_specific.queue"
+      ],
+      "extensions": {
+        "adapter_specific": {
+          "queue": "local"
+        }
+      },
+      "request_id": "REQ-001",
+      "schema_version": "non-multica-request-adapter-compact.v0",
+      "side": "left"
+    },
+    {
+      "adapter_id": "local",
+      "adapter_version": "local-tracker-adapter.v0",
+      "extension_paths": [
+        "adapter_specific.queue"
+      ],
+      "extensions": {
+        "adapter_specific": {
+          "queue": "remote"
+        }
+      },
+      "request_id": "REQ-001",
+      "schema_version": "local-tracker-adapter-compact.v0",
+      "side": "right"
+    }
+  ],
+  "app_version": "adapter-parity-report.v0",
+  "canonical_field_order": [
+    "title",
+    "request_kind",
+    "status"
+  ],
+  "canonical_mismatch_count": 0,
+  "canonical_mismatches": [],
+  "diagnostic_count": 0,
+  "diagnostics": [],
+  "error_mismatch_count": 0,
+  "error_mismatches": [],
+  "extension_mismatch_count": 1,
+  "extension_mismatches": [
+    {
+      "code": "extension_value_mismatch",
+      "left": "local",
+      "path": "adapter_specific.queue",
+      "right": "remote"
+    }
+  ],
+  "matching_canonical_fields": [
+    {
+      "field": "title",
+      "value": "Add parity report"
+    },
+    {
+      "field": "request_kind",
+      "value": "app"
+    },
+    {
+      "field": "status",
+      "value": "ready"
+    }
+  ],
+  "matching_extension_paths": [],
+  "mismatch_count": 1,
+  "normalized_errors": [
+    {
+      "adapter_id": "markdown",
+      "error_count": 0,
+      "records": [],
+      "result_class": "success",
+      "side": "left",
+      "valid": true
+    },
+    {
+      "adapter_id": "local",
+      "error_count": 0,
+      "records": [],
+      "result_class": "success",
+      "side": "right",
+      "valid": true
+    }
+  ],
+  "parity_status": "mismatch",
+  "request_id": "REQ-001",
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "adapter-parity-report-compact.v0",
+  "valid": false
+}

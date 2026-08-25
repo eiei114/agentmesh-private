@@ -1,0 +1,17 @@
+schema_version = "agentmesh-app.v0"
+name = "adapter-parity-report"
+protocol_version = "2026-07-15"
+
+[plugin]
+logical_name = "agentmesh-adapter-parity-report"
+
+[schemas]
+input = "schemas/adapter-parity-report-input-v0.schema.json"
+output = "schemas/adapter-parity-report-compact-v0.schema.json"
+
+[sidecar]
+retention_class = "owner_local"
+capture_plugin_stderr = false
+
+[conformance]
+cargo_package = "agentmesh-adapter-metadata-canonicalizer"

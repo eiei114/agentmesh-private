@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter-parity-report-compact.v0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "app_version",
+    "request_schema_version",
+    "valid",
+    "parity_status",
+    "request_id",
+    "canonical_field_order",
+    "matching_canonical_fields",
+    "canonical_mismatch_count",
+    "canonical_mismatches",
+    "matching_extension_paths",
+    "extension_mismatch_count",
+    "extension_mismatches",
+    "normalized_errors",
+    "error_mismatch_count",
+    "error_mismatches",
+    "adapters",
+    "mismatch_count",
+    "diagnostic_count",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": { "const": "adapter-parity-report-compact.v0" },
+    "app_version": { "const": "adapter-parity-report.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "valid": { "type": "boolean" },
+    "parity_status": { "enum": ["match", "mismatch", "input_invalid"] },
+    "request_id": { "type": ["string", "null"] },
+    "canonical_field_order": { "type": "array", "items": { "type": "string" } },
+    "matching_canonical_fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["field", "value"],
+        "properties": {
+          "field": { "type": "string" },
+          "value": true
+        }
+      }
+    },
+    "canonical_mismatch_count": { "type": "integer", "minimum": 0 },
+    "canonical_mismatches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "field"],
+        "properties": {
+          "code": { "enum": ["request_id_mismatch", "canonical_value_mismatch", "canonical_presence_mismatch"] },
+          "field": { "type": "string" },
+          "side": { "type": "string" },
+          "expected": true,
+          "actual": true,
+          "left_present": { "type": "boolean" },
+          "right_present": { "type": "boolean" },
+          "left": true,
+          "right": true
+        }
+      }
+    },
+    "matching_extension_paths": { "type": "array", "items": { "type": "string" } },
+    "extension_mismatch_count": { "type": "integer", "minimum": 0 },
+    "extension_mismatches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "path"],
+        "properties": {
+          "code": { "enum": ["extension_value_mismatch", "extension_presence_mismatch"] },
+          "path": { "type": "string" },
+          "left_present": { "type": "boolean" },
+          "right_present": { "type": "boolean" },
+          "left": true,
+          "right": true
+        }
+      }
+    },
+    "normalized_errors": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/error_summary" }
+    },
+    "error_mismatch_count": { "type": "integer", "minimum": 0 },
+    "error_mismatches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "left_signature", "right_signature"],
+        "properties": {
+          "code": { "const": "error_class_mismatch" },
+          "left_signature": { "type": "array", "items": { "type": "string" } },
+          "right_signature": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "adapters": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/adapter_summary" }
+    },
+    "mismatch_count": { "type": "integer", "minimum": 0 },
+    "diagnostic_count": { "type": "integer", "minimum": 0 },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "adapter_summary": {
+      "type": "object",
+      "required": ["side", "adapter_id", "request_id", "schema_version", "adapter_version", "extension_paths", "extensions"],
+      "properties": {
+        "side": { "enum": ["left", "right"] },
+        "adapter_id": { "type": "string" },
+        "request_id": { "type": ["string", "null"] },
+        "schema_version": { "type": ["string", "null"] },
+        "adapter_version": { "type": ["string", "null"] },
+        "extension_paths": { "type": "array", "items": { "type": "string" } },
+        "extensions": { "type": "object" }
+      }
+    },
+    "error_summary": {
+      "type": "object",
+      "required": ["side", "adapter_id", "valid", "result_class", "error_count", "records"],
+      "properties": {
+        "side": { "enum": ["left", "right"] },
+        "adapter_id": { "type": "string" },
+        "valid": { "type": ["boolean", "null"] },
+        "result_class": { "type": "string" },
+        "error_count": { "type": "integer", "minimum": 0 },
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["taxonomy_code", "code", "severity", "source", "count"],
+            "properties": {
+              "taxonomy_code": { "type": "string" },
+              "code": { "type": "string" },
+              "severity": { "type": "string" },
+              "source": { "type": "string" },
+              "count": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "severity", "path", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "path": { "type": ["string", "null"] },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": "adapter-parity-report-input.v0",
+  "request_id": "REQ-001",
+  "left": {
+    "adapter_id": "markdown",
+    "request_id": "REQ-001",
+    "result": {
+      "schema_version": "non-multica-request-adapter-compact.v0",
+      "adapter_version": "non-multica-request-adapter.v0",
+      "request_schema_version": "agentmesh-request.v0",
+      "valid": true,
+      "canonical": {
+        "title": "Add parity report",
+        "request_kind": "app",
+        "status": "ready"
+      }
+    }
+  }
+}
