@@ -1,0 +1,149 @@
+{
+  "content_hashes": {
+    "algorithm": "sha256",
+    "normalized_markdown_sha256": "sha256:6741e0f65bb3440a6f8114fcb7a4f689e1efd24eed9c499a700137a55cd33923",
+    "projection_sha256": "sha256:4c65a96dcd09538d1dbbee77ccf41005f7578268afa84d59f03d03a6e6e7b046"
+  },
+  "error_count": 0,
+  "errors": [],
+  "normalizer_version": "request-markdown-normalizer.v0",
+  "projection": {
+    "field_order": [
+      "title",
+      "request_kind",
+      "issue_type",
+      "status",
+      "project_key",
+      "source_prd",
+      "source_design",
+      "source_roadmap",
+      "blocked_by",
+      "unblocks",
+      "sequence_index",
+      "sequence_total"
+    ],
+    "fields": {
+      "blocked_by": [],
+      "issue_type": "AFK",
+      "project_key": "agentmesh-private",
+      "request_kind": "app",
+      "sequence_index": 1,
+      "sequence_total": 1,
+      "source_design": "synthetic://docs/agentmesh-request-operations-v1",
+      "source_prd": "synthetic://requests/request-markdown-normalizer",
+      "source_roadmap": "synthetic://roadmaps/agentmesh-private",
+      "status": "ready",
+      "title": "Add a Markdown request normalizer App",
+      "unblocks": []
+    },
+    "local_runner": {
+      "project_key": "agentmesh-private",
+      "request_id": "agentmesh-request://agentmesh-private/add-a-markdown-request-normalizer-app",
+      "request_slug": "add-a-markdown-request-normalizer-app",
+      "schema_version": "request-markdown-normalizer-local-runner.v0",
+      "uses_multica_fields": false
+    },
+    "normalized_markdown": "---\ntitle: \"Add a Markdown request normalizer App\"\nrequest_kind: \"app\"\nissue_type: \"AFK\"\nstatus: \"ready\"\nproject_key: \"agentmesh-private\"\nsource_prd: \"synthetic://requests/request-markdown-normalizer\"\nsource_design: \"synthetic://docs/agentmesh-request-operations-v1\"\nsource_roadmap: \"synthetic://roadmaps/agentmesh-private\"\nblocked_by: []\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---\n\n# Add a Markdown request normalizer App\n\n## What to build\n\nBuild a deterministic normalizer preview.\n\n## Acceptance criteria\n\n- [ ] Emit stable projection payloads.\n- [ ] Sort canonical requirements.\n\n## Blocked by\n\n- None.\n\n## User stories covered\n\n- As a local runner maintainer, I can diff stable output.\n\n## Notes\n\nNormalize outside Multica.\n",
+    "request_slug": "add-a-markdown-request-normalizer-app",
+    "requirements": [
+      {
+        "checked": false,
+        "index": 1,
+        "normalized_line": "- [ ] Emit stable projection payloads.",
+        "text": "Emit stable projection payloads."
+      },
+      {
+        "checked": false,
+        "index": 2,
+        "normalized_line": "- [ ] Sort canonical requirements.",
+        "text": "Sort canonical requirements."
+      }
+    ],
+    "schema_version": "request-markdown-normalizer-projection.v0",
+    "section_order": [
+      "Parent",
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "sections": [
+      {
+        "body": "Build a deterministic normalizer preview.",
+        "heading": "What to build"
+      },
+      {
+        "body": "- [ ] Emit stable projection payloads.\n- [ ] Sort canonical requirements.",
+        "heading": "Acceptance criteria"
+      },
+      {
+        "body": "- None.",
+        "heading": "Blocked by"
+      },
+      {
+        "body": "- As a local runner maintainer, I can diff stable output.",
+        "heading": "User stories covered"
+      },
+      {
+        "body": "Normalize outside Multica.",
+        "heading": "Notes"
+      }
+    ],
+    "slug_metadata": {
+      "algorithm": "lowercase-ascii-alnum-dash-collapse-trim-80",
+      "fallback": "untitled-request",
+      "max_length": 80,
+      "slug": "add-a-markdown-request-normalizer-app",
+      "source_field": "title",
+      "source_value": "Add a Markdown request normalizer App"
+    }
+  },
+  "request_schema_version": "agentmesh-request.v0",
+  "request_slug": "add-a-markdown-request-normalizer-app",
+  "schema_version": "request-markdown-normalizer-compact.v0",
+  "serialization": {
+    "bullet_style": "dash-space; acceptance requirements render as - [ ] or - [x]",
+    "format": "json_markdown_projection",
+    "frontmatter_field_order": [
+      "title",
+      "request_kind",
+      "issue_type",
+      "status",
+      "project_key",
+      "source_prd",
+      "source_design",
+      "source_roadmap",
+      "blocked_by",
+      "unblocks",
+      "sequence_index",
+      "sequence_total"
+    ],
+    "object_key_order": "lexicographic",
+    "required_sections": [
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "section_order": [
+      "Parent",
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "whitespace": "LF line endings; trim line edges; collapse inline whitespace; one canonical heading block"
+  },
+  "slug_metadata": {
+    "algorithm": "lowercase-ascii-alnum-dash-collapse-trim-80",
+    "fallback": "untitled-request",
+    "max_length": 80,
+    "slug": "add-a-markdown-request-normalizer-app",
+    "source_field": "title",
+    "source_value": "Add a Markdown request normalizer App"
+  },
+  "valid": true
+}

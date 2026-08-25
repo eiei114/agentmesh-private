@@ -1,0 +1,5 @@
+{
+  "schema_version": "request-markdown-normalizer-input.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "markdown": "---\ntitle: \"Add a Markdown request normalizer App\"\nrequest_kind: app\nissue_type: AFK\nready_for_multica: true\nstatus: ready\nproject_key: agentmesh-private\nsource_prd: \"synthetic://requests/request-markdown-normalizer\"\nsource_design: synthetic://docs/agentmesh-request-operations-v1\nsource_roadmap: synthetic://roadmaps/agentmesh-private\nblocked_by: []\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---\n# Add a Markdown request normalizer App\n\n## Notes\nNormalize outside Multica.\n\n## What to build\nBuild a deterministic normalizer preview.\n\n## Acceptance criteria\n- [ ] Emit stable projection payloads.\n- [ ] Sort canonical requirements.\n\n## Blocked by\n- None.\n\n## User stories covered\n- As a local runner maintainer, I can diff stable output.\n"
+}

@@ -1,0 +1,72 @@
+{
+  "content_hashes": null,
+  "error_count": 3,
+  "errors": [
+    {
+      "category": "malformed_checklist",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_CHECKLIST_MALFORMED",
+      "message": "checklist marker must be [ ], [x], or [X] followed by requirement text",
+      "path": "$.markdown.sections.Acceptance criteria.line1",
+      "remediation_hint": "Write acceptance criteria as top-level bullets with optional [ ]/[x] checklist markers and non-empty text.",
+      "severity": "error"
+    },
+    {
+      "category": "unsupported_section_structure",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_SECTION_UNSUPPORTED",
+      "message": "nested or non-H2 headings are not supported in request sections",
+      "path": "$.markdown.sections.line15",
+      "remediation_hint": "Use only the supported H2 request sections; remove nested headings or adapter-owned body structure.",
+      "severity": "error"
+    },
+    {
+      "category": "unsupported_section_structure",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_SECTION_UNSUPPORTED",
+      "message": "request body text must appear inside supported H2 sections",
+      "path": "$.markdown.sections.line16",
+      "remediation_hint": "Use only the supported H2 request sections; remove nested headings or adapter-owned body structure.",
+      "severity": "error"
+    }
+  ],
+  "normalizer_version": "request-markdown-normalizer.v0",
+  "projection": null,
+  "request_schema_version": "agentmesh-request.v0",
+  "request_slug": null,
+  "schema_version": "request-markdown-normalizer-compact.v0",
+  "serialization": {
+    "bullet_style": "dash-space; acceptance requirements render as - [ ] or - [x]",
+    "format": "json_markdown_projection",
+    "frontmatter_field_order": [
+      "title",
+      "request_kind",
+      "issue_type",
+      "status",
+      "project_key",
+      "source_prd",
+      "source_design",
+      "source_roadmap",
+      "blocked_by",
+      "unblocks",
+      "sequence_index",
+      "sequence_total"
+    ],
+    "object_key_order": "lexicographic",
+    "required_sections": [
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "section_order": [
+      "Parent",
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "whitespace": "LF line endings; trim line edges; collapse inline whitespace; one canonical heading block"
+  },
+  "slug_metadata": null,
+  "valid": false
+}
