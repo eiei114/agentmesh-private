@@ -27,7 +27,7 @@ The compact payload contains `valid`, `serialization`, `request_slug`, `slug_met
 When `valid` is `true`, `projection` contains:
 
 - `fields` in canonical frontmatter order, excluding Multica-only readiness/authority hints.
-- `sections` in canonical H2 order with LF line endings, trimmed edges, collapsed inline whitespace, and normalized `- ` bullets.
+- `sections` in canonical H2 order with LF line endings, trimmed edges, collapsed inline whitespace, and normalized `-` bullets.
 - `requirements`, derived from `Acceptance criteria`, sorted by requirement text and rendered as canonical `- [ ]` / `- [x]` checklist lines.
 - `normalized_markdown`, a deterministic Markdown preview suitable for golden fixtures.
 - `local_runner` with `uses_multica_fields: false` and a stable `agentmesh-request://<project>/<slug>` request id.

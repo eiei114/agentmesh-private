@@ -1061,7 +1061,7 @@ mod tests {
 
         let output = normalize_request_markdown(&json!({
             "schema_version": INPUT_SCHEMA_VERSION,
-            "markdown": "---\ntitle: Bad\nrequest_kind: app\nissue_type: AFK\nstatus: ready\nproject_key: agentmesh-private\nsource_prd: Requests/App/bad.md\nsource_design: Docs/design.md\nsource_roadmap: ROADMAP.md\nblocked_by: []\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---\n# Bad\n\n## What to build\nBuild it.\n\n## Acceptance criteria\n- [todo] Not valid.\n\n## Blocked by\n- None.\n\n## User stories covered\n- As a maintainer.\n\n## Notes\n- none\n"
+            "markdown": "---\ntitle: Bad\nrequest_kind: app\nissue_type: AFK\nstatus: ready\nproject_key: agentmesh-private\nsource_prd: synthetic://requests/app/bad\nsource_design: synthetic://docs/design\nsource_roadmap: synthetic://roadmaps/agentmesh-private\nblocked_by: []\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---\n# Bad\n\n## What to build\nBuild it.\n\n## Acceptance criteria\n- [todo] Not valid.\n\n## Blocked by\n- None.\n\n## User stories covered\n- As a maintainer.\n\n## Notes\n- none\n"
         }));
         assert_eq!(output["valid"], false);
         assert_eq!(
