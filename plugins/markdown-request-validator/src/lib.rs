@@ -6,6 +6,7 @@
 pub mod adapter_error_contract;
 pub mod request_dry_run_summary;
 pub mod request_fingerprint_manifest;
+pub mod request_markdown_normalizer;
 
 use agentmesh_request_evidence::{adapter_evidence_digest, RequestEvidenceFields};
 use serde::Deserialize;

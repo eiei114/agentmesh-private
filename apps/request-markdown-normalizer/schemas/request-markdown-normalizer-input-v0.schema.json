@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-markdown-normalizer-input-v0.schema.json",
+  "title": "Request Markdown Normalizer Input v0",
+  "description": "Tool-neutral request Markdown normalizer input. The App accepts exactly one validated AgentMesh request Markdown source and does not require filesystem paths or Multica credentials.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "markdown"],
+  "properties": {
+    "schema_version": { "const": "request-markdown-normalizer-input.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "markdown": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536,
+      "description": "One complete request Markdown document with YAML frontmatter and supported H2 sections."
+    }
+  }
+}

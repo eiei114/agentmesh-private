@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-markdown-normalizer-compact-v0.schema.json",
+  "title": "Request Markdown Normalizer Compact Output v0",
+  "description": "Deterministic normalized request projection with stable slug metadata, canonical section order, canonical requirement ordering, and normalized adapter errors.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "normalizer_version",
+    "request_schema_version",
+    "valid",
+    "serialization",
+    "request_slug",
+    "slug_metadata",
+    "projection",
+    "content_hashes",
+    "error_count",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": { "const": "request-markdown-normalizer-compact.v0" },
+    "normalizer_version": { "const": "request-markdown-normalizer.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "valid": { "type": "boolean" },
+    "serialization": { "$ref": "#/$defs/serialization" },
+    "request_slug": { "type": ["string", "null"] },
+    "slug_metadata": { "anyOf": [{ "$ref": "#/$defs/slug_metadata" }, { "type": "null" }] },
+    "projection": { "anyOf": [{ "$ref": "#/$defs/projection" }, { "type": "null" }] },
+    "content_hashes": { "anyOf": [{ "$ref": "#/$defs/content_hashes" }, { "type": "null" }] },
+    "error_count": { "type": "integer", "minimum": 0 },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/error_record" } }
+  },
+  "$defs": {
+    "serialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "object_key_order",
+        "frontmatter_field_order",
+        "section_order",
+        "required_sections",
+        "bullet_style",
+        "whitespace"
+      ],
+      "properties": {
+        "format": { "const": "json_markdown_projection" },
+        "object_key_order": { "const": "lexicographic" },
+        "frontmatter_field_order": { "const": ["title", "request_kind", "issue_type", "status", "project_key", "source_prd", "source_design", "source_roadmap", "blocked_by", "unblocks", "sequence_index", "sequence_total"] },
+        "section_order": { "const": ["Parent", "What to build", "Acceptance criteria", "Blocked by", "User stories covered", "Notes"] },
+        "required_sections": { "const": ["What to build", "Acceptance criteria", "Blocked by", "User stories covered", "Notes"] },
+        "bullet_style": { "type": "string", "minLength": 1 },
+        "whitespace": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "field_order",
+        "section_order",
+        "request_slug",
+        "slug_metadata",
+        "fields",
+        "sections",
+        "requirements",
+        "normalized_markdown",
+        "local_runner"
+      ],
+      "properties": {
+        "schema_version": { "const": "request-markdown-normalizer-projection.v0" },
+        "field_order": { "const": ["title", "request_kind", "issue_type", "status", "project_key", "source_prd", "source_design", "source_roadmap", "blocked_by", "unblocks", "sequence_index", "sequence_total"] },
+        "section_order": { "const": ["Parent", "What to build", "Acceptance criteria", "Blocked by", "User stories covered", "Notes"] },
+        "request_slug": { "type": "string", "minLength": 1 },
+        "slug_metadata": { "$ref": "#/$defs/slug_metadata" },
+        "fields": { "$ref": "#/$defs/fields" },
+        "sections": { "type": "array", "items": { "$ref": "#/$defs/section" } },
+        "requirements": { "type": "array", "items": { "$ref": "#/$defs/requirement" } },
+        "normalized_markdown": { "type": "string", "minLength": 1 },
+        "local_runner": { "$ref": "#/$defs/local_runner" }
+      }
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "request_kind", "issue_type", "status", "project_key", "source_prd", "source_design", "source_roadmap", "blocked_by", "unblocks", "sequence_index", "sequence_total"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "request_kind": { "enum": ["app", "repair"] },
+        "issue_type": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "project_key": { "type": "string", "minLength": 1 },
+        "source_prd": { "type": "string", "minLength": 1 },
+        "source_design": { "type": "string", "minLength": 1 },
+        "source_roadmap": { "type": "string", "minLength": 1 },
+        "blocked_by": { "type": "array", "items": { "type": "string" } },
+        "unblocks": { "type": "array", "items": { "type": "string" } },
+        "sequence_index": { "type": "integer", "minimum": 1 },
+        "sequence_total": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["heading", "body"],
+      "properties": {
+        "heading": { "enum": ["Parent", "What to build", "Acceptance criteria", "Blocked by", "User stories covered", "Notes"] },
+        "body": { "type": "string" }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checked", "index", "normalized_line", "text"],
+      "properties": {
+        "checked": { "type": "boolean" },
+        "index": { "type": "integer", "minimum": 1 },
+        "normalized_line": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "slug_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_field", "source_value", "algorithm", "max_length", "fallback", "slug"],
+      "properties": {
+        "source_field": { "const": "title" },
+        "source_value": { "type": "string" },
+        "algorithm": { "const": "lowercase-ascii-alnum-dash-collapse-trim-80" },
+        "max_length": { "const": 80 },
+        "fallback": { "const": "untitled-request" },
+        "slug": { "type": "string", "minLength": 1 }
+      }
+    },
+    "local_runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_id", "request_slug", "project_key", "uses_multica_fields"],
+      "properties": {
+        "schema_version": { "const": "request-markdown-normalizer-local-runner.v0" },
+        "request_id": { "type": "string", "pattern": "^agentmesh-request://" },
+        "request_slug": { "type": "string", "minLength": 1 },
+        "project_key": { "type": "string", "minLength": 1 },
+        "uses_multica_fields": { "const": false }
+      }
+    },
+    "content_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "projection_sha256", "normalized_markdown_sha256"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "projection_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "normalized_markdown_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "error_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category", "severity", "path", "message", "remediation_hint"],
+      "properties": {
+        "code": {
+          "enum": [
+            "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_INPUT_INVALID",
+            "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_UNSUPPORTED_SHAPE",
+            "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_FRONTMATTER_MALFORMED",
+            "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_FIELD_REQUIRED",
+            "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_FIELD_INVALID",
+            "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_SECTION_REQUIRED",
+            "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_SECTION_UNSUPPORTED",
+            "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_CHECKLIST_MALFORMED"
+          ]
+        },
+        "category": {
+          "enum": [
+            "input_schema_invalid",
+            "unsupported_request_shape",
+            "malformed_frontmatter",
+            "missing_field",
+            "invalid_field_value",
+            "missing_section",
+            "unsupported_section_structure",
+            "malformed_checklist"
+          ]
+        },
+        "severity": { "const": "error" },
+        "path": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "remediation_hint": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

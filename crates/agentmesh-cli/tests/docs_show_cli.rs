@@ -3,12 +3,13 @@ use std::process::Command;
 
 const AGENT_DOCS_HINT: &str = "If you are a coding agent, run `agentmesh docs list` and\n`agentmesh docs show <name>` before answering AgentMesh questions\nor troubleshooting errors.";
 
-const CATALOG_NAMES: [&str; 6] = [
+const CATALOG_NAMES: [&str; 7] = [
     "agentmesh-app-v0",
     "backlog-promoter-snapshot-v0",
     "protocol-v0",
     "public-0x-readiness-gate",
     "public-0x-readiness-report",
+    "request-markdown-normalizer-v0",
     "threat-model-v0",
 ];
 

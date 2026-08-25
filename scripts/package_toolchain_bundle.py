@@ -8,6 +8,7 @@ Produces the layout consumed by `agentmesh toolchain install`:
     bin/agentmesh[.exe]
     bin/agentmesh-multica-selector-shadow[.exe]
     bin/agentmesh-markdown-request-validator[.exe]
+    bin/agentmesh-request-markdown-normalizer[.exe]
     bin/agentmesh-public-0x-readiness-report[.exe]
     bin/agentmesh-public-0x-rollback-replay[.exe]
     apps/<app>/...
@@ -107,6 +108,9 @@ def main() -> int:
     cli_name = logical_bin_name("agentmesh", args.target)
     multica_plugin_name = logical_bin_name("agentmesh-multica-selector-shadow", args.target)
     markdown_plugin_name = logical_bin_name("agentmesh-markdown-request-validator", args.target)
+    request_normalizer_plugin_name = logical_bin_name(
+        "agentmesh-request-markdown-normalizer", args.target
+    )
     readiness_report_plugin_name = logical_bin_name(
         "agentmesh-public-0x-readiness-report", args.target
     )
@@ -117,6 +121,7 @@ def main() -> int:
         cli_name,
         multica_plugin_name,
         markdown_plugin_name,
+        request_normalizer_plugin_name,
         readiness_report_plugin_name,
         rollback_replay_plugin_name,
     ]
@@ -151,6 +156,7 @@ def main() -> int:
         "agentmesh-app-v0.md",
         "public-0x-readiness-gate.md",
         "public-0x-readiness-report.md",
+        "request-markdown-normalizer-v0.md",
     ]:
         docs_src = repo / "docs" / doc_name
         if docs_src.is_file():

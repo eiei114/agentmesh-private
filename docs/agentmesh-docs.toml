@@ -26,6 +26,11 @@ description = "Public 0.x readiness report App contract"
 source = "docs/public-0x-readiness-report.md"
 
 [[documents]]
+name = "request-markdown-normalizer-v0"
+description = "Request Markdown normalizer App contract for deterministic local-runner projections"
+source = "docs/request-markdown-normalizer-v0.md"
+
+[[documents]]
 name = "threat-model-v0"
 description = "AgentMesh Phase 0 threat model"
 source = "docs/threat-model-v0.md"
