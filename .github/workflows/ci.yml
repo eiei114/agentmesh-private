@@ -55,8 +55,9 @@ jobs:
 
       - name: focused Python regression suite
         run: |
-          python -m py_compile scripts/repair_sync_local_main_with_origin.py scripts/test_repair_sync_local_main_with_origin.py
-          python -m unittest scripts/test_repair_sync_local_main_with_origin.py
+          python -m py_compile scripts/repair_sync_local_main_with_origin.py scripts/test_repair_sync_local_main_with_origin.py scripts/assert_rust_toolchain_baseline.py scripts/test_assert_rust_toolchain_baseline.py
+          python -m unittest scripts/test_repair_sync_local_main_with_origin.py scripts/test_assert_rust_toolchain_baseline.py
+          python scripts/assert_rust_toolchain_baseline.py
 
       - name: fmt
         run: cargo fmt --check
