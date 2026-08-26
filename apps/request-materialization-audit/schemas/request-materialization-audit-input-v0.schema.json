@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-materialization-audit-input-v0.schema.json",
+  "title": "Request Materialization Audit Input v0",
+  "description": "Adapter-neutral batch input for auditing deterministic materialization and same-scope dedupe across validated AgentMesh request sources or retained canonical summaries.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "requests"],
+  "properties": {
+    "schema_version": { "const": "request-materialization-audit-input.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "requests": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/request_source" }
+    }
+  },
+  "$defs": {
+    "request_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "target_app"],
+      "oneOf": [
+        { "required": ["markdown"], "not": { "anyOf": [{ "required": ["request"] }, { "required": ["canonical"] }, { "required": ["summary"] }] } },
+        { "required": ["request"], "not": { "anyOf": [{ "required": ["markdown"] }, { "required": ["canonical"] }, { "required": ["summary"] }] } },
+        { "required": ["canonical"], "not": { "anyOf": [{ "required": ["markdown"] }, { "required": ["request"] }, { "required": ["summary"] }] } },
+        { "required": ["summary"], "not": { "anyOf": [{ "required": ["markdown"] }, { "required": ["request"] }, { "required": ["canonical"] }] } }
+      ],
+      "properties": {
+        "source_id": { "type": "string", "minLength": 1 },
+        "request_id": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "target_app": { "type": "string", "minLength": 1 },
+        "markdown": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "description": "Request Markdown source containing a YAML frontmatter fence. CRLF is normalized to LF before parsing and source hashing."
+        },
+        "request": {
+          "type": "object",
+          "description": "Validated agentmesh-request.v0 stable request fields as JSON. Adapter-specific fields may appear here but are fingerprinted outside common materialization."
+        },
+        "canonical": {
+          "type": "object",
+          "description": "Canonical request fields from a retained parser output."
+        },
+        "summary": {
+          "type": "object",
+          "description": "Retained compact summary with valid:true and canonical fields under canonical, manifest_json.canonical_fields, or evidence.frontmatter_fields."
+        },
+        "adapter": {
+          "type": "object",
+          "description": "Optional adapter-owned materialization metadata. Values are hashed, not echoed, in compact output."
+        },
+        "adapter_specific": {
+          "type": "object",
+          "description": "Optional adapter-owned details. Values are hashed, not echoed, in compact output."
+        }
+      }
+    }
+  }
+}

@@ -97,6 +97,77 @@ agentmesh request parse --input crates/agentmesh-cli/testdata/valid_request_inpu
 agentmesh request parse --input crates/agentmesh-cli/testdata/invalid_request_input.json
 ```
 
+## Request materialization audit App
+
+`apps/request-materialization-audit/agentmesh-app.toml` declares a tool-neutral App for auditing whether a batch of validated request sources materializes deterministically. Each source supplies a stable `scope`, `target_app`, and exactly one of `markdown`, `request`, `canonical`, or a retained `summary` (`agentmesh request parse`, request fingerprint manifest, or dry-run summary output). Adapter-owned fields may be supplied under `adapter` or `adapter_specific`; the compact audit fingerprints those values but never echoes them inside common materialization fields.
+
+Same-scope valid sources are grouped as:
+
+- `unique` — one valid materialization for the scope.
+- `equivalent_duplicate` — more than one source with the same scope and the same common materialization hash.
+- `conflicting_duplicate` — more than one source with the same scope but different common materialization hashes; this fails the audit with `AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_SCOPE_CONFLICT`.
+
+Local Markdown runner example:
+
+```bash
+cargo build -p agentmesh-cli -p agentmesh-markdown-request-validator --bins
+agentmesh app validate \
+  --manifest apps/request-materialization-audit/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/request-materialization-audit/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/markdown-request-validator/testdata/request_materialization_audit_success_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-request-materialization-audit
+```
+
+Expected compact JSON shape (abridged):
+
+```json
+{
+  "schema_version": "request-materialization-audit-compact.v0",
+  "audit_version": "request-materialization-audit.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "valid": true,
+  "summary": {
+    "source_count": 2,
+    "duplicate_scope_count": 1,
+    "equivalent_duplicate_scope_count": 1,
+    "conflicting_duplicate_scope_count": 0
+  },
+  "sources": [
+    {
+      "source_key": "source-0001",
+      "source_shape": "markdown",
+      "common_materialization": {
+        "schema_version": "agentmesh-request-materialization.v0",
+        "scope": "agentmesh:app:request-materialization-audit",
+        "target_app": "request-materialization-audit",
+        "canonical_fields": {"title": "..."}
+      },
+      "adapter_specific": {
+        "present": false,
+        "payload_sha256": null
+      }
+    }
+  ],
+  "scope_groups": [
+    {
+      "scope": "agentmesh:app:request-materialization-audit",
+      "dedupe_class": "equivalent_duplicate",
+      "distinct_materialization_count": 1,
+      "source_keys": ["source-0001", "source-0002"]
+    }
+  ],
+  "error_count": 0,
+  "errors": []
+}
+```
+
+The App is pure: it does not read Markdown paths, call Multica, publish releases, tag assets, or perform production authority changes.
+
 ## Non-Multica request adapter App
 
 `apps/non-multica-request-adapter/agentmesh-app.toml` declares a tracker-neutral adapter contract for `agentmesh-request.v0` sources. Input accepts exactly one Markdown source or one Markdown-compatible JSON object:

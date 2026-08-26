@@ -1,0 +1,44 @@
+{
+  "schema_version": "request-materialization-audit-input.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "requests": [
+    {
+      "source_id": "markdown-runner-a",
+      "scope": "agentmesh:app:request-materialization-audit",
+      "target_app": "request-materialization-audit",
+      "markdown": "---\ntitle: \"Add a deterministic request materialization and dedupe audit app\"\nrequest_kind: app\nissue_type: AFK\nready_for_multica: true\nstatus: ready\nproject_key: agentmesh-private\nsource_prd: \"4_Project/OSS/agentmesh-private/Requests/App/2026-08-26-add-a-deterministic-request-materialization-and-dedupe-a.md\"\nsource_design: 4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md\nsource_roadmap: 4_Project/OSS/agentmesh-private/ROADMAP.md\nblocked_by: []\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---\n# Add a deterministic request materialization and dedupe audit app\n\n## What to build\nCreate the audit.\n\n## Acceptance criteria\n- [ ] Stable output.\n"
+    },
+    {
+      "source_id": "parser-summary-a",
+      "scope": "agentmesh:app:request-materialization-audit",
+      "target_app": "request-materialization-audit",
+      "summary": {
+        "schema_version": "agentmesh-request-parse-output.v0",
+        "request_schema_version": "agentmesh-request.v0",
+        "valid": true,
+        "canonical": {
+          "title": "Add a deterministic request materialization and dedupe audit app",
+          "request_kind": "app",
+          "issue_type": "AFK",
+          "ready_for_multica": true,
+          "status": "ready",
+          "project_key": "agentmesh-private",
+          "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-26-add-a-deterministic-request-materialization-and-dedupe-a.md",
+          "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
+          "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+          "blocked_by": [],
+          "unblocks": [],
+          "sequence_index": 1,
+          "sequence_total": 1
+        },
+        "error_count": 0,
+        "errors": []
+      },
+      "adapter_specific": {
+        "adapter_id": "local-markdown-runner",
+        "source_file": "Requests/App/request-materialization-audit.md",
+        "dry_run": true
+      }
+    }
+  ]
+}
