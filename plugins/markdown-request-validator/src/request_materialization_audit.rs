@@ -8,6 +8,7 @@
 
 use agentmesh_evidence::sha256_prefixed;
 use serde_json::{json, Map, Value};
+use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Plugin/schema version exposed in compact output.
@@ -551,20 +552,47 @@ fn parse_frontmatter_fields(
     path: &str,
     errors: &mut Vec<Value>,
 ) -> Map<String, Value> {
-    let mut fields = Map::new();
-    let mut seen = BTreeSet::new();
-    for (line_index, line) in frontmatter.lines().enumerate() {
-        let line_number = line_index + 1;
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let Some((key, raw)) = trimmed.split_once(':') else {
+    if frontmatter.trim().is_empty() {
+        return Map::new();
+    }
+
+    let duplicate_keys = duplicate_frontmatter_keys(frontmatter);
+    for key in &duplicate_keys {
+        errors.push(error(
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FIELD_DUPLICATE",
+            "duplicate_field",
+            Some(format!("{path}.markdown.frontmatter.{key}")),
+            format!("frontmatter field {key} appears more than once"),
+        ));
+    }
+
+    let parsed = match serde_yaml::from_str::<YamlValue>(frontmatter) {
+        Ok(YamlValue::Mapping(mapping)) => mapping,
+        Ok(_) => {
             errors.push(error(
                 "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FRONTMATTER_MALFORMED",
                 "malformed_frontmatter",
-                Some(format!("{path}.markdown.frontmatter.line{line_number}")),
-                "frontmatter entries must use key: value syntax",
+                Some(format!("{path}.markdown.frontmatter")),
+                "frontmatter must be a YAML mapping",
+            ));
+            return Map::new();
+        }
+        Err(err) => {
+            if duplicate_keys.is_empty() || !yaml_error_is_duplicate_field(&err) {
+                errors.push(yaml_frontmatter_error(path, &err));
+            }
+            return Map::new();
+        }
+    };
+
+    let mut fields = Map::new();
+    for (index, (key, value)) in parsed.into_iter().enumerate() {
+        let YamlValue::String(key) = key else {
+            errors.push(error(
+                "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FRONTMATTER_MALFORMED",
+                "malformed_frontmatter",
+                Some(format!("{path}.markdown.frontmatter.key{}", index + 1)),
+                "frontmatter keys must be non-empty strings",
             ));
             continue;
         };
@@ -573,62 +601,133 @@ fn parse_frontmatter_fields(
             errors.push(error(
                 "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FRONTMATTER_MALFORMED",
                 "malformed_frontmatter",
-                Some(format!("{path}.markdown.frontmatter.line{line_number}")),
-                "frontmatter key must not be empty",
+                Some(format!("{path}.markdown.frontmatter.key{}", index + 1)),
+                "frontmatter keys must be non-empty strings",
             ));
             continue;
         }
-        if !seen.insert(key.to_string()) {
-            errors.push(error(
-                "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FIELD_DUPLICATE",
-                "duplicate_field",
-                Some(format!("{path}.markdown.frontmatter.{key}")),
-                format!("frontmatter field {key} appears more than once"),
-            ));
-            continue;
-        }
-        let (value, parse_error) = scalar(raw.trim());
-        if let Some(message) = parse_error {
-            errors.push(error(
-                "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FRONTMATTER_MALFORMED",
-                "malformed_frontmatter",
-                Some(format!("{path}.markdown.frontmatter.{key}")),
-                message,
-            ));
-        }
-        fields.insert(key.to_string(), value);
+        let field_path = format!("{path}.markdown.frontmatter.{key}");
+        fields.insert(
+            key.to_string(),
+            yaml_value_to_json(value, &field_path, errors),
+        );
     }
     fields
 }
 
-fn scalar(raw: &str) -> (Value, Option<String>) {
-    let trimmed = raw.trim();
-    if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
-        return (
-            Value::String(trimmed[1..trimmed.len() - 1].to_string()),
-            None,
-        );
-    }
-    if trimmed.starts_with('[') {
-        return match serde_json::from_str::<Value>(trimmed) {
-            Ok(value) => (value, None),
-            Err(err) => (
-                Value::String(trimmed.to_string()),
-                Some(format!(
-                    "frontmatter array value is not valid JSON (at line {}, column {})",
-                    err.line(),
-                    err.column()
-                )),
-            ),
+fn duplicate_frontmatter_keys(frontmatter: &str) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
+    for line in frontmatter.lines() {
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((key, _)) = trimmed.split_once(':') else {
+            continue;
         };
+        let Some(key) = frontmatter_key_name(key) else {
+            continue;
+        };
+        if !seen.insert(key.clone()) {
+            duplicates.insert(key);
+        }
     }
-    match trimmed {
-        "true" => (Value::Bool(true), None),
-        "false" => (Value::Bool(false), None),
-        _ => trimmed.parse::<u64>().map_or_else(
-            |_| (Value::String(trimmed.to_string()), None),
-            |n| (json!(n), None),
+    duplicates.into_iter().collect()
+}
+
+fn frontmatter_key_name(raw: &str) -> Option<String> {
+    let key = raw.trim();
+    if key.is_empty() || key.starts_with('?') || key.starts_with('[') || key.starts_with('{') {
+        return None;
+    }
+    if key.len() >= 2 {
+        let quoted = (key.starts_with('"') && key.ends_with('"'))
+            || (key.starts_with('\'') && key.ends_with('\''));
+        if quoted {
+            return Some(key[1..key.len() - 1].trim().to_string());
+        }
+    }
+    Some(key.to_string())
+}
+
+fn yaml_error_is_duplicate_field(err: &serde_yaml::Error) -> bool {
+    err.to_string().contains("duplicate field")
+}
+
+fn yaml_frontmatter_error(path: &str, err: &serde_yaml::Error) -> Value {
+    let message = err.location().map_or_else(
+        || "frontmatter is not valid YAML".to_string(),
+        |location| {
+            format!(
+                "frontmatter is not valid YAML (line {}, column {})",
+                location.line(),
+                location.column()
+            )
+        },
+    );
+    error(
+        "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FRONTMATTER_MALFORMED",
+        "malformed_frontmatter",
+        Some(format!("{path}.markdown.frontmatter")),
+        message,
+    )
+}
+
+fn yaml_value_to_json(value: YamlValue, path: &str, errors: &mut Vec<Value>) -> Value {
+    match value {
+        YamlValue::Null => Value::Null,
+        YamlValue::Bool(value) => Value::Bool(value),
+        YamlValue::Number(number) => {
+            if let Some(number) = number.as_u64() {
+                json!(number)
+            } else if let Some(number) = number.as_i64() {
+                json!(number)
+            } else if let Some(number) = number.as_f64().and_then(serde_json::Number::from_f64) {
+                Value::Number(number)
+            } else {
+                errors.push(error(
+                    "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FRONTMATTER_MALFORMED",
+                    "malformed_frontmatter",
+                    Some(path.to_string()),
+                    "frontmatter number must be a finite JSON number",
+                ));
+                Value::Null
+            }
+        }
+        YamlValue::String(value) => Value::String(value),
+        YamlValue::Sequence(values) => Value::Array(
+            values
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    yaml_value_to_json(value, &format!("{path}[{index}]"), errors)
+                })
+                .collect(),
         ),
+        YamlValue::Mapping(mapping) => {
+            let mut object = Map::new();
+            for (index, (key, value)) in mapping.into_iter().enumerate() {
+                let YamlValue::String(key) = key else {
+                    errors.push(error(
+                        "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FRONTMATTER_MALFORMED",
+                        "malformed_frontmatter",
+                        Some(format!("{path}.key{}", index + 1)),
+                        "frontmatter mapping keys must be strings",
+                    ));
+                    continue;
+                };
+                object.insert(
+                    key.clone(),
+                    yaml_value_to_json(value, &format!("{path}.{key}"), errors),
+                );
+            }
+            Value::Object(object)
+        }
+        YamlValue::Tagged(tagged) => yaml_value_to_json(tagged.value, path, errors),
     }
 }
 
@@ -1178,6 +1277,79 @@ mod tests {
         assert_eq!(
             output["errors"][0]["code"],
             "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_SCOPE_CONFLICT"
+        );
+    }
+
+    #[test]
+    fn markdown_frontmatter_accepts_yaml_sequences_and_multiline_scalars() {
+        let markdown = r#"---
+title: >-
+  Add materialization audit
+request_kind: app
+issue_type: AFK
+ready_for_multica: true
+status: ready
+project_key: agentmesh-private
+source_prd: synthetic://requests/materialization-audit
+source_design: synthetic://docs/agentmesh-request-operations-v1
+source_roadmap: synthetic://roadmaps/agentmesh-private
+blocked_by:
+  - agentmesh:request:validator
+unblocks:
+  - agentmesh:request:downstream
+sequence_index: 1
+sequence_total: 2
+---
+# Add materialization audit
+"#;
+        let input = json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "requests": [
+                {
+                    "scope": "agentmesh:app:request-materialization-audit",
+                    "target_app": "request-materialization-audit",
+                    "markdown": markdown
+                }
+            ]
+        });
+
+        let output = audit_request_materialization(&input);
+        assert_eq!(output["valid"], true);
+        let fields = &output["sources"][0]["common_materialization"]["canonical_fields"];
+        assert_eq!(fields["title"], "Add materialization audit");
+        assert_eq!(fields["blocked_by"], json!(["agentmesh:request:validator"]));
+        assert_eq!(fields["unblocks"], json!(["agentmesh:request:downstream"]));
+    }
+
+    #[test]
+    fn markdown_frontmatter_duplicate_keys_remain_normalized_errors() {
+        let markdown = "---\ntitle: First\ntitle: Second\nrequest_kind: app\nissue_type: AFK\nready_for_multica: true\nstatus: ready\nproject_key: agentmesh-private\nsource_prd: synthetic://requests/materialization-audit\nsource_design: synthetic://docs/agentmesh-request-operations-v1\nsource_roadmap: synthetic://roadmaps/agentmesh-private\nblocked_by: []\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---\n# First\n";
+        let input = json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "requests": [
+                {
+                    "scope": "agentmesh:app:request-materialization-audit",
+                    "target_app": "request-materialization-audit",
+                    "markdown": markdown
+                }
+            ]
+        });
+
+        let output = audit_request_materialization(&input);
+        assert_eq!(output["valid"], false);
+        let duplicate = output["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|error| {
+                error["code"].as_str()
+                    == Some("AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FIELD_DUPLICATE")
+            })
+            .unwrap();
+        assert_eq!(duplicate["category"], "duplicate_field");
+        assert_eq!(
+            duplicate["path"],
+            "$.requests[0].markdown.frontmatter.title"
         );
     }
 
