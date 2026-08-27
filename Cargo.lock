@@ -204,6 +204,7 @@ dependencies = [
  "agentmesh-request-evidence",
  "serde",
  "serde_json",
+ "serde_yaml",
  "thiserror",
 ]
 

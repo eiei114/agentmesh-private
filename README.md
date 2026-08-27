@@ -171,6 +171,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/markdown-request-validator/` — tool-neutral request validator manifest + IO schemas
 - `apps/request-dry-run-summary/` — deterministic request dry-run Markdown preview + evidence schemas
 - `apps/request-fingerprint-manifest/` — deterministic request fingerprint JSON/Markdown manifest + hash schemas
+- `apps/request-materialization-audit/` — deterministic request materialization + same-scope dedupe audit manifest + IO schemas
 - `apps/request-markdown-normalizer/` — deterministic request Markdown projection normalizer manifest + IO schemas
 - `apps/non-multica-request-adapter/` — tracker-neutral request adapter manifest + IO schemas
 - `apps/local-tracker-adapter/` — local taskfile tracker adapter manifest + IO schemas
@@ -203,6 +204,7 @@ Internal / test-only:
 - `agentmesh-adapter-evidence-traceability` — deterministic adapter evidence traceability binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-adapter-error-contract` — shared adapter error boundary contract binary (`markdown-request-validator` package)
 - `agentmesh-request-fingerprint-manifest` — deterministic request fingerprint manifest binary (`markdown-request-validator` package)
+- `agentmesh-request-materialization-audit` — deterministic request materialization + same-scope dedupe audit binary (`markdown-request-validator` package)
 - `agentmesh-request-markdown-normalizer` — deterministic request Markdown projection normalizer binary (`markdown-request-validator` package)
 - `agentmesh-public-0x-readiness` — public 0.x readiness evidence gate binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-public-0x-readiness-report` — post-dogfood public 0.x readiness report binary (`adapter-metadata-canonicalizer` package)

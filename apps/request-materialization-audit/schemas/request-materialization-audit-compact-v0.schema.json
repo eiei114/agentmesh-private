@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-materialization-audit-compact-v0.schema.json",
+  "title": "Request Materialization Audit Compact Output v0",
+  "description": "Deterministic compact audit for common request materialization, same-scope duplicate detection, and adapter-specific metadata partitioning.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "audit_version",
+    "request_schema_version",
+    "valid",
+    "serialization",
+    "summary",
+    "common_field_order",
+    "sources",
+    "scope_groups",
+    "error_count",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": { "const": "request-materialization-audit-compact.v0" },
+    "audit_version": { "const": "request-materialization-audit.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "valid": { "type": "boolean" },
+    "serialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "object_key_order", "array_order", "common_field_order", "required_fields", "hash_algorithm"],
+      "properties": {
+        "format": { "const": "json" },
+        "object_key_order": { "const": "lexicographic" },
+        "array_order": { "type": "string" },
+        "common_field_order": { "$ref": "#/$defs/common_field_order" },
+        "required_fields": { "type": "array", "items": { "type": "string" } },
+        "hash_algorithm": { "const": "sha256" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "source_count",
+        "valid_source_count",
+        "invalid_source_count",
+        "scope_count",
+        "unique_scope_count",
+        "duplicate_scope_count",
+        "equivalent_duplicate_scope_count",
+        "conflicting_duplicate_scope_count"
+      ],
+      "properties": {
+        "status": { "enum": ["passed", "failed"] },
+        "source_count": { "type": "integer", "minimum": 0 },
+        "valid_source_count": { "type": "integer", "minimum": 0 },
+        "invalid_source_count": { "type": "integer", "minimum": 0 },
+        "scope_count": { "type": "integer", "minimum": 0 },
+        "unique_scope_count": { "type": "integer", "minimum": 0 },
+        "duplicate_scope_count": { "type": "integer", "minimum": 0 },
+        "equivalent_duplicate_scope_count": { "type": "integer", "minimum": 0 },
+        "conflicting_duplicate_scope_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "common_field_order": { "$ref": "#/$defs/common_field_order" },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source_audit" }
+    },
+    "scope_groups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/scope_group" }
+    },
+    "error_count": { "type": "integer", "minimum": 0 },
+    "errors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/error_record" }
+    }
+  },
+  "$defs": {
+    "common_field_order": {
+      "const": [
+        "title",
+        "request_kind",
+        "issue_type",
+        "ready_for_multica",
+        "status",
+        "project_key",
+        "source_prd",
+        "source_design",
+        "source_roadmap",
+        "blocked_by",
+        "unblocks",
+        "sequence_index",
+        "sequence_total"
+      ]
+    },
+    "source_audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_index",
+        "source_key",
+        "source_id",
+        "request_id",
+        "scope",
+        "target_app",
+        "source_shape",
+        "valid",
+        "source_sha256",
+        "common_fields_sha256",
+        "materialization_sha256",
+        "common_materialization",
+        "adapter_specific",
+        "error_count",
+        "errors"
+      ],
+      "properties": {
+        "input_index": { "type": "integer", "minimum": 0 },
+        "source_key": { "type": "string", "pattern": "^source-[0-9]{4}$" },
+        "source_id": { "type": ["string", "null"] },
+        "request_id": { "type": ["string", "null"] },
+        "scope": { "type": ["string", "null"] },
+        "target_app": { "type": ["string", "null"] },
+        "source_shape": { "enum": ["markdown", "request", "canonical_summary", "unsupported"] },
+        "valid": { "type": "boolean" },
+        "source_sha256": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+        "common_fields_sha256": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+        "materialization_sha256": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+        "common_materialization": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/common_materialization" }
+          ]
+        },
+        "adapter_specific": { "$ref": "#/$defs/adapter_specific" },
+        "error_count": { "type": "integer", "minimum": 0 },
+        "errors": { "type": "array", "items": { "$ref": "#/$defs/error_record" } }
+      }
+    },
+    "common_materialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "request_schema_version", "scope", "target_app", "canonical_fields"],
+      "properties": {
+        "schema_version": { "const": "agentmesh-request-materialization.v0" },
+        "request_schema_version": { "const": "agentmesh-request.v0" },
+        "scope": { "type": "string", "minLength": 1 },
+        "target_app": { "type": "string", "minLength": 1 },
+        "canonical_fields": { "$ref": "#/$defs/canonical_fields" }
+      }
+    },
+    "canonical_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "request_kind",
+        "issue_type",
+        "ready_for_multica",
+        "status",
+        "project_key",
+        "source_prd",
+        "source_design",
+        "source_roadmap",
+        "blocked_by",
+        "unblocks",
+        "sequence_index",
+        "sequence_total"
+      ],
+      "properties": {
+        "title": { "$ref": "#/$defs/frontmatter_value" },
+        "request_kind": { "$ref": "#/$defs/frontmatter_value" },
+        "issue_type": { "$ref": "#/$defs/frontmatter_value" },
+        "ready_for_multica": { "$ref": "#/$defs/frontmatter_value" },
+        "status": { "$ref": "#/$defs/frontmatter_value" },
+        "project_key": { "$ref": "#/$defs/frontmatter_value" },
+        "source_prd": { "$ref": "#/$defs/frontmatter_value" },
+        "source_design": { "$ref": "#/$defs/frontmatter_value" },
+        "source_roadmap": { "$ref": "#/$defs/frontmatter_value" },
+        "blocked_by": { "$ref": "#/$defs/frontmatter_value" },
+        "unblocks": { "$ref": "#/$defs/frontmatter_value" },
+        "sequence_index": { "$ref": "#/$defs/frontmatter_value" },
+        "sequence_total": { "$ref": "#/$defs/frontmatter_value" }
+      }
+    },
+    "adapter_specific": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "adapter_id", "detail_keys", "payload_sha256", "payload_policy"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "adapter_id": { "type": ["string", "null"] },
+        "detail_keys": { "type": "array", "items": { "type": "string" } },
+        "payload_sha256": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+        "payload_policy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "scope_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "dedupe_class", "duplicate", "request_count", "distinct_materialization_count", "source_keys", "equivalence_sets"],
+      "properties": {
+        "scope": { "type": "string", "minLength": 1 },
+        "dedupe_class": { "enum": ["unique", "equivalent_duplicate", "conflicting_duplicate"] },
+        "duplicate": { "type": "boolean" },
+        "request_count": { "type": "integer", "minimum": 1 },
+        "distinct_materialization_count": { "type": "integer", "minimum": 1 },
+        "source_keys": { "type": "array", "items": { "type": "string" } },
+        "equivalence_sets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["materialization_sha256", "request_count", "source_keys"],
+            "properties": {
+              "materialization_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+              "request_count": { "type": "integer", "minimum": 1 },
+              "source_keys": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "error_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category", "severity", "path", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_INPUT_SCHEMA_INVALID",
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_UNKNOWN_SCHEMA_VERSION",
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FIELD_REQUIRED",
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FIELD_INVALID",
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FIELD_DUPLICATE",
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_UNSUPPORTED_SHAPE",
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_FRONTMATTER_MALFORMED",
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_SUMMARY_INVALID",
+            "AGENTMESH_REQUEST_MATERIALIZATION_AUDIT_SCOPE_CONFLICT"
+          ]
+        },
+        "category": {
+          "enum": [
+            "input_schema_invalid",
+            "unknown_schema_version",
+            "missing_field",
+            "invalid_field_value",
+            "duplicate_field",
+            "unsupported_request_shape",
+            "malformed_frontmatter",
+            "invalid_summary",
+            "scope_conflict"
+          ]
+        },
+        "severity": { "const": "error" },
+        "path": { "type": ["string", "null"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "frontmatter_value": {
+      "type": ["string", "boolean", "integer", "number", "array", "object", "null"]
+    }
+  }
+}
