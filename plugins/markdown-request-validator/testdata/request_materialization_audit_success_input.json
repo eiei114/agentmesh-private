@@ -23,9 +23,9 @@
           "ready_for_multica": true,
           "status": "ready",
           "project_key": "agentmesh-private",
-          "source_prd": "4_Project/OSS/agentmesh-private/Requests/App/2026-08-26-add-a-deterministic-request-materialization-and-dedupe-a.md",
-          "source_design": "4_Project/OSS/agentmesh-private/Docs/agentmesh-request-operations-v1.md",
-          "source_roadmap": "4_Project/OSS/agentmesh-private/ROADMAP.md",
+          "source_prd": "synthetic/requests/request-materialization-audit.md",
+          "source_design": "synthetic/docs/request-operations-v1.md",
+          "source_roadmap": "synthetic/roadmap.md",
           "blocked_by": [],
           "unblocks": [],
           "sequence_index": 1,
@@ -36,7 +36,7 @@
       },
       "adapter_specific": {
         "adapter_id": "local-markdown-runner",
-        "source_file": "Requests/App/request-materialization-audit.md",
+        "source_file": "synthetic/requests/request-materialization-audit.md",
         "dry_run": true
       }
     }
