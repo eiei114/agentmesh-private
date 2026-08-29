@@ -1,6 +1,6 @@
 # Repair request: sync local main branch with origin
 
-Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555, DOT-1578, DOT-1615
+Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555, DOT-1578, DOT-1615, DOT-1641
 
 ## Failure code
 
@@ -91,6 +91,22 @@ ad-hoc Git command sequence.
 - repair run: `before_ahead=0`, `before_behind=0`, `repair_action=already_aligned`, `after_ahead=0`, `after_behind=0`
 - repair path: no branch movement was required; DOT-1578 reached implementation after DOT-1517 had already fast-forwarded the shared local `main` ref and merged the evidence PR.
 - post-repair repo metadata: `current_branch=agent/codex-release-engineer/30570e6a1116`, `current_head=4416f08fae5fc40a82ed00af90f5f22486703b2e`, `branch=main`, `head=4416f08fae5fc40a82ed00af90f5f22486703b2e`, `ahead=0`, `behind=0`, `dirty_count=0`
+- post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
+
+## DOT-1641 execution record
+
+- request_id: `DOT-1641`
+- source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-08-30-synchronize-the-local-main-branch-with-origin-main.md`
+- derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-08-30-synchronize-the-local-main-branch-with-origin-main.md`
+- dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-08-30-synchronize-the-local-main-branch-with-origin-main.md`
+- stable scope: `agentmesh:repair.repo-main-behind`
+- request status: `ready_for_multica=true`, `status=ready`
+- audited branch: `main`
+- preserved local state before repair: `refs/heads/main=b714e30096ce67f7489754c8f4bdcd2e043b9f37`, `refs/remotes/origin/main=8d8a979ebb01e6e046933e7127548b23fcf14298`, `before_ahead=0`, `before_behind=3`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
+- pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=3`, `after_behind=3`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
+- repair run: `before_ahead=0`, `before_behind=3`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
+- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- post-repair repo metadata: `current_branch=agent/cursor-composer-builder/9d2c695bd75b`, `current_head=8d8a979ebb01e6e046933e7127548b23fcf14298`, `branch=main`, `head=8d8a979ebb01e6e046933e7127548b23fcf14298`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
 ## DOT-1615 execution record
