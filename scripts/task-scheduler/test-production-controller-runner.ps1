@@ -429,3 +429,8 @@ exit $LASTEXITCODE
     Remove-Item Env:AGENTMESH_TEST_ROLLBACK_RESULT -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# Expected-failure fixtures intentionally leave a non-zero native exit code.
+# GitHub Actions' pwsh runner propagates that code unless the script resets it.
+$global:LASTEXITCODE = 0
+exit 0
