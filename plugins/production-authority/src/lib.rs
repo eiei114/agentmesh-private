@@ -2163,6 +2163,7 @@ mod tests {
             == Some(true)
     }
 
+    #[cfg(windows)]
     fn run_rollback_ledger_parse_fixture(script: &str, stdout: &str, exit_code: i32) -> bool {
         let script_path = std::env::temp_dir().join(format!(
             "agentmesh-rollback-parse-{}.ps1",
