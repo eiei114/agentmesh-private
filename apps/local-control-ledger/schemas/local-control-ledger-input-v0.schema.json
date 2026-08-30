@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/local-control-ledger-input-v0.schema.json",
+  "title": "Local Control Ledger Input v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation", "ledger_path"],
+  "properties": {
+    "schema_version": { "const": "local-control-ledger-input.v0" },
+    "operation": {
+      "enum": [
+        "init",
+        "acquire_lease",
+        "release_lease",
+        "claim_scope",
+        "release_claim",
+        "set_watermark",
+        "get_watermark",
+        "get_authority_mode",
+        "set_authority_mode",
+        "record_decision",
+        "record_rollback"
+      ]
+    },
+    "ledger_path": { "type": "string", "minLength": 1 },
+    "controller_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "lease_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "holder": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "acquired_at": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "expires_at": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "scope_key": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "claim_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "watermark_key": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "value_hash": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "updated_at": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "authority_mode": {
+      "enum": ["shadow", "observer", "safe_writer", "queue", "todo_runner"]
+    },
+    "decision_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "decision_code": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "result_code": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "input_hash": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "output_hash": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "recorded_at": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "event_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "reason_code": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 128 }
+  }
+}

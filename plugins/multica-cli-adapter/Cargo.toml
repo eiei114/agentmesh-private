@@ -1,0 +1,28 @@
+[package]
+name = "agentmesh-multica-cli-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+description = "Pinned absolute Multica CLI adapter with shell-free process abstraction (unstable)"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "agentmesh-multica-cli-adapter"
+path = "src/main.rs"
+
+[dependencies]
+agentmesh-fixture-support.workspace = true
+agentmesh-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

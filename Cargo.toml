@@ -22,6 +22,9 @@ members = [
     "plugins/local-runner-adapter",
     "plugins/adapter-metadata-canonicalizer",
     "plugins/lane-run-ledger",
+    "plugins/multica-cli-adapter",
+    "plugins/local-control-ledger",
+    "plugins/production-controller-observer",
 ]
 default-members = [
     "crates/agentmesh-proto",
@@ -44,6 +47,9 @@ agentmesh-fixture-support = { path = "test-support/agentmesh-fixture-support" }
 agentmesh-multica-selector-shadow = { path = "plugins/multica-selector-shadow" }
 agentmesh-markdown-request-validator = { path = "plugins/markdown-request-validator" }
 agentmesh-lane-run-ledger = { path = "plugins/lane-run-ledger" }
+agentmesh-multica-cli-adapter = { path = "plugins/multica-cli-adapter" }
+agentmesh-local-control-ledger = { path = "plugins/local-control-ledger" }
+agentmesh-production-controller-observer = { path = "plugins/production-controller-observer" }
 agentmesh-non-multica-request-adapter = { path = "plugins/non-multica-request-adapter" }
 agentmesh-local-tracker-adapter = { path = "plugins/local-tracker-adapter" }
 agentmesh-local-runner-adapter = { path = "plugins/local-runner-adapter" }
@@ -72,6 +78,7 @@ proptest = "1.6"
 assert_cmd = "2.0"
 predicates = "3.1"
 which = "8.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

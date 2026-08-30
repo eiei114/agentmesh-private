@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/local-control-ledger-output-v0.schema.json",
+  "title": "Local Control Ledger Output v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "app_version", "operation", "valid", "exit_reason"]
+}

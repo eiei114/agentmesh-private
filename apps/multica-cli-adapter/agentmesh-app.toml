@@ -1,0 +1,17 @@
+schema_version = "agentmesh-app.v0"
+name = "multica-cli-adapter"
+protocol_version = "2026-07-15"
+
+[plugin]
+logical_name = "agentmesh-multica-cli-adapter"
+
+[schemas]
+input = "schemas/multica-cli-adapter-input-v0.schema.json"
+output = "schemas/multica-cli-adapter-output-v0.schema.json"
+
+[sidecar]
+retention_class = "owner_local"
+capture_plugin_stderr = false
+
+[conformance]
+cargo_package = "agentmesh-multica-cli-adapter"
