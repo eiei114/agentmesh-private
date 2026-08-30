@@ -96,6 +96,7 @@ ad-hoc Git command sequence.
 ## DOT-1641 execution record
 
 - request_id: `DOT-1641`
+- executed_at: `2026-08-30` (JST; matches commit `54ce7b3` author date)
 - source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-08-30-synchronize-the-local-main-branch-with-origin-main.md`
 - derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-08-30-synchronize-the-local-main-branch-with-origin-main.md`
 - dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-08-30-synchronize-the-local-main-branch-with-origin-main.md`
