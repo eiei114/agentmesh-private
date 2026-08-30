@@ -25,8 +25,6 @@ const MAX_STDOUT_BYTES: usize = 4 * 1024 * 1024;
 const CAPTURE_DRAIN_GRACE_MS: u64 = 2_000;
 #[cfg(windows)]
 const WINDOWS_JOB_DRAIN_GRACE_MS: u64 = 5_000;
-#[cfg(unix)]
-const CLEANUP_COMMAND_TIMEOUT_MS: u64 = 3_000;
 const CHILD_REAP_GRACE_MS: u64 = 2_000;
 const MAX_ARG_CHARS: usize = 256;
 const MAX_ARGS: usize = 32;
@@ -593,43 +591,18 @@ fn wait_child_bounded(child: &mut Child, timeout_ms: u64) -> Result<ExitStatus, 
 }
 
 #[cfg(unix)]
-fn run_cleanup_command_bounded(mut command: Command, label: &str) -> Result<(), String> {
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("{label}_spawn_failed: {e}"))?;
-    match wait_child_bounded(&mut child, CLEANUP_COMMAND_TIMEOUT_MS) {
-        Ok(status) if status.success() => Ok(()),
-        Ok(status) => Err(format!(
-            "{label}_failed: exit_code={}",
-            status.code().unwrap_or(-1)
-        )),
-        Err(error) => {
-            let kill_error = child.kill().err();
-            let _ = wait_child_bounded(&mut child, CHILD_REAP_GRACE_MS);
-            Err(format!(
-                "{label}_timeout: {error}; kill_error={}",
-                kill_error
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "none".to_string())
-            ))
-        }
-    }
-}
-
-#[cfg(unix)]
 fn terminate_process_tree(root_pid: u32) -> Result<(), String> {
-    let kill = if Path::new("/bin/kill").is_file() {
-        "/bin/kill"
-    } else {
-        "/usr/bin/kill"
-    };
-    let mut command = Command::new(kill);
-    command
-        .args(["-KILL", &format!("-{root_pid}")])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    run_cleanup_command_bounded(command, "process_tree_kill")
+    use nix::errno::Errno;
+    use nix::sys::signal::{killpg, Signal};
+    use nix::unistd::Pid;
+
+    let process_group = i32::try_from(root_pid)
+        .map(Pid::from_raw)
+        .map_err(|_| "process_tree_kill_invalid_pid".to_string())?;
+    match killpg(process_group, Signal::SIGKILL) {
+        Ok(()) | Err(Errno::ESRCH) => Ok(()),
+        Err(error) => Err(format!("process_tree_kill_failed: {error}")),
+    }
 }
 
 #[cfg(unix)]
