@@ -68,7 +68,7 @@ Scripts under `scripts/task-scheduler/`:
 
 - `install-production-controller.ps1` — register one-shot `agentmesh app run` task
 - `uninstall-production-controller.ps1` — remove task
-- `rollback-production-controller.ps1` — disable task, record rollback in ledger when `data.recorded=true`
+- `rollback-production-controller.ps1` — disable task, record rollback only when the compact envelope has `outcome=ok` and `payload.data.recorded=true`
 
 Operators install/configure tasks manually; CI does not activate schedules.
 
