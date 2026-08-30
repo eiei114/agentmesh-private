@@ -1187,7 +1187,12 @@ mod tests {
 
     #[test]
     fn pinned_path_rejects_missing_file() {
-        let err = PinnedCliPath::resolve("C:/nonexistent/multica-cli-000000.exe").unwrap_err();
+        let missing = std::env::temp_dir().join(format!(
+            "agentmesh-missing-multica-cli-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&missing);
+        let err = PinnedCliPath::resolve(missing.to_str().unwrap()).unwrap_err();
         assert_eq!(err, CliPathError::NotFound);
     }
 }
