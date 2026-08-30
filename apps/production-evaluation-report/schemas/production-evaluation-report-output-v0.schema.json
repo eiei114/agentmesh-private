@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/production-evaluation-report-output-v0.schema.json",
+  "title": "Production Evaluation Report Output v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "app_version",
+    "operation",
+    "valid",
+    "exit_reason",
+    "issue_count",
+    "issues",
+    "report"
+  ],
+  "properties": {
+    "schema_version": { "const": "production-evaluation-report-output.v0" },
+    "app_version": { "type": "string" },
+    "operation": { "type": "string" },
+    "valid": { "type": "boolean" },
+    "exit_reason": { "type": "string" },
+    "issue_count": { "type": "integer", "minimum": 0 },
+    "issues": { "type": "array" },
+    "report": { "type": "object" }
+  }
+}

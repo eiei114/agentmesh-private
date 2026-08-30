@@ -19,6 +19,16 @@
       "maxItems": 32,
       "items": { "type": "string", "minLength": 1, "maxLength": 256 }
     },
+    "multica_operation": {
+      "enum": [
+        "safe_writer_done_reconcile",
+        "safe_writer_issue_create",
+        "safe_writer_issue_import",
+        "queue_backlog_promote",
+        "todo_runner_assign_rerun"
+      ]
+    },
+    "operation_params": { "type": "object" },
     "timeout_ms": {
       "type": "integer",
       "minimum": 1000,

@@ -16,7 +16,7 @@ Phase 1.0+ **local production control foundation** (ADR 0003) adds bounded plugi
 - Phase 1 adapter plugins (`agentmesh-multica-*`, `agentmesh-markdown-*`) must not depend on `agentmesh-host` / `agentmesh-conformance`; adapter-shaped types stay inside the plugin crate.
 - Malformed framing/JSON fixtures use independent raw writers.
 - No vault paths, Multica types, or secrets in core/fixtures; plugin testdata may use synthetic recorded Multica-shaped JSON only.
-- Local production control plugins (`agentmesh-multica-cli-adapter`, `agentmesh-local-control-ledger`, `agentmesh-production-controller-observer`) must not depend on `agentmesh-host` / `agentmesh-conformance`; Multica CLI paths and SQLite schema stay plugin-owned.
+- Local production control plugins (`agentmesh-multica-cli-adapter`, `agentmesh-local-control-ledger`, `agentmesh-production-controller-observer`, `agentmesh-production-authority`, `agentmesh-production-evaluation-report`) must not depend on `agentmesh-host` / `agentmesh-conformance`; Multica CLI paths and SQLite schema stay plugin-owned.
 
 ## Agent documentation discovery
 

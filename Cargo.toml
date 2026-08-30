@@ -25,6 +25,8 @@ members = [
     "plugins/multica-cli-adapter",
     "plugins/local-control-ledger",
     "plugins/production-controller-observer",
+    "plugins/production-authority",
+    "plugins/production-evaluation-report",
 ]
 default-members = [
     "crates/agentmesh-proto",
@@ -50,6 +52,8 @@ agentmesh-lane-run-ledger = { path = "plugins/lane-run-ledger" }
 agentmesh-multica-cli-adapter = { path = "plugins/multica-cli-adapter" }
 agentmesh-local-control-ledger = { path = "plugins/local-control-ledger" }
 agentmesh-production-controller-observer = { path = "plugins/production-controller-observer" }
+agentmesh-production-authority = { path = "plugins/production-authority" }
+agentmesh-production-evaluation-report = { path = "plugins/production-evaluation-report" }
 agentmesh-non-multica-request-adapter = { path = "plugins/non-multica-request-adapter" }
 agentmesh-local-tracker-adapter = { path = "plugins/local-tracker-adapter" }
 agentmesh-local-runner-adapter = { path = "plugins/local-runner-adapter" }

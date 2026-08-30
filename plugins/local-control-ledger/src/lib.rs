@@ -264,6 +264,18 @@ pub fn init_ledger(path: &Path) -> Result<(), LedgerError> {
             correlation_id TEXT NOT NULL,
             recorded_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS violation_events (
+            event_id TEXT PRIMARY KEY,
+            controller_id TEXT NOT NULL,
+            violation_type TEXT NOT NULL,
+            decision_hash TEXT NOT NULL,
+            recorded_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS idempotency_claims (
+            decision_hash TEXT PRIMARY KEY,
+            controller_id TEXT NOT NULL,
+            recorded_at TEXT NOT NULL
+        );
         ",
     )?;
     conn.execute(
@@ -343,6 +355,14 @@ struct LedgerInput {
     reason_code: Option<String>,
     #[serde(default)]
     correlation_id: Option<String>,
+    #[serde(default)]
+    since_ts: Option<String>,
+    #[serde(default)]
+    until_ts: Option<String>,
+    #[serde(default)]
+    violation_type: Option<String>,
+    #[serde(default)]
+    decision_hash: Option<String>,
 }
 
 /// Run one ledger operation from opaque plugin input.
@@ -380,6 +400,9 @@ pub fn run_local_control_ledger(value: &Value) -> Value {
         "set_authority_mode",
         "record_decision",
         "record_rollback",
+        "get_promotion_metrics",
+        "claim_idempotency",
+        "record_violation",
     ];
     if !allowed.contains(&operation) {
         issues.push(issue("unknown_operation", "unsupported operation"));
@@ -767,6 +790,131 @@ fn dispatch(
                     controller_id,
                     reason_code,
                     correlation_id,
+                    recorded_at
+                ],
+            )?;
+            Ok((json!({"event_id": event_id, "recorded": true}), "ok", true))
+        }
+        "get_promotion_metrics" => {
+            let controller_id = require(input.controller_id.as_deref(), "controller_id")?;
+            let since_ts = require(input.since_ts.as_deref(), "since_ts")?;
+            let until_ts = require(input.until_ts.as_deref(), "until_ts")?;
+            validate_id("controller_id", controller_id)?;
+            validate_ts(since_ts)?;
+            validate_ts(until_ts)?;
+            let conn = open_ledger(path)?;
+            let decision_count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM decisions
+                 WHERE controller_id = ?1 AND recorded_at >= ?2 AND recorded_at <= ?3",
+                params![controller_id, since_ts, until_ts],
+                |row| row.get(0),
+            )?;
+            let hard_gate_failures: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM decisions
+                 WHERE controller_id = ?1 AND recorded_at >= ?2 AND recorded_at <= ?3
+                   AND result_code LIKE 'hard_gate_%'",
+                params![controller_id, since_ts, until_ts],
+                |row| row.get(0),
+            )?;
+            let unauthorized_writes: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM violation_events
+                 WHERE controller_id = ?1 AND violation_type = 'unauthorized_write'
+                   AND recorded_at >= ?2 AND recorded_at <= ?3",
+                params![controller_id, since_ts, until_ts],
+                |row| row.get(0),
+            )?;
+            let duplicate_mutations: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM violation_events
+                 WHERE controller_id = ?1 AND violation_type = 'duplicate_mutation'
+                   AND recorded_at >= ?2 AND recorded_at <= ?3",
+                params![controller_id, since_ts, until_ts],
+                |row| row.get(0),
+            )?;
+            let duplicate_starts: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM violation_events
+                 WHERE controller_id = ?1 AND violation_type = 'duplicate_start'
+                   AND recorded_at >= ?2 AND recorded_at <= ?3",
+                params![controller_id, since_ts, until_ts],
+                |row| row.get(0),
+            )?;
+            let hard_gate_total = decision_count + hard_gate_failures;
+            let hard_gate_parity_pct = if hard_gate_total == 0 {
+                100
+            } else {
+                (decision_count * 100) / hard_gate_total
+            };
+            Ok((
+                json!({
+                    "controller_id": controller_id,
+                    "decision_count": decision_count,
+                    "hard_gate_failures": hard_gate_failures,
+                    "hard_gate_parity_pct": hard_gate_parity_pct,
+                    "unauthorized_writes": unauthorized_writes,
+                    "duplicate_mutations": duplicate_mutations,
+                    "duplicate_starts": duplicate_starts,
+                }),
+                "ok",
+                true,
+            ))
+        }
+        "claim_idempotency" => {
+            let controller_id = require(input.controller_id.as_deref(), "controller_id")?;
+            let decision_hash = require(input.decision_hash.as_deref(), "decision_hash")?;
+            let recorded_at = require(input.recorded_at.as_deref(), "recorded_at")?;
+            validate_id("controller_id", controller_id)?;
+            validate_hash("decision_hash", decision_hash)?;
+            validate_ts(recorded_at)?;
+            let conn = open_ledger(path)?;
+            let inserted = conn.execute(
+                "INSERT OR IGNORE INTO idempotency_claims (decision_hash, controller_id, recorded_at)
+                 VALUES (?1, ?2, ?3)",
+                params![decision_hash, controller_id, recorded_at],
+            )?;
+            Ok((
+                json!({
+                    "decision_hash": decision_hash,
+                    "claimed": inserted == 1,
+                    "duplicate": inserted == 0,
+                }),
+                if inserted == 1 {
+                    "ok"
+                } else {
+                    "duplicate_suppressed"
+                },
+                inserted == 1,
+            ))
+        }
+        "record_violation" => {
+            let controller_id = require(input.controller_id.as_deref(), "controller_id")?;
+            let event_id = require(input.event_id.as_deref(), "event_id")?;
+            let violation_type = require(input.violation_type.as_deref(), "violation_type")?;
+            let decision_hash = require(input.decision_hash.as_deref(), "decision_hash")?;
+            let recorded_at = require(input.recorded_at.as_deref(), "recorded_at")?;
+            validate_id("controller_id", controller_id)?;
+            validate_id("event_id", event_id)?;
+            validate_code("violation_type", violation_type)?;
+            validate_hash("decision_hash", decision_hash)?;
+            validate_ts(recorded_at)?;
+            let allowed = [
+                "unauthorized_write",
+                "duplicate_mutation",
+                "duplicate_start",
+            ];
+            if !allowed.contains(&violation_type) {
+                return Err(LedgerError::Validation(format!(
+                    "violation_type must be one of {allowed:?}"
+                )));
+            }
+            let conn = open_ledger(path)?;
+            conn.execute(
+                "INSERT OR REPLACE INTO violation_events
+                 (event_id, controller_id, violation_type, decision_hash, recorded_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    event_id,
+                    controller_id,
+                    violation_type,
+                    decision_hash,
                     recorded_at
                 ],
             )?;

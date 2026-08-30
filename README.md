@@ -14,7 +14,7 @@ Phase 0 proves a **stable host ↔ plugin contract**:
 
 Phase 1.0 adds a **shadow-mode Multica selector adapter skeleton** (`agentmesh-multica-selector-shadow`): recorded backlog listing → opaque plugin payload shaped like the Python compact selector contract. Sidecar remains audit evidence only; this is **not** production cutover.
 
-Phase 1.0+ **local production control foundation** adds bounded plugin-owned components for scheduled one-shot Apps on an existing Windows PC: pinned Multica CLI adapter (`agentmesh-multica-cli-adapter`), app-local SQLite control ledger (`agentmesh-local-control-ledger`), and observer-mode wiring (`agentmesh-production-controller-observer`). Authority promotion (`observer` → `safe_writer` → `queue` → `todo_runner`) and live Multica mutation remain later slices; foundation runs read-only observer paths with synthetic/fake CLI contract tests only.
+Phase 1.0+ **local production control** adds bounded plugin-owned components for scheduled one-shot Apps on an existing Windows PC: pinned Multica CLI adapter (`agentmesh-multica-cli-adapter`), app-local SQLite control ledger (`agentmesh-local-control-ledger`), observer wiring (`agentmesh-production-controller-observer`), authority modes through `todo_runner` (`agentmesh-production-authority`), and evaluation reporting (`agentmesh-production-evaluation-report`). Live Multica mutation and Task Scheduler activation remain operator-owned; CI uses synthetic/fake CLI contract tests only.
 
 The Markdown request validator App (`agentmesh-markdown-request-validator`) is tool-neutral: it accepts a bounded Markdown request document and emits compact JSON another orchestrator can consume without Multica fields, credentials, or domain types.
 
@@ -190,6 +190,8 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/multica-cli-adapter/` — pinned Multica CLI adapter manifest + IO schemas
 - `apps/local-control-ledger/` — app-local SQLite control ledger manifest + IO schemas
 - `apps/production-controller-observer/` — observer-mode one-shot wiring manifest + IO schemas
+- `apps/production-authority/` — production authority modes, promotion gates, and Cursor recovery manifest + IO schemas
+- `apps/production-evaluation-report/` — 7-day rollback / 30-day evaluation report manifest + IO schemas
 - `toolchains/*.toml` — consumer pins for private prereleases (see `docs/private-prerelease-v0.md`)
 
 Internal / test-only:
@@ -217,6 +219,8 @@ Internal / test-only:
 - `agentmesh-multica-cli-adapter` — pinned absolute Multica CLI adapter (plugin-owned types only)
 - `agentmesh-local-control-ledger` — app-local SQLite control ledger (plugin-owned schema only)
 - `agentmesh-production-controller-observer` — observer-mode one-shot production controller wiring (plugin-owned types only)
+- `agentmesh-production-authority` — authority modes through todo_runner with promotion gates and allowed CLI argv (plugin-owned types only)
+- `agentmesh-production-evaluation-report` — compact aggregate evaluation report for rollback/result windows (plugin-owned types only)
 
 Every crate is `publish = false` during private Phase 0/1.0.
 

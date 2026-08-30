@@ -14,7 +14,7 @@ ADR-0009 (Multica strategy vault) adopts AgentMesh as the local deterministic Mu
 2. **Local control ledger** (`agentmesh-local-control-ledger`): app-local SQLite storing schedule leases, scope claims, watermarks, authority mode, decision hashes, and rollback correlation only. Explicitly excludes prompts, comments, full outputs, and secrets.
 3. **Observer one-shot wiring** (`agentmesh-production-controller-observer`): combines adapter + ledger for read-only observer runs with deterministic exit reasons and `mutation_performed: false`.
 4. **Windows Task Scheduler scripts** under `scripts/task-scheduler/` generate install/uninstall/rollback commands; operators run them manually during promotion.
-5. **Authority ladder** reserved for later slices: `shadow` → `observer` → `safe_writer` → `queue` → `todo_runner`. Foundation implements observer only; higher modes reject mutation until their slice lands.
+5. **Authority ladder** reserved for later slices: `shadow` → `observer` → `safe_writer` → `queue` → `todo_runner`. Foundation implements observer only; the authority slice adds promotion gates and allowed-operation wiring with synthetic/fake CLI tests only.
 
 ## Consequences
 

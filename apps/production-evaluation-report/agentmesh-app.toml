@@ -1,0 +1,20 @@
+schema_version = "agentmesh-app.v0"
+name = "production-evaluation-report"
+protocol_version = "2026-07-15"
+
+[plugin]
+logical_name = "agentmesh-production-evaluation-report"
+
+[schemas]
+input = "schemas/production-evaluation-report-input-v0.schema.json"
+output = "schemas/production-evaluation-report-output-v0.schema.json"
+
+[sidecar]
+retention_class = "owner_local"
+capture_plugin_stderr = false
+
+[limits]
+run_timeout_ms = 60000
+
+[conformance]
+cargo_package = "agentmesh-production-evaluation-report"

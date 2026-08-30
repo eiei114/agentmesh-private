@@ -19,7 +19,10 @@
         "get_authority_mode",
         "set_authority_mode",
         "record_decision",
-        "record_rollback"
+        "record_rollback",
+        "get_promotion_metrics",
+        "claim_idempotency",
+        "record_violation"
       ]
     },
     "ledger_path": { "type": "string", "minLength": 1 },
@@ -44,6 +47,12 @@
     "recorded_at": { "type": "string", "minLength": 1, "maxLength": 64 },
     "event_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "reason_code": { "type": "string", "minLength": 1, "maxLength": 64 },
-    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 128 }
+    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "since_ts": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "until_ts": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "violation_type": {
+      "enum": ["unauthorized_write", "duplicate_mutation", "duplicate_start"]
+    },
+    "decision_hash": { "type": "string", "minLength": 1, "maxLength": 128 }
   }
 }

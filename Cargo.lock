@@ -264,6 +264,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentmesh-production-authority"
+version = "0.1.0"
+dependencies = [
+ "agentmesh-fixture-support",
+ "agentmesh-local-control-ledger",
+ "agentmesh-multica-cli-adapter",
+ "agentmesh-proto",
+ "chrono",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "agentmesh-production-controller-observer"
 version = "0.1.0"
 dependencies = [
@@ -278,6 +294,17 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "agentmesh-production-evaluation-report"
+version = "0.1.0"
+dependencies = [
+ "agentmesh-fixture-support",
+ "agentmesh-proto",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

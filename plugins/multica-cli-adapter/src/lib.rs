@@ -28,6 +28,153 @@ const MAX_TIMEOUT_MS: u64 = 3_600_000;
 /// Fixed read-only query args for observer wiring.
 pub const QUERY_OPERATION_ARGS: &[&str] = &["issues", "list", "--json"];
 
+/// Allowed authority-scoped Multica CLI operation names.
+pub const ALLOWED_MULTICA_OPERATIONS: &[&str] = &[
+    "safe_writer_done_reconcile",
+    "safe_writer_issue_create",
+    "safe_writer_issue_import",
+    "queue_backlog_promote",
+    "todo_runner_assign_rerun",
+];
+
+const MAX_ISSUE_ID_CHARS: usize = 64;
+const MAX_TITLE_CHARS: usize = 256;
+const MAX_IMPORT_REF_CHARS: usize = 256;
+const MAX_UUID_CHARS: usize = 64;
+
+/// Build shell-free argv for one allowed authority operation.
+pub fn build_allowed_operation_argv(
+    multica_operation: &str,
+    params: &Value,
+) -> Result<Vec<String>, String> {
+    if !ALLOWED_MULTICA_OPERATIONS.contains(&multica_operation) {
+        return Err(format!(
+            "multica_operation must be one of {ALLOWED_MULTICA_OPERATIONS:?}"
+        ));
+    }
+    match multica_operation {
+        "safe_writer_done_reconcile" => {
+            let issue_id = require_param_str(params, "issue_id")?;
+            validate_issue_id(&issue_id)?;
+            Ok(vec![
+                "issue".into(),
+                "update".into(),
+                issue_id,
+                "--status".into(),
+                "done".into(),
+                "--no-start".into(),
+                "--output".into(),
+                "json".into(),
+            ])
+        }
+        "safe_writer_issue_create" => {
+            let title = require_param_str(params, "title")?;
+            validate_bounded_text("title", &title, MAX_TITLE_CHARS)?;
+            Ok(vec![
+                "issue".into(),
+                "create".into(),
+                "--title".into(),
+                title,
+                "--no-start".into(),
+                "--output".into(),
+                "json".into(),
+            ])
+        }
+        "safe_writer_issue_import" => {
+            let import_ref = require_param_str(params, "import_ref")?;
+            validate_bounded_text("import_ref", &import_ref, MAX_IMPORT_REF_CHARS)?;
+            Ok(vec![
+                "issue".into(),
+                "import".into(),
+                "--input".into(),
+                import_ref,
+                "--no-start".into(),
+                "--output".into(),
+                "json".into(),
+            ])
+        }
+        "queue_backlog_promote" => {
+            let issue_id = require_param_str(params, "issue_id")?;
+            validate_issue_id(&issue_id)?;
+            Ok(vec![
+                "issue".into(),
+                "update".into(),
+                issue_id,
+                "--status".into(),
+                "todo".into(),
+                "--no-start".into(),
+                "--output".into(),
+                "json".into(),
+            ])
+        }
+        "todo_runner_assign_rerun" => {
+            let issue_id = require_param_str(params, "issue_id")?;
+            let assignee_uuid = require_param_str(params, "assignee_uuid")?;
+            validate_issue_id(&issue_id)?;
+            validate_uuid(&assignee_uuid)?;
+            Ok(vec![
+                "issue".into(),
+                "update".into(),
+                issue_id,
+                "--assignee".into(),
+                assignee_uuid,
+                "--rerun".into(),
+                "--no-start".into(),
+                "--output".into(),
+                "json".into(),
+            ])
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn require_param_str(params: &Value, field: &str) -> Result<String, String> {
+    params
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| format!("{field} is required"))
+}
+
+fn validate_bounded_text(field: &str, value: &str, max: usize) -> Result<(), String> {
+    if value.is_empty() || value.chars().count() > max {
+        return Err(format!("{field} must be 1..={max} chars"));
+    }
+    Ok(())
+}
+
+fn validate_issue_id(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.chars().count() > MAX_ISSUE_ID_CHARS
+        || value.contains(' ')
+        || value.starts_with('-')
+    {
+        return Err(format!(
+            "issue_id must be 1..={MAX_ISSUE_ID_CHARS} chars without spaces or leading dash"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_uuid(value: &str) -> Result<(), String> {
+    if value.is_empty() || value.chars().count() > MAX_UUID_CHARS {
+        return Err(format!("assignee_uuid must be 1..={MAX_UUID_CHARS} chars"));
+    }
+    let lower = value.to_ascii_lowercase();
+    let parts: Vec<&str> = lower.split('-').collect();
+    if parts.len() == 5
+        && parts
+            .iter()
+            .all(|part| part.len() == 4 || part.len() == 8 || part.len() == 12)
+        && parts
+            .iter()
+            .all(|part| part.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        return Ok(());
+    }
+    Err("assignee_uuid must be a UUID".into())
+}
+
 #[cfg(windows)]
 const WINDOWS_ENV_ALLOWLIST: &[&str] = &[
     "SystemRoot",
@@ -288,6 +435,10 @@ struct AdapterInput {
     #[serde(default)]
     invoke_args: Vec<String>,
     #[serde(default)]
+    multica_operation: Option<String>,
+    #[serde(default)]
+    operation_params: Option<Value>,
+    #[serde(default)]
     timeout_ms: Option<u64>,
 }
 
@@ -429,19 +580,61 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
             .iter()
             .map(|arg| (*arg).to_string())
             .collect(),
-        "invoke" => input.invoke_args.clone(),
+        "invoke" => {
+            if let Some(multica_operation) = input.multica_operation.as_deref() {
+                if !input.invoke_args.is_empty() {
+                    return compact(
+                        operation,
+                        false,
+                        "invoke_args_forbidden",
+                        vec![issue(
+                            "invoke_args_forbidden",
+                            "invoke with multica_operation must not include invoke_args",
+                        )],
+                        None,
+                    );
+                }
+                match build_allowed_operation_argv(
+                    multica_operation,
+                    input.operation_params.as_ref().unwrap_or(&json!({})),
+                ) {
+                    Ok(args) => args,
+                    Err(message) => {
+                        return compact(
+                            operation,
+                            false,
+                            "allowed_operation_invalid",
+                            vec![issue("allowed_operation_invalid", message)],
+                            None,
+                        );
+                    }
+                }
+            } else if input.invoke_args.is_empty() {
+                return compact(
+                    operation,
+                    false,
+                    "invoke_args_missing",
+                    vec![issue(
+                        "invoke_args_missing",
+                        "invoke requires invoke_args or multica_operation",
+                    )],
+                    None,
+                );
+            } else {
+                return compact(
+                    operation,
+                    false,
+                    "arbitrary_argv_rejected",
+                    vec![issue(
+                        "arbitrary_argv_rejected",
+                        "authority paths require multica_operation; arbitrary invoke_args rejected",
+                    )],
+                    None,
+                );
+            }
+        }
         _ => unreachable!(),
     };
-
-    if operation == "invoke" && invoke_args.is_empty() {
-        return compact(
-            operation,
-            false,
-            "invoke_args_missing",
-            vec![issue("invoke_args_missing", "invoke requires invoke_args")],
-            None,
-        );
-    }
 
     match runner.run(&spec, &invoke_args, timeout_ms) {
         Ok(result) => {
@@ -595,7 +788,7 @@ mod tests {
     }
 
     #[test]
-    fn invoke_requires_args() {
+    fn invoke_requires_multica_operation() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("multica.exe");
         fs::write(&file, b"x").unwrap();
@@ -614,13 +807,81 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_contract_records_nonzero_exit() {
+    fn rejects_arbitrary_invoke_args() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("multica.exe");
         fs::write(&file, b"x").unwrap();
         let mut input = base_input("invoke");
         input["cli_path"] = json!(file.canonicalize().unwrap().to_string_lossy());
         input["invoke_args"] = json!(["issues", "list", "--json"]);
+        let output = run_multica_cli_adapter(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: br#"{}"#.to_vec(),
+                stderr_len: 0,
+                timed_out: false,
+            },
+        );
+        assert_eq!(output["exit_reason"], json!("arbitrary_argv_rejected"));
+    }
+
+    #[test]
+    fn allowed_operation_builds_fixed_argv() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("multica.exe");
+        fs::write(&file, b"x").unwrap();
+        let mut input = base_input("invoke");
+        input["cli_path"] = json!(file.canonicalize().unwrap().to_string_lossy());
+        input["multica_operation"] = json!("queue_backlog_promote");
+        input["operation_params"] = json!({"issue_id": "AM-1"});
+
+        struct ArgCapturingRunner;
+        impl ProcessRunner for ArgCapturingRunner {
+            fn run(
+                &self,
+                _spec: &CliCommandSpec,
+                operation_args: &[String],
+                _timeout_ms: u64,
+            ) -> Result<CliInvokeResult, String> {
+                assert_eq!(
+                    operation_args,
+                    &[
+                        "issue".to_string(),
+                        "update".to_string(),
+                        "AM-1".to_string(),
+                        "--status".to_string(),
+                        "todo".to_string(),
+                        "--no-start".to_string(),
+                        "--output".to_string(),
+                        "json".to_string(),
+                    ]
+                );
+                Ok(CliInvokeResult {
+                    exit_code: 0,
+                    stdout_json: Some(json!({"ok": true})),
+                    stdout_sha256: sha256_prefixed(b"{}"),
+                    stdout_byte_count: 2,
+                    stdout_truncated: false,
+                    stderr_byte_count: 0,
+                    timed_out: false,
+                })
+            }
+        }
+
+        let output = run_multica_cli_adapter(&input, &ArgCapturingRunner);
+        assert_eq!(output["exit_reason"], json!("invoke_ok"));
+    }
+
+    #[test]
+    fn synthetic_contract_records_nonzero_exit() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("multica.exe");
+        fs::write(&file, b"x").unwrap();
+        let mut input = base_input("invoke");
+        input["cli_path"] = json!(file.canonicalize().unwrap().to_string_lossy());
+        input["multica_operation"] = json!("safe_writer_done_reconcile");
+        input["operation_params"] = json!({"issue_id": "AM-1"});
         let output = run_multica_cli_adapter(
             &input,
             &FakeRunner {

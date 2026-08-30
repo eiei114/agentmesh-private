@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/production-evaluation-report-input-v0.schema.json",
+  "title": "Production Evaluation Report Input v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation",
+    "controller_id",
+    "rollback_window",
+    "result_window"
+  ],
+  "properties": {
+    "schema_version": { "const": "production-evaluation-report-input.v0" },
+    "operation": { "const": "evaluate" },
+    "controller_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "rollback_window": { "$ref": "#/$defs/window" },
+    "result_window": { "$ref": "#/$defs/window" }
+  },
+  "$defs": {
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "window_days",
+        "decision_count",
+        "token_baseline",
+        "token_current",
+        "failure_rate_baseline_pct",
+        "failure_rate_current_pct",
+        "throughput_baseline",
+        "throughput_current",
+        "attribution_coverage_pct",
+        "duplicate_count",
+        "unauthorized_count"
+      ],
+      "properties": {
+        "window_days": { "type": "integer", "minimum": 1 },
+        "decision_count": { "type": "integer", "minimum": 0 },
+        "token_baseline": { "type": "number", "minimum": 0 },
+        "token_current": { "type": "number", "minimum": 0 },
+        "failure_rate_baseline_pct": { "type": "number", "minimum": 0 },
+        "failure_rate_current_pct": { "type": "number", "minimum": 0 },
+        "throughput_baseline": { "type": "number", "minimum": 0 },
+        "throughput_current": { "type": "number", "minimum": 0 },
+        "attribution_coverage_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+        "duplicate_count": { "type": "integer", "minimum": 0 },
+        "unauthorized_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
