@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/production-authority-input-v0.schema.json",
+  "title": "Production Authority Input v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation",
+    "controller_id",
+    "execution_kind",
+    "authority_mode",
+    "ledger_path",
+    "cli_path",
+    "now"
+  ],
+  "properties": {
+    "schema_version": { "const": "production-authority-input.v0" },
+    "operation": {
+      "enum": ["run_once", "check_promotion", "cursor_recovery"]
+    },
+    "controller_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "authority_mode": {
+      "enum": ["shadow", "observer", "safe_writer", "queue", "todo_runner"]
+    },
+    "execution_kind": {
+      "type": "string",
+      "enum": ["shadow", "live"]
+    },
+    "ledger_path": { "type": "string", "minLength": 1 },
+    "cli_path": { "type": "string", "minLength": 1 },
+    "now": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "scope_key": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "lease_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "lease_ttl_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 3600
+    },
+    "cli_timeout_ms": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 3600000
+    },
+    "multica_operation": {
+      "enum": [
+        "safe_writer_done_reconcile",
+        "safe_writer_issue_create",
+        "safe_writer_issue_import",
+        "queue_backlog_promote",
+        "todo_runner_assign",
+        "todo_runner_rerun"
+      ]
+    },
+    "operation_params": { "type": "object" },
+    "target_mode": {
+      "enum": ["observer", "safe_writer", "queue", "todo_runner"]
+    },
+    "cursor_recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issue_id",
+        "failure_class",
+        "health_transition",
+        "no_artifacts",
+        "same_issue"
+      ],
+      "properties": {
+        "issue_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "failure_class": { "const": "availability_bridge_failure" },
+        "health_transition": { "const": "down_to_healthy" },
+        "no_artifacts": { "const": true },
+        "same_issue": { "const": true }
+      }
+    }
+  }
+}

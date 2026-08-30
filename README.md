@@ -14,6 +14,8 @@ Phase 0 proves a **stable host ↔ plugin contract**:
 
 Phase 1.0 adds a **shadow-mode Multica selector adapter skeleton** (`agentmesh-multica-selector-shadow`): recorded backlog listing → opaque plugin payload shaped like the Python compact selector contract. Sidecar remains audit evidence only; this is **not** production cutover.
 
+Phase 1.0+ **local production control** adds bounded plugin-owned components for scheduled one-shot Apps on an existing Windows PC: pinned Multica CLI adapter (`agentmesh-multica-cli-adapter`), app-local SQLite control ledger (`agentmesh-local-control-ledger`), observer wiring (`agentmesh-production-controller-observer`), authority modes through `todo_runner` (`agentmesh-production-authority`), and evaluation reporting (`agentmesh-production-evaluation-report`). Live Multica mutation and Task Scheduler activation remain operator-owned; CI uses synthetic/fake CLI contract tests only.
+
 The Markdown request validator App (`agentmesh-markdown-request-validator`) is tool-neutral: it accepts a bounded Markdown request document and emits compact JSON another orchestrator can consume without Multica fields, credentials, or domain types.
 
 The request Markdown normalizer App (`agentmesh-request-markdown-normalizer`) emits canonical request projections with deterministic section order, normalized bullets/whitespace, canonical requirement ordering, and stable title-derived slug metadata for local runners.
@@ -34,7 +36,7 @@ The public 0.x rollback replay App (`agentmesh-public-0x-rollback-replay`) consu
 
 The public 0.x readiness report App (`agentmesh-public-0x-readiness-report`) consumes retained request evidence digests and adapter evidence envelopes after dogfood/repair cycles, then emits a deterministic coverage/freshness/adapter-consistency report for local and non-Multica workflows.
 
-Still out of scope: Todo Runner parity, Multica credentials/live CLI, daemon/TUI/SQLite, WorkItem promotion into core, polyglot evidence.
+Still out of scope: Todo Runner parity, live Multica credentials/production cutover (foundation uses fakes for CLI contract tests), daemon/TUI, WorkItem promotion into core, polyglot evidence.
 
 ## Supported targets (exact)
 
@@ -147,7 +149,7 @@ Rollback: choose a previous known-good workflow artifact by immutable name + man
 - Live Multica credentials / production cutover (shadow skeleton only in Phase 1.0)
 - Non-Rust conformance claim
 - Protocol notifications/progress/callbacks/shutdown/streaming/batching/cancellation
-- Daemon / TUI / scheduler / production SQLite
+- Daemon / TUI / public scheduler activation / production SQLite in core (app-local SQLite lives in production-control plugins only)
 - Public releases, crates.io, Homebrew/Scoop/Winget, auto-update
 - Protocol `1.0` (needs Multica + Markdown adapters + migration policy)
 - Final project/binary naming and public license
@@ -185,6 +187,11 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/public-0x-readiness/` — public 0.x readiness evidence gate manifest + IO schemas
 - `apps/public-0x-readiness-report/` — post-dogfood public 0.x readiness report manifest + IO schemas
 - `apps/public-0x-rollback-replay/` — deterministic rollback replay evidence manifest + IO schemas
+- `apps/multica-cli-adapter/` — pinned Multica CLI adapter manifest + IO schemas
+- `apps/local-control-ledger/` — app-local SQLite control ledger manifest + IO schemas
+- `apps/production-controller-observer/` — observer-mode one-shot wiring manifest + IO schemas
+- `apps/production-authority/` — production authority modes, promotion gates, and Cursor recovery manifest + IO schemas
+- `apps/production-evaluation-report/` — 7-day rollback / 30-day evaluation report manifest + IO schemas
 - `toolchains/*.toml` — consumer pins for private prereleases (see `docs/private-prerelease-v0.md`)
 
 Internal / test-only:
@@ -209,6 +216,11 @@ Internal / test-only:
 - `agentmesh-public-0x-readiness` — public 0.x readiness evidence gate binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-public-0x-readiness-report` — post-dogfood public 0.x readiness report binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-public-0x-rollback-replay` — deterministic public 0.x rollback evidence bundle binary (`adapter-metadata-canonicalizer` package)
+- `agentmesh-multica-cli-adapter` — pinned absolute Multica CLI adapter (plugin-owned types only)
+- `agentmesh-local-control-ledger` — app-local SQLite control ledger (plugin-owned schema only)
+- `agentmesh-production-controller-observer` — observer-mode one-shot production controller wiring (plugin-owned types only)
+- `agentmesh-production-authority` — authority modes through todo_runner with promotion gates and allowed CLI argv (plugin-owned types only)
+- `agentmesh-production-evaluation-report` — compact aggregate evaluation report for rollback/result windows (plugin-owned types only)
 
 Every crate is `publish = false` during private Phase 0/1.0.
 
@@ -226,4 +238,6 @@ cargo test --workspace
 - `docs/threat-model-v0.md` — **Accepted for Phase 0**
 - `docs/adr/0001-external-stdio-plugins.md` — **Accepted** (Phase 0 exit review)
 - `docs/adr/0002-evidence-compiler-runtime-ownership.md` — **Accepted** (private Evidence Compiler ownership)
+- `docs/adr/0003-local-production-control.md` — **Accepted** (bounded local production adapter foundation)
 - `docs/evidence-compiler-v0.md` — **Conditional private pilot**
+- `docs/local-production-control-v0.md` — **Accepted foundation** (observer slice; authority promotion deferred)

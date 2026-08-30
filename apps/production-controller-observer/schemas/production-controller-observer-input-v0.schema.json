@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/production-controller-observer-input-v0.schema.json",
+  "title": "Production Controller Observer Input v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation",
+    "controller_id",
+    "authority_mode",
+    "ledger_path",
+    "cli_path",
+    "now"
+  ],
+  "properties": {
+    "schema_version": { "const": "production-controller-observer-input.v0" },
+    "operation": { "const": "run_once" },
+    "controller_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "authority_mode": { "const": "observer" },
+    "ledger_path": { "type": "string", "minLength": 1 },
+    "cli_path": { "type": "string", "minLength": 1 },
+    "now": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "scope_key": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "lease_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "prefix_args": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+    },
+    "lease_ttl_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 3600
+    },
+    "cli_timeout_ms": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 3600000
+    }
+  }
+}

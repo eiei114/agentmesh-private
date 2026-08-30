@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/production-controller-observer-output-v0.schema.json",
+  "title": "Production Controller Observer Output v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "app_version",
+    "operation",
+    "valid",
+    "exit_reason",
+    "mutation_performed",
+    "issue_count",
+    "issues",
+    "cli",
+    "ledger"
+  ],
+  "properties": {
+    "schema_version": { "const": "production-controller-observer-output.v0" },
+    "app_version": { "type": "string" },
+    "operation": { "const": "run_once" },
+    "valid": { "type": "boolean" },
+    "exit_reason": { "type": "string" },
+    "mutation_performed": { "const": false },
+    "issue_count": { "type": "integer", "minimum": 0 },
+    "issues": { "type": "array" },
+    "cli": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "type": "string" },
+        "operation": { "enum": ["query"] },
+        "valid": { "type": "boolean" },
+        "exit_reason": { "type": "string" },
+        "exit_code": {},
+        "stdout_sha256": { "type": "string" },
+        "stdout_byte_count": { "type": "integer", "minimum": 0 },
+        "stdout_truncated": { "type": "boolean" },
+        "stderr_byte_count": { "type": "integer", "minimum": 0 },
+        "json_parse_ok": { "type": "boolean" },
+        "json_top_level_kind": { "type": "string" },
+        "timed_out": { "type": "boolean" }
+      }
+    },
+    "ledger": { "type": "object" }
+  }
+}

@@ -1,0 +1,33 @@
+[package]
+name = "agentmesh-production-controller-observer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+rust-version.workspace = true
+description = "Observer-mode one-shot production controller wiring adapter + ledger (unstable)"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "agentmesh-production-controller-observer"
+path = "src/main.rs"
+
+[dependencies]
+agentmesh-fixture-support.workspace = true
+agentmesh-local-control-ledger = { path = "../local-control-ledger" }
+agentmesh-multica-cli-adapter = { path = "../multica-cli-adapter" }
+agentmesh-proto.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

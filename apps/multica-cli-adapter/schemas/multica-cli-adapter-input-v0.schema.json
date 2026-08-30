@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/multica-cli-adapter-input-v0.schema.json",
+  "title": "Multica CLI Adapter Input v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation", "cli_path"],
+  "properties": {
+    "schema_version": { "const": "multica-cli-adapter-input.v0" },
+    "operation": { "enum": ["probe", "query", "invoke"] },
+    "cli_path": { "type": "string", "minLength": 1 },
+    "prefix_args": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+    },
+    "invoke_args": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+    },
+    "multica_operation": {
+      "enum": [
+        "safe_writer_done_reconcile",
+        "safe_writer_issue_create",
+        "safe_writer_issue_import",
+        "queue_backlog_promote",
+        "todo_runner_assign",
+        "todo_runner_rerun",
+        "cursor_recovery_rerun"
+      ]
+    },
+    "operation_params": { "type": "object" },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 3600000
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/production-authority-output-v0.schema.json",
+  "title": "Production Authority Output v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "app_version",
+    "operation",
+    "valid",
+    "exit_reason",
+    "mutation_performed",
+    "issue_count",
+    "issues"
+  ],
+  "properties": {
+    "schema_version": { "const": "production-authority-output.v0" },
+    "app_version": { "type": "string" },
+    "operation": { "type": "string" },
+    "valid": { "type": "boolean" },
+    "exit_reason": { "type": "string" },
+    "mutation_performed": { "type": "boolean" },
+    "issue_count": { "type": "integer", "minimum": 0 },
+    "issues": { "type": "array" },
+    "cli": {},
+    "ledger": {},
+    "extra": {}
+  }
+}
