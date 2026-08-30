@@ -76,11 +76,26 @@ pub fn validate_import_description_file(
     Ok(description_file.to_string())
 }
 
+/// Shell-free argv plus optional process working directory for one allowed operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AllowedOperationSpec {
+    pub argv: Vec<String>,
+    pub working_directory: Option<PathBuf>,
+}
+
 /// Build shell-free argv for one allowed authority operation.
 pub fn build_allowed_operation_argv(
     multica_operation: &str,
     params: &Value,
 ) -> Result<Vec<String>, String> {
+    build_allowed_operation_spec(multica_operation, params).map(|spec| spec.argv)
+}
+
+/// Build argv and optional working directory for one allowed authority operation.
+pub fn build_allowed_operation_spec(
+    multica_operation: &str,
+    params: &Value,
+) -> Result<AllowedOperationSpec, String> {
     if !ALLOWED_MULTICA_OPERATIONS.contains(&multica_operation) {
         return Err(format!(
             "multica_operation must be one of {ALLOWED_MULTICA_OPERATIONS:?}"
@@ -90,29 +105,35 @@ pub fn build_allowed_operation_argv(
         "safe_writer_done_reconcile" => {
             let issue_id = require_param_str(params, "issue_id")?;
             validate_issue_id(&issue_id)?;
-            Ok(vec![
-                "issue".into(),
-                "update".into(),
-                issue_id,
-                "--status".into(),
-                "done".into(),
-                "--no-start".into(),
-                "--output".into(),
-                "json".into(),
-            ])
+            Ok(AllowedOperationSpec {
+                argv: vec![
+                    "issue".into(),
+                    "update".into(),
+                    issue_id,
+                    "--status".into(),
+                    "done".into(),
+                    "--no-start".into(),
+                    "--output".into(),
+                    "json".into(),
+                ],
+                working_directory: None,
+            })
         }
         "safe_writer_issue_create" => {
             let title = require_param_str(params, "title")?;
             validate_bounded_text("title", &title, MAX_TITLE_CHARS)?;
-            Ok(vec![
-                "issue".into(),
-                "create".into(),
-                "--title".into(),
-                title,
-                "--no-start".into(),
-                "--output".into(),
-                "json".into(),
-            ])
+            Ok(AllowedOperationSpec {
+                argv: vec![
+                    "issue".into(),
+                    "create".into(),
+                    "--title".into(),
+                    title,
+                    "--no-start".into(),
+                    "--output".into(),
+                    "json".into(),
+                ],
+                working_directory: None,
+            })
         }
         "safe_writer_issue_import" => {
             let title = require_param_str(params, "title")?;
@@ -122,60 +143,75 @@ pub fn build_allowed_operation_argv(
             validate_bounded_text("title", &title, MAX_TITLE_CHARS)?;
             validate_bounded_text("project_id", &project_id, MAX_ISSUE_ID_CHARS)?;
             let rel = validate_import_description_file(Path::new(&import_root), &description_file)?;
-            Ok(vec![
-                "issue".into(),
-                "create".into(),
-                "--title".into(),
-                title,
-                "--description-file".into(),
-                rel,
-                "--project".into(),
-                project_id,
-                "--status".into(),
-                "todo".into(),
-                "--output".into(),
-                "json".into(),
-            ])
+            let canonical_root = Path::new(&import_root)
+                .canonicalize()
+                .map_err(|_| "import_root does not exist".to_string())?;
+            Ok(AllowedOperationSpec {
+                argv: vec![
+                    "issue".into(),
+                    "create".into(),
+                    "--title".into(),
+                    title,
+                    "--description-file".into(),
+                    rel,
+                    "--project".into(),
+                    project_id,
+                    "--status".into(),
+                    "todo".into(),
+                    "--output".into(),
+                    "json".into(),
+                ],
+                working_directory: Some(canonical_root),
+            })
         }
         "queue_backlog_promote" => {
             let issue_id = require_param_str(params, "issue_id")?;
             validate_issue_id(&issue_id)?;
-            Ok(vec![
-                "issue".into(),
-                "update".into(),
-                issue_id,
-                "--status".into(),
-                "todo".into(),
-                "--no-start".into(),
-                "--output".into(),
-                "json".into(),
-            ])
+            Ok(AllowedOperationSpec {
+                argv: vec![
+                    "issue".into(),
+                    "update".into(),
+                    issue_id,
+                    "--status".into(),
+                    "todo".into(),
+                    "--no-start".into(),
+                    "--output".into(),
+                    "json".into(),
+                ],
+                working_directory: None,
+            })
         }
         "todo_runner_assign" => {
             let issue_id = require_param_str(params, "issue_id")?;
             let assignee_uuid = require_param_str(params, "assignee_uuid")?;
             validate_issue_id(&issue_id)?;
             validate_uuid(&assignee_uuid)?;
-            Ok(vec![
-                "issue".into(),
-                "assign".into(),
-                issue_id,
-                "--to-id".into(),
-                assignee_uuid,
-                "--output".into(),
-                "json".into(),
-            ])
+            Ok(AllowedOperationSpec {
+                argv: vec![
+                    "issue".into(),
+                    "assign".into(),
+                    issue_id,
+                    "--to-id".into(),
+                    assignee_uuid,
+                    "--output".into(),
+                    "json".into(),
+                ],
+                working_directory: None,
+            })
         }
         "todo_runner_rerun" | "cursor_recovery_rerun" => {
             let issue_id = require_param_str(params, "issue_id")?;
             validate_issue_id(&issue_id)?;
-            Ok(vec![
-                "issue".into(),
-                "rerun".into(),
-                issue_id,
-                "--output".into(),
-                "json".into(),
-            ])
+            Ok(AllowedOperationSpec {
+                argv: vec![
+                    "issue".into(),
+                    "rerun".into(),
+                    issue_id,
+                    "--output".into(),
+                    "json".into(),
+                ],
+                working_directory: None,
+            })
         }
         _ => unreachable!(),
     }
@@ -285,6 +321,7 @@ impl PinnedCliPath {
 pub struct CliCommandSpec {
     pub program: PathBuf,
     pub prefix_args: Vec<OsString>,
+    pub working_directory: Option<PathBuf>,
 }
 
 impl CliCommandSpec {
@@ -301,6 +338,7 @@ impl CliCommandSpec {
         Ok(Self {
             program: pinned.path.clone(),
             prefix_args: prefix_args.iter().map(OsString::from).collect(),
+            working_directory: None,
         })
     }
 
@@ -339,6 +377,9 @@ impl CliCommandSpec {
         }
         cmd.args(&self.prefix_args);
         cmd.args(operation_args);
+        if let Some(cwd) = &self.working_directory {
+            cmd.current_dir(cwd);
+        }
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -614,7 +655,7 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
         }
     };
 
-    let spec = match CliCommandSpec::from_pinned(&pinned, &input.prefix_args) {
+    let mut spec = match CliCommandSpec::from_pinned(&pinned, &input.prefix_args) {
         Ok(spec) => spec,
         Err(message) => {
             return compact(
@@ -647,11 +688,14 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
                         None,
                     );
                 }
-                match build_allowed_operation_argv(
+                match build_allowed_operation_spec(
                     multica_operation,
                     input.operation_params.as_ref().unwrap_or(&json!({})),
                 ) {
-                    Ok(args) => args,
+                    Ok(op) => {
+                        spec.working_directory = op.working_directory;
+                        op.argv
+                    }
                     Err(message) => {
                         return compact(
                             operation,
@@ -1036,7 +1080,7 @@ mod tests {
         let root = dir.path().join("imports");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("issue.md"), b"# issue").unwrap();
-        let args = build_allowed_operation_argv(
+        let spec = build_allowed_operation_spec(
             "safe_writer_issue_import",
             &json!({
                 "title": "Imported",
@@ -1047,7 +1091,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            args,
+            spec.argv,
             vec![
                 "issue",
                 "create",
@@ -1063,6 +1107,82 @@ mod tests {
                 "json"
             ]
         );
+        let cwd = spec.working_directory.as_ref().unwrap();
+        let desc_arg = spec
+            .argv
+            .iter()
+            .skip_while(|arg| arg.as_str() != "--description-file")
+            .nth(1)
+            .expect("--description-file value");
+        let resolved = cwd.join(desc_arg).canonicalize().unwrap();
+        assert_eq!(resolved, root.join("issue.md").canonicalize().unwrap());
+    }
+
+    #[test]
+    fn issue_import_invoke_sets_cwd_and_resolves_description_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("multica.exe");
+        fs::write(&file, b"x").unwrap();
+        let root = dir.path().join("imports");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("issue.md"), b"# issue").unwrap();
+
+        struct ImportCwdRunner {
+            expected_root: PathBuf,
+        }
+
+        impl ProcessRunner for ImportCwdRunner {
+            fn run(
+                &self,
+                spec: &CliCommandSpec,
+                operation_args: &[String],
+                _timeout_ms: u64,
+            ) -> Result<CliInvokeResult, String> {
+                let cwd = spec
+                    .working_directory
+                    .as_ref()
+                    .expect("working_directory required for issue import");
+                assert_eq!(cwd, &self.expected_root);
+                let rel = operation_args
+                    .iter()
+                    .skip_while(|arg| arg.as_str() != "--description-file")
+                    .nth(1)
+                    .expect("--description-file value");
+                let resolved = cwd.join(rel).canonicalize().unwrap();
+                assert_eq!(resolved, self.expected_root.join("issue.md"));
+                Ok(CliInvokeResult {
+                    exit_code: 0,
+                    stdout_json: Some(json!({"ok": true})),
+                    stdout_sha256: sha256_prefixed(b"{}"),
+                    stdout_byte_count: 2,
+                    stdout_truncated: false,
+                    stderr_byte_count: 0,
+                    timed_out: false,
+                })
+            }
+        }
+
+        let canonical_root = root.canonicalize().unwrap();
+        let input = json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "operation": "invoke",
+            "cli_path": file.canonicalize().unwrap().to_string_lossy(),
+            "multica_operation": "safe_writer_issue_import",
+            "operation_params": {
+                "title": "Imported",
+                "description_file": "issue.md",
+                "project_id": "agentmesh-private",
+                "import_root": root.to_string_lossy(),
+            },
+        });
+        let output = run_multica_cli_adapter(
+            &input,
+            &ImportCwdRunner {
+                expected_root: canonical_root,
+            },
+        );
+        assert_eq!(output["valid"], json!(true));
+        assert_eq!(output["exit_reason"], json!("invoke_ok"));
     }
 
     #[test]

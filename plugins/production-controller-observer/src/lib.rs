@@ -354,6 +354,48 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
         "prefix_args": input.prefix_args,
         "timeout_ms": cli_timeout_ms,
     });
+    let decision_hash = sha256_hex(&json!({
+        "controller_id": input.controller_id,
+        "decision_code": "observer_run_once",
+        "input_hash": sha256_hex(&cli_input),
+    }));
+    let idempotency = ledger_op(
+        &input,
+        "claim_idempotency",
+        json!({"decision_hash": decision_hash}),
+    );
+    if idempotency["exit_reason"] == "duplicate_suppressed" {
+        guard.disarm();
+        let _ = ledger_op(&input, "release_claim", json!({"scope_key": scope_key}));
+        let _ = ledger_op(&input, "release_lease", json!({"lease_id": lease_id}));
+        return compact(
+            operation,
+            false,
+            "duplicate_suppressed",
+            vec![issue(
+                "duplicate_suppressed",
+                "duplicate observer run suppressed",
+            )],
+            json!(null),
+            json!({"idempotency": idempotency}),
+        );
+    }
+    if idempotency["valid"] != json!(true) {
+        return compact(
+            operation,
+            false,
+            "idempotency_claim_failed",
+            vec![issue(
+                "idempotency_claim_failed",
+                idempotency["exit_reason"]
+                    .as_str()
+                    .unwrap_or("idempotency claim invalid"),
+            )],
+            json!(null),
+            idempotency,
+        );
+    }
+
     let cli_raw = run_multica_cli_adapter(&cli_input, runner);
     let cli = redact_cli_summary(&cli_raw);
 
@@ -400,6 +442,7 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
                 "decision": decision,
                 "watermark": watermark,
                 "authority": authority,
+                "idempotency": idempotency,
             }),
         );
     }
@@ -428,6 +471,7 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
             "decision": decision,
             "watermark": watermark,
             "authority": authority,
+            "idempotency": idempotency,
         }),
     )
 }
@@ -438,6 +482,10 @@ mod tests {
     use agentmesh_local_control_ledger::run_local_control_ledger;
     use agentmesh_multica_cli_adapter::{CliCommandSpec, CliInvokeResult};
     use std::fs;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
 
     struct FakeRunner {
         exit_code: i32,
@@ -469,6 +517,33 @@ mod tests {
                 stdout_truncated: false,
                 stderr_byte_count: 0,
                 timed_out: self.timed_out,
+            })
+        }
+    }
+
+    struct CountedFakeRunner {
+        calls: Arc<AtomicUsize>,
+        exit_code: i32,
+        stdout: Vec<u8>,
+    }
+
+    impl ProcessRunner for CountedFakeRunner {
+        fn run(
+            &self,
+            _spec: &CliCommandSpec,
+            _operation_args: &[String],
+            _timeout_ms: u64,
+        ) -> Result<CliInvokeResult, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let bounded = self.stdout.as_slice();
+            Ok(CliInvokeResult {
+                exit_code: self.exit_code,
+                stdout_json: serde_json::from_slice(bounded).ok(),
+                stdout_sha256: format!("sha256:{}", hex::encode(Sha256::digest(bounded))),
+                stdout_byte_count: bounded.len(),
+                stdout_truncated: false,
+                stderr_byte_count: 0,
+                timed_out: false,
             })
         }
     }
@@ -507,6 +582,26 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with("sha256:"));
+    }
+
+    #[test]
+    fn duplicate_observer_run_suppresses_cli() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = base_input(&dir);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{"issues":[]}"#.to_vec(),
+        };
+        assert_eq!(
+            run_production_controller_observer(&input, &runner)["valid"],
+            json!(true)
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let dup = run_production_controller_observer(&input, &runner);
+        assert_eq!(dup["exit_reason"], json!("duplicate_suppressed"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[test]
@@ -660,7 +755,7 @@ mod tests {
         assert_eq!(first["valid"], json!(true));
 
         let second = run_production_controller_observer(&input, &FailingAfterClaimRunner);
-        assert_eq!(second["valid"], json!(true));
-        assert_eq!(second["exit_reason"], json!("observer_success_no_mutation"));
+        assert_eq!(second["exit_reason"], json!("duplicate_suppressed"));
+        assert_ne!(second["exit_reason"], json!("lease_already_held"));
     }
 }

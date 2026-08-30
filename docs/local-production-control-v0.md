@@ -41,8 +41,18 @@ Observer `run_once` emits stable `exit_reason` values including:
 - `observer_success_no_mutation`
 - `authority_not_observer`
 - `lease_already_held`
+- `duplicate_suppressed`
+- `idempotency_claim_failed`
 - `cli_path_not_absolute` / `cli_nonzero_exit` / `stdout_not_json` (via CLI adapter)
 - `decision_record_failed`
+
+## Idempotency and manual recovery
+
+Observer and authority `run_once` paths claim controller-scoped idempotency **before** invoking the Multica CLI. Duplicate inputs suppress the CLI call and release leases.
+
+Failed **non-Cursor** mutation runs that already claimed idempotency but exited with CLI failure, timeout, or uncertain Multica effect leave a **consumed ambiguous claim**. Operators must inspect ledger decisions and live Multica state and perform **explicit manual recovery**. There is no generic automatic retry for those mutations.
+
+Cursor recovery is separate: one health-gated retry per issue via `cursor_recovery`, with lease + scope + idempotency ordering before rerun.
 
 ## Local control ledger exclusions
 

@@ -3,6 +3,11 @@
 //! Combines pinned Multica CLI adapter and app-local control ledger. Supports
 //! observer through todo_runner authority modes with deterministic promotion
 //! gates, allowed-operation argv mapping, and health-gated Cursor retry.
+//!
+//! Failed non-Cursor mutation runs that claimed idempotency but did not complete
+//! cleanly leave an ambiguous consumed claim; operators must inspect ledger
+//! decisions and Multica state and perform explicit manual recovery. There is no
+//! generic automatic retry for those mutations.
 
 #![allow(clippy::too_many_arguments)]
 
@@ -464,6 +469,100 @@ fn run_cursor_recovery(
             json!(null),
         );
     }
+
+    let lease_ttl_seconds = resolve_lease_ttl_seconds(input.lease_ttl_seconds).unwrap();
+    let expires_at = match lease_expires_at(&input.now, lease_ttl_seconds) {
+        Ok(ts) => ts,
+        Err(message) => {
+            return compact(
+                operation,
+                false,
+                "now_invalid",
+                vec![issue("now_invalid", message)],
+                false,
+                json!(null),
+                json!(null),
+                json!(null),
+            );
+        }
+    };
+
+    let init = ledger_op(input, "init", json!({}));
+    if init["valid"] != json!(true) {
+        return compact(
+            operation,
+            false,
+            "ledger_init_failed",
+            vec![issue("ledger_init_failed", "ledger init failed")],
+            false,
+            json!(null),
+            init,
+            json!(null),
+        );
+    }
+
+    let lease_id = input
+        .lease_id
+        .clone()
+        .unwrap_or_else(|| format!("{}-cursor-{}", input.controller_id, recovery.issue_id));
+    let scope_key = format!("cursor_recovery:{}", recovery.issue_id);
+
+    let lease = ledger_op(
+        input,
+        "acquire_lease",
+        json!({
+            "lease_id": lease_id,
+            "holder": input.controller_id,
+            "expires_at": expires_at,
+        }),
+    );
+    if lease["valid"] != json!(true) {
+        let reason = lease["exit_reason"]
+            .as_str()
+            .unwrap_or("lease_acquire_failed")
+            .to_string();
+        return compact(
+            operation,
+            false,
+            &reason,
+            vec![issue(&reason, "could not acquire schedule lease")],
+            false,
+            json!(null),
+            lease,
+            json!(null),
+        );
+    }
+
+    let claim = ledger_op(
+        input,
+        "claim_scope",
+        json!({
+            "scope_key": scope_key,
+            "claim_id": format!("claim-{lease_id}"),
+            "holder": input.controller_id,
+            "expires_at": expires_at,
+        }),
+    );
+    if claim["valid"] != json!(true) {
+        let reason = claim["exit_reason"]
+            .as_str()
+            .unwrap_or("scope_claim_failed")
+            .to_string();
+        let _ = ledger_op(input, "release_lease", json!({"lease_id": lease_id}));
+        return compact(
+            operation,
+            false,
+            &reason,
+            vec![issue(&reason, "could not claim scope")],
+            false,
+            json!(null),
+            claim,
+            json!(null),
+        );
+    }
+
+    let mut guard = RunGuard::new(input, lease_id.clone(), scope_key.clone());
+
     let retry_key = format!("cursor_retry:{}", recovery.issue_id);
     let prior = ledger_op(
         input,
@@ -493,23 +592,43 @@ fn run_cursor_recovery(
         "issue_id": recovery.issue_id,
         "operation": "cursor_recovery_rerun",
     }));
-    let claim = ledger_op(
+    let idempotency = ledger_op(
         input,
         "claim_idempotency",
         json!({"decision_hash": decision_hash}),
     );
-    if claim["valid"] != json!(true) || claim["exit_reason"] == "duplicate_suppressed" {
+    if idempotency["exit_reason"] == "duplicate_suppressed" {
+        guard.disarm();
+        let _ = ledger_op(input, "release_claim", json!({"scope_key": scope_key}));
+        let _ = ledger_op(input, "release_lease", json!({"lease_id": lease_id}));
+        return compact(
+            operation,
+            false,
+            "duplicate_suppressed",
+            vec![issue(
+                "duplicate_suppressed",
+                "duplicate cursor recovery suppressed",
+            )],
+            false,
+            json!(null),
+            json!({"idempotency": idempotency}),
+            json!(null),
+        );
+    }
+    if idempotency["valid"] != json!(true) {
         return compact(
             operation,
             false,
             "cursor_recovery_idempotency_failed",
             vec![issue(
                 "cursor_recovery_idempotency_failed",
-                "idempotency claim failed or duplicate",
+                idempotency["exit_reason"]
+                    .as_str()
+                    .unwrap_or("idempotency claim failed or duplicate"),
             )],
             false,
             json!(null),
-            claim,
+            idempotency,
             json!(null),
         );
     }
@@ -549,6 +668,9 @@ fn run_cursor_recovery(
             "hard_gate_pass": cli_ok,
         }),
     );
+    guard.disarm();
+    let _ = ledger_op(input, "release_claim", json!({"scope_key": scope_key}));
+    let _ = ledger_op(input, "release_lease", json!({"lease_id": lease_id}));
     let exit_reason = if cli_ok {
         "cursor_recovery_rerun_ok".to_string()
     } else {
@@ -568,7 +690,7 @@ fn run_cursor_recovery(
         },
         false,
         cli,
-        json!({"claim": claim, "watermark": watermark, "decision": decision}),
+        json!({"claim": idempotency, "watermark": watermark, "decision": decision}),
         json!({
             "issue_id": recovery.issue_id,
             "retry_consumed": true,
@@ -1416,6 +1538,74 @@ mod tests {
             },
         );
         assert_eq!(output["exit_reason"], json!("promotion_not_ready"));
+    }
+
+    #[test]
+    fn cursor_recovery_different_issues_each_invoke_runner_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{"ok":true}"#.to_vec(),
+        };
+        for issue_id in ["AM-99", "AM-100"] {
+            let mut input = base_input(&dir, "todo_runner");
+            init_authority(input["ledger_path"].as_str().unwrap(), "todo_runner");
+            input["operation"] = json!("cursor_recovery");
+            input["cursor_recovery"] = json!({
+                "issue_id": issue_id,
+                "failure_class": "availability_bridge_failure",
+                "health_transition": "down_to_healthy",
+                "no_artifacts": true,
+                "same_issue": true
+            });
+            let output = run_production_authority(&input, &runner);
+            assert_eq!(output["exit_reason"], json!("cursor_recovery_rerun_ok"));
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn cursor_recovery_idempotency_duplicate_skips_runner() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut input = base_input(&dir, "todo_runner");
+        init_authority(input["ledger_path"].as_str().unwrap(), "todo_runner");
+        input["operation"] = json!("cursor_recovery");
+        input["cursor_recovery"] = json!({
+            "issue_id": "AM-101",
+            "failure_class": "availability_bridge_failure",
+            "health_transition": "down_to_healthy",
+            "no_artifacts": true,
+            "same_issue": true
+        });
+        let decision_hash = sha256_hex(&json!({
+            "controller_id": input["controller_id"],
+            "issue_id": "AM-101",
+            "operation": "cursor_recovery_rerun",
+        }));
+        run_local_control_ledger(&json!({
+            "schema_version": "local-control-ledger-input.v0",
+            "operation": "init",
+            "ledger_path": input["ledger_path"],
+        }));
+        run_local_control_ledger(&json!({
+            "schema_version": "local-control-ledger-input.v0",
+            "operation": "claim_idempotency",
+            "ledger_path": input["ledger_path"],
+            "controller_id": input["controller_id"],
+            "decision_hash": decision_hash,
+            "recorded_at": input["now"],
+        }));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{"ok":true}"#.to_vec(),
+        };
+        let output = run_production_authority(&input, &runner);
+        assert_eq!(output["exit_reason"], json!("duplicate_suppressed"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]
