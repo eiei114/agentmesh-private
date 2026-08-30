@@ -1,0 +1,14 @@
+{
+  "schema_version": "agentmesh-protocol.v0",
+  "run_id": "run-rollback-failure",
+  "outcome": "error",
+  "payload": {},
+  "artifacts": [],
+  "diagnostics": [
+    {
+      "category": "validation",
+      "code": "validation_failed",
+      "message": "record_rollback rejected"
+    }
+  ]
+}

@@ -31,11 +31,24 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-foreach ($path in @($AgentMeshExe, $LedgerManifestPath, $ToolchainPin)) {
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        throw "Missing required file: $path"
+function Test-RequiredFile([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Missing required file: $Path"
     }
 }
+
+function Format-ScheduledTaskArgument([string]$Value) {
+    if ($Value -match '[\s"]') {
+        return ('"' + $Value.Replace('"', '""') + '"')
+    }
+    return $Value
+}
+
+. (Join-Path $PSScriptRoot "rollback-ledger-parse.ps1")
+
+Test-RequiredFile -Path $AgentMeshExe
+Test-RequiredFile -Path $LedgerManifestPath
+Test-RequiredFile -Path $ToolchainPin
 
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Disable-ScheduledTask -TaskName $TaskName | Out-Null
@@ -58,20 +71,26 @@ $rollbackInput = @{
 $rollbackInputFile = Join-Path $env:TEMP ("agentmesh-rollback-input-$CorrelationId.json")
 Set-Content -LiteralPath $rollbackInputFile -Value $rollbackInput -Encoding UTF8
 
-$ledgerStdout = & $AgentMeshExe app run `
-    --manifest $LedgerManifestPath `
-    --toolchain-pin $ToolchainPin `
-    --input $rollbackInputFile 2>&1 | Out-String
-$ledgerExitCode = $LASTEXITCODE
-$rollbackRecorded = $false
-try {
-    $ledgerPayload = $ledgerStdout.Trim() | ConvertFrom-Json
-    if ($ledgerPayload.data.recorded -eq $true) {
-        $rollbackRecorded = $true
-    }
-} catch {
-    $rollbackRecorded = $false
-}
+$argumentParts = @(
+    'app',
+    'run',
+    '--manifest', $LedgerManifestPath,
+    '--toolchain-pin', $ToolchainPin,
+    '--input', $rollbackInputFile
+) | ForEach-Object { Format-ScheduledTaskArgument $_ }
+
+$argumentLine = $argumentParts -join ' '
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $AgentMeshExe
+$psi.Arguments = $argumentLine
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.UseShellExecute = $false
+$ledgerProcess = [System.Diagnostics.Process]::Start($psi)
+$ledgerStdout = $ledgerProcess.StandardOutput.ReadToEnd() + $ledgerProcess.StandardError.ReadToEnd()
+$ledgerProcess.WaitForExit() | Out-Null
+$ledgerExitCode = $ledgerProcess.ExitCode
+$rollbackRecorded = Test-RollbackLedgerRecorded -Stdout $ledgerStdout -ExitCode $ledgerExitCode
 
 Write-Output (@{
     task = $TaskName

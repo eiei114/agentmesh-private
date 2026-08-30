@@ -470,6 +470,88 @@ fn run_cursor_recovery(
         );
     }
 
+    const REQUIRED_CURSOR_RECOVERY_MODE: &str = "todo_runner";
+    let requested_mode = input.authority_mode.as_str();
+    if requested_mode != REQUIRED_CURSOR_RECOVERY_MODE {
+        let decision_hash = sha256_hex(&json!({
+            "requested_mode": requested_mode,
+            "required_mode": REQUIRED_CURSOR_RECOVERY_MODE,
+            "operation": "cursor_recovery",
+        }));
+        let violation = ledger_op(
+            input,
+            "record_violation",
+            json!({
+                "event_id": format!("unauth-{decision_hash}"),
+                "authority_mode": requested_mode,
+                "violation_type": "unauthorized_write",
+                "decision_hash": decision_hash,
+            }),
+        );
+        return compact(
+            operation,
+            false,
+            "unauthorized_operation",
+            vec![issue(
+                "unauthorized_operation",
+                format!("cursor_recovery requires {REQUIRED_CURSOR_RECOVERY_MODE}"),
+            )],
+            false,
+            json!(null),
+            json!({"violation": violation}),
+            json!(null),
+        );
+    }
+
+    let authority = ledger_op(input, "get_authority_mode", json!({}));
+    if authority["valid"] != json!(true) {
+        return compact(
+            operation,
+            false,
+            "authority_lookup_failed",
+            vec![issue("authority_lookup_failed", "authority lookup failed")],
+            false,
+            json!(null),
+            authority,
+            json!(null),
+        );
+    }
+    let stored_mode = authority["data"]["authority_mode"]
+        .as_str()
+        .unwrap_or("shadow");
+    if stored_mode != REQUIRED_CURSOR_RECOVERY_MODE {
+        let decision_hash = sha256_hex(&json!({
+            "stored_mode": stored_mode,
+            "required_mode": REQUIRED_CURSOR_RECOVERY_MODE,
+            "operation": "cursor_recovery",
+        }));
+        let violation = ledger_op(
+            input,
+            "record_violation",
+            json!({
+                "event_id": format!("unauth-{decision_hash}"),
+                "authority_mode": requested_mode,
+                "violation_type": "unauthorized_write",
+                "decision_hash": decision_hash,
+            }),
+        );
+        return compact(
+            operation,
+            false,
+            "authority_mode_mismatch",
+            vec![issue(
+                "authority_mode_mismatch",
+                format!(
+                    "ledger authority {stored_mode} != required {REQUIRED_CURSOR_RECOVERY_MODE}"
+                ),
+            )],
+            false,
+            json!(null),
+            json!({"authority": authority, "violation": violation}),
+            json!(null),
+        );
+    }
+
     let lease_ttl_seconds = resolve_lease_ttl_seconds(input.lease_ttl_seconds).unwrap();
     let expires_at = match lease_expires_at(&input.now, lease_ttl_seconds) {
         Ok(ts) => ts,
@@ -1991,19 +2073,136 @@ mod tests {
     }
 
     #[test]
+    fn cursor_recovery_rejects_non_todo_runner_input_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{"ok":true}"#.to_vec(),
+        };
+        let mut input = base_input(&dir, "queue");
+        init_authority(input["ledger_path"].as_str().unwrap(), "queue");
+        input["operation"] = json!("cursor_recovery");
+        input["cursor_recovery"] = json!({
+            "issue_id": "AM-200",
+            "failure_class": "availability_bridge_failure",
+            "health_transition": "down_to_healthy",
+            "no_artifacts": true,
+            "same_issue": true
+        });
+        let output = run_production_authority(&input, &runner);
+        assert_eq!(output["exit_reason"], json!("unauthorized_operation"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn cursor_recovery_rejects_stored_authority_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{"ok":true}"#.to_vec(),
+        };
+        let mut input = base_input(&dir, "todo_runner");
+        init_authority(input["ledger_path"].as_str().unwrap(), "observer");
+        input["operation"] = json!("cursor_recovery");
+        input["cursor_recovery"] = json!({
+            "issue_id": "AM-201",
+            "failure_class": "availability_bridge_failure",
+            "health_transition": "down_to_healthy",
+            "no_artifacts": true,
+            "same_issue": true
+        });
+        let output = run_production_authority(&input, &runner);
+        assert_eq!(output["exit_reason"], json!("authority_mode_mismatch"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn scheduler_rollback_parses_compact_envelope_recorded() {
+        let success = include_str!("../testdata/rollback_compact_success.json");
+        let failure = include_str!("../testdata/rollback_compact_failure.json");
+
+        assert!(rollback_ledger_recorded_from_compact(success, 0));
+        assert!(!rollback_ledger_recorded_from_compact(failure, 1));
+        assert!(!rollback_ledger_recorded_from_compact(
+            r#"{"data":{"recorded":true},"outcome":"ok"}"#,
+            0
+        ));
+        assert!(!rollback_ledger_recorded_from_compact(success, 1));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn scheduler_rollback_powershell_parse_matches_rust_contract() {
+        let parse_script =
+            include_str!("../../../scripts/task-scheduler/rollback-ledger-parse.ps1");
+        let success = include_str!("../testdata/rollback_compact_success.json").trim();
+        let failure = include_str!("../testdata/rollback_compact_failure.json").trim();
+
+        assert!(run_rollback_ledger_parse_fixture(parse_script, success, 0));
+        assert!(!run_rollback_ledger_parse_fixture(parse_script, failure, 1));
+    }
+
+    fn rollback_ledger_recorded_from_compact(stdout: &str, exit_code: i32) -> bool {
+        if exit_code != 0 {
+            return false;
+        }
+        let envelope: Value = match serde_json::from_str(stdout.trim()) {
+            Ok(value) => value,
+            Err(_) => return false,
+        };
+        if envelope.get("outcome").and_then(Value::as_str) != Some("ok") {
+            return false;
+        }
+        envelope
+            .pointer("/payload/data/recorded")
+            .and_then(Value::as_bool)
+            == Some(true)
+    }
+
+    fn run_rollback_ledger_parse_fixture(script: &str, stdout: &str, exit_code: i32) -> bool {
+        let script_path = std::env::temp_dir().join(format!(
+            "agentmesh-rollback-parse-{}.ps1",
+            std::process::id()
+        ));
+        std::fs::write(&script_path, script).unwrap();
+        let stdout_path = std::env::temp_dir().join(format!(
+            "agentmesh-rollback-stdout-{}.json",
+            std::process::id()
+        ));
+        std::fs::write(&stdout_path, stdout).unwrap();
+        let ps_command = format!(
+            ". '{}'; Test-RollbackLedgerRecorded -Stdout (Get-Content -LiteralPath '{}' -Raw) -ExitCode {}",
+            script_path.display(),
+            stdout_path.display(),
+            exit_code
+        );
+        let output = std::process::Command::new("pwsh")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_command])
+            .output()
+            .expect("pwsh must be available to evaluate rollback ledger parsing");
+        assert!(
+            output.status.success(),
+            "rollback parse fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let parsed = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .eq_ignore_ascii_case("true");
+        let _ = std::fs::remove_file(script_path);
+        let _ = std::fs::remove_file(stdout_path);
+        parsed
+    }
+
+    #[test]
     fn scheduler_install_script_uses_scheduled_task_apis() {
         let script =
             include_str!("../../../scripts/task-scheduler/install-production-controller.ps1");
         assert!(script.contains("New-ScheduledTaskAction"));
         assert!(script.contains("Register-ScheduledTask"));
         assert!(!script.contains("-Execute ('\"' +"));
-    }
-
-    #[test]
-    fn scheduler_rollback_checks_recorded_true() {
-        let script =
-            include_str!("../../../scripts/task-scheduler/rollback-production-controller.ps1");
-        assert!(script.contains("ConvertFrom-Json"));
-        assert!(script.contains("data.recorded"));
     }
 }

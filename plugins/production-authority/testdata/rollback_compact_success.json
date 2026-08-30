@@ -1,0 +1,16 @@
+{
+  "schema_version": "agentmesh-protocol.v0",
+  "run_id": "run-rollback-success",
+  "outcome": "ok",
+  "payload": {
+    "schema_version": "local-control-ledger-output.v0",
+    "valid": true,
+    "exit_reason": "ok",
+    "data": {
+      "event_id": "rollback-corr-1",
+      "recorded": true
+    }
+  },
+  "artifacts": [],
+  "diagnostics": []
+}
