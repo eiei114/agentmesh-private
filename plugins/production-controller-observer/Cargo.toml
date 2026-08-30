@@ -22,6 +22,7 @@ agentmesh-fixture-support.workspace = true
 agentmesh-local-control-ledger = { path = "../local-control-ledger" }
 agentmesh-multica-cli-adapter = { path = "../multica-cli-adapter" }
 agentmesh-proto.workspace = true
+chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

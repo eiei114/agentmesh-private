@@ -227,8 +227,10 @@ version = "0.1.0"
 dependencies = [
  "agentmesh-fixture-support",
  "agentmesh-proto",
+ "hex",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
 ]
@@ -269,6 +271,7 @@ dependencies = [
  "agentmesh-local-control-ledger",
  "agentmesh-multica-cli-adapter",
  "agentmesh-proto",
+ "chrono",
  "hex",
  "serde",
  "serde_json",

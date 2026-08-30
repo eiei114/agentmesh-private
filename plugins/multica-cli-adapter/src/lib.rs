@@ -3,12 +3,15 @@
 //! Plugin-owned production boundary: invokes one configured Multica CLI executable
 //! without shell expansion. AgentMesh never copies Multica auth tokens into its state.
 
+use hex::encode;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 /// Plugin/schema version exposed in compact output.
@@ -18,6 +21,25 @@ const OUTPUT_SCHEMA_VERSION: &str = "multica-cli-adapter-output.v0";
 const MAX_STDOUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_ARG_CHARS: usize = 256;
 const MAX_ARGS: usize = 32;
+const DEFAULT_TIMEOUT_MS: u64 = 60_000;
+const MIN_TIMEOUT_MS: u64 = 1_000;
+const MAX_TIMEOUT_MS: u64 = 3_600_000;
+
+/// Fixed read-only query args for observer wiring.
+pub const QUERY_OPERATION_ARGS: &[&str] = &["issues", "list", "--json"];
+
+#[cfg(windows)]
+const WINDOWS_ENV_ALLOWLIST: &[&str] = &[
+    "SystemRoot",
+    "windir",
+    "SystemDrive",
+    "COMSPEC",
+    "PATHEXT",
+    "USERPROFILE",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "PROGRAMDATA",
+];
 
 /// Errors validating a pinned CLI executable path.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -101,7 +123,7 @@ impl CliCommandSpec {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
-            for key in ["SystemRoot", "windir", "SystemDrive", "COMSPEC", "PATHEXT"] {
+            for key in WINDOWS_ENV_ALLOWLIST {
                 if let Ok(val) = std::env::var(key) {
                     cmd.env(key, val);
                 }
@@ -124,13 +146,32 @@ impl CliCommandSpec {
     }
 }
 
-/// Result of one CLI invocation.
+/// Result of one CLI invocation (internal; raw stdout is never emitted in compact output).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CliInvokeResult {
     pub exit_code: i32,
     pub stdout_json: Option<Value>,
+    pub stdout_sha256: String,
+    pub stdout_byte_count: usize,
     pub stdout_truncated: bool,
     pub stderr_byte_count: usize,
+    pub timed_out: bool,
+}
+
+fn sha256_prefixed(bytes: &[u8]) -> String {
+    format!("sha256:{}", encode(Sha256::digest(bytes)))
+}
+
+fn json_top_level_kind(value: Option<&Value>) -> &'static str {
+    match value {
+        Some(Value::Object(_)) => "object",
+        Some(Value::Array(_)) => "array",
+        Some(Value::Null) => "null",
+        Some(Value::String(_)) => "string",
+        Some(Value::Number(_)) => "number",
+        Some(Value::Bool(_)) => "bool",
+        None => "none",
+    }
 }
 
 /// Process runner abstraction for synthetic contract tests.
@@ -139,6 +180,7 @@ pub trait ProcessRunner {
         &self,
         spec: &CliCommandSpec,
         operation_args: &[String],
+        timeout_ms: u64,
     ) -> Result<CliInvokeResult, String>;
 }
 
@@ -151,21 +193,48 @@ impl ProcessRunner for OsProcessRunner {
         &self,
         spec: &CliCommandSpec,
         operation_args: &[String],
+        timeout_ms: u64,
     ) -> Result<CliInvokeResult, String> {
         let mut child = spec
             .build_command(operation_args)
             .map_err(|e| format!("build_command: {e}"))?
             .spawn()
             .map_err(|e| format!("spawn_failed: {e}"))?;
-        let mut stdout = child
+        let stdout = child
             .stdout
             .take()
             .ok_or_else(|| "stdout_unavailable".to_string())?;
         let stderr = child.stderr.take();
-        let mut stdout_buf = Vec::new();
-        stdout
-            .read_to_end(&mut stdout_buf)
-            .map_err(|e| format!("stdout_read: {e}"))?;
+        let stdout_thread = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let mut reader = stdout;
+            let _ = reader.read_to_end(&mut buf);
+            buf
+        });
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let status = loop {
+            match child.try_wait().map_err(|e| format!("wait_failed: {e}"))? {
+                Some(status) => break status,
+                None if Instant::now() >= deadline => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout_thread.join();
+                    return Ok(CliInvokeResult {
+                        exit_code: -1,
+                        stdout_json: None,
+                        stdout_sha256: sha256_prefixed(&[]),
+                        stdout_byte_count: 0,
+                        stdout_truncated: false,
+                        stderr_byte_count: 0,
+                        timed_out: true,
+                    });
+                }
+                None => std::thread::sleep(Duration::from_millis(10)),
+            }
+        };
+        let stdout_buf = stdout_thread
+            .join()
+            .map_err(|_| "stdout_join_failed".to_string())?;
         let stderr_byte_count = if let Some(mut err) = stderr {
             let mut buf = Vec::new();
             let _ = err.read_to_end(&mut buf);
@@ -173,8 +242,7 @@ impl ProcessRunner for OsProcessRunner {
         } else {
             0
         };
-        let status = child.wait().map_err(|e| format!("wait_failed: {e}"))?;
-        parse_invoke_output(status, stdout_buf, stderr_byte_count)
+        parse_invoke_output(status, stdout_buf, stderr_byte_count, false)
     }
 }
 
@@ -182,14 +250,17 @@ fn parse_invoke_output(
     status: ExitStatus,
     stdout_buf: Vec<u8>,
     stderr_byte_count: usize,
+    timed_out: bool,
 ) -> Result<CliInvokeResult, String> {
     let exit_code = status.code().unwrap_or(-1);
-    let stdout_truncated = stdout_buf.len() > MAX_STDOUT_BYTES;
+    let stdout_byte_count = stdout_buf.len();
+    let stdout_truncated = stdout_byte_count > MAX_STDOUT_BYTES;
     let bounded = if stdout_truncated {
         &stdout_buf[..MAX_STDOUT_BYTES]
     } else {
         &stdout_buf
     };
+    let stdout_sha256 = sha256_prefixed(bounded);
     let stdout_json = if bounded.is_empty() {
         None
     } else {
@@ -198,8 +269,11 @@ fn parse_invoke_output(
     Ok(CliInvokeResult {
         exit_code,
         stdout_json,
+        stdout_sha256,
+        stdout_byte_count,
         stdout_truncated,
         stderr_byte_count,
+        timed_out,
     })
 }
 
@@ -213,10 +287,23 @@ struct AdapterInput {
     prefix_args: Vec<String>,
     #[serde(default)]
     invoke_args: Vec<String>,
+    #[serde(default)]
+    timeout_ms: Option<u64>,
 }
 
 fn issue(code: &str, message: impl Into<String>) -> Value {
     json!({ "code": code, "message": message.into() })
+}
+
+fn resolve_timeout_ms(raw: Option<u64>) -> Result<u64, String> {
+    let timeout_ms = raw.unwrap_or(DEFAULT_TIMEOUT_MS);
+    if (MIN_TIMEOUT_MS..=MAX_TIMEOUT_MS).contains(&timeout_ms) {
+        Ok(timeout_ms)
+    } else {
+        Err(format!(
+            "timeout_ms must be {MIN_TIMEOUT_MS}..={MAX_TIMEOUT_MS}"
+        ))
+    }
 }
 
 fn compact(
@@ -226,28 +313,30 @@ fn compact(
     issues: Vec<Value>,
     invoke: Option<&CliInvokeResult>,
 ) -> Value {
-    let (exit_code, stdout_json, stdout_truncated, stderr_byte_count) = match invoke {
-        Some(result) => (
-            json!(result.exit_code),
-            result.stdout_json.clone().unwrap_or(Value::Null),
-            json!(result.stdout_truncated),
-            json!(result.stderr_byte_count),
-        ),
-        None => (json!(null), json!(null), json!(null), json!(null)),
-    };
-    json!({
+    let mut payload = json!({
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "app_version": MULTICA_CLI_ADAPTER_VERSION,
         "operation": operation,
         "valid": valid,
         "exit_reason": exit_reason,
-        "exit_code": exit_code,
-        "stdout_json": stdout_json,
-        "stdout_truncated": stdout_truncated,
-        "stderr_byte_count": stderr_byte_count,
         "issue_count": issues.len(),
         "issues": issues,
-    })
+    });
+    if let Some(result) = invoke {
+        let obj = payload.as_object_mut().expect("compact object");
+        obj.insert("exit_code".into(), json!(result.exit_code));
+        obj.insert("stdout_sha256".into(), json!(result.stdout_sha256));
+        obj.insert("stdout_byte_count".into(), json!(result.stdout_byte_count));
+        obj.insert("stdout_truncated".into(), json!(result.stdout_truncated));
+        obj.insert("stderr_byte_count".into(), json!(result.stderr_byte_count));
+        obj.insert("json_parse_ok".into(), json!(result.stdout_json.is_some()));
+        obj.insert(
+            "json_top_level_kind".into(),
+            json!(json_top_level_kind(result.stdout_json.as_ref())),
+        );
+        obj.insert("timed_out".into(), json!(result.timed_out));
+    }
+    payload
 }
 
 /// Validate input and invoke the pinned CLI through the supplied runner.
@@ -273,12 +362,19 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
         ));
     }
     let operation = input.operation.as_str();
-    if operation != "probe" && operation != "invoke" {
+    if operation != "probe" && operation != "invoke" && operation != "query" {
         issues.push(issue(
             "unknown_operation",
-            "operation must be probe or invoke",
+            "operation must be probe, query, or invoke",
         ));
     }
+    let timeout_ms = match resolve_timeout_ms(input.timeout_ms) {
+        Ok(ms) => ms,
+        Err(message) => {
+            issues.push(issue("timeout_ms_invalid", message));
+            DEFAULT_TIMEOUT_MS
+        }
+    };
     if !issues.is_empty() {
         return compact(operation, false, "input_invalid", issues, None);
     }
@@ -329,6 +425,10 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
 
     let invoke_args = match operation {
         "probe" => vec!["--help".to_string()],
+        "query" => QUERY_OPERATION_ARGS
+            .iter()
+            .map(|arg| (*arg).to_string())
+            .collect(),
         "invoke" => input.invoke_args.clone(),
         _ => unreachable!(),
     };
@@ -343,22 +443,24 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
         );
     }
 
-    match runner.run(&spec, &invoke_args) {
+    match runner.run(&spec, &invoke_args, timeout_ms) {
         Ok(result) => {
-            let exit_reason = if result.exit_code == 0 {
-                if operation == "probe" {
-                    "probe_ok"
-                } else {
-                    "invoke_ok"
+            let exit_reason = if result.timed_out {
+                "process_timeout"
+            } else if result.exit_code == 0 {
+                match operation {
+                    "probe" => "probe_ok",
+                    "query" => "query_ok",
+                    _ => "invoke_ok",
                 }
             } else if result.stdout_truncated {
                 "stdout_truncated"
-            } else if result.stdout_json.is_none() && operation == "invoke" {
+            } else if result.stdout_json.is_none() && operation != "probe" {
                 "stdout_not_json"
             } else {
                 "cli_nonzero_exit"
             };
-            let valid = exit_reason == "probe_ok" || exit_reason == "invoke_ok";
+            let valid = matches!(exit_reason, "probe_ok" | "query_ok" | "invoke_ok");
             compact(operation, valid, exit_reason, Vec::new(), Some(&result))
         }
         Err(message) => compact(
@@ -375,12 +477,12 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
 mod tests {
     use super::*;
     use std::fs;
-    use std::io::Write;
 
     struct FakeRunner {
         exit_code: i32,
         stdout: Vec<u8>,
         stderr_len: usize,
+        timed_out: bool,
     }
 
     impl ProcessRunner for FakeRunner {
@@ -388,12 +490,21 @@ mod tests {
             &self,
             _spec: &CliCommandSpec,
             _operation_args: &[String],
+            _timeout_ms: u64,
         ) -> Result<CliInvokeResult, String> {
+            let bounded = if self.stdout.len() > MAX_STDOUT_BYTES {
+                &self.stdout[..MAX_STDOUT_BYTES]
+            } else {
+                &self.stdout
+            };
             Ok(CliInvokeResult {
                 exit_code: self.exit_code,
-                stdout_json: serde_json::from_slice(&self.stdout).ok(),
-                stdout_truncated: false,
+                stdout_json: serde_json::from_slice(bounded).ok(),
+                stdout_sha256: sha256_prefixed(bounded),
+                stdout_byte_count: self.stdout.len(),
+                stdout_truncated: self.stdout.len() > MAX_STDOUT_BYTES,
                 stderr_byte_count: self.stderr_len,
+                timed_out: self.timed_out,
             })
         }
     }
@@ -412,32 +523,75 @@ mod tests {
     fn rejects_relative_cli_path() {
         let mut input = base_input("probe");
         input["cli_path"] = json!("relative/multica.exe");
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("multica.exe");
-        fs::write(&file, b"x").unwrap();
-        // Use actual absolute path for file that exists but we test relative rejection first
         let output = run_multica_cli_adapter(&input, &OsProcessRunner);
         assert_eq!(output["valid"], json!(false));
         assert_eq!(output["exit_reason"], json!("cli_path_not_absolute"));
     }
 
     #[test]
-    fn probe_uses_fake_runner() {
+    fn probe_redacts_stdout_to_hash() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("multica.exe");
-        let mut f = fs::File::create(&file).unwrap();
-        writeln!(f, "@echo off").unwrap();
-        let abs = file.canonicalize().unwrap();
+        fs::write(&file, b"x").unwrap();
         let mut input = base_input("probe");
-        input["cli_path"] = json!(abs.to_string_lossy().to_string());
+        input["cli_path"] = json!(file.canonicalize().unwrap().to_string_lossy());
         let runner = FakeRunner {
             exit_code: 0,
-            stdout: br#"{"ok":true}"#.to_vec(),
+            stdout: br#"{"ok":true,"secret":"token"}"#.to_vec(),
             stderr_len: 0,
+            timed_out: false,
         };
         let output = run_multica_cli_adapter(&input, &runner);
         assert_eq!(output["valid"], json!(true));
         assert_eq!(output["exit_reason"], json!("probe_ok"));
+        assert!(output.get("stdout_json").is_none());
+        assert!(output["stdout_sha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:"));
+        assert_eq!(output["stdout_byte_count"], json!(28));
+        assert_eq!(output["json_parse_ok"], json!(true));
+        assert_eq!(output["json_top_level_kind"], json!("object"));
+    }
+
+    #[test]
+    fn query_uses_fixed_read_only_args() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("multica.exe");
+        fs::write(&file, b"x").unwrap();
+        let mut input = base_input("query");
+        input["cli_path"] = json!(file.canonicalize().unwrap().to_string_lossy());
+
+        struct ArgCapturingRunner;
+        impl ProcessRunner for ArgCapturingRunner {
+            fn run(
+                &self,
+                _spec: &CliCommandSpec,
+                operation_args: &[String],
+                _timeout_ms: u64,
+            ) -> Result<CliInvokeResult, String> {
+                assert_eq!(
+                    operation_args,
+                    &[
+                        "issues".to_string(),
+                        "list".to_string(),
+                        "--json".to_string()
+                    ]
+                );
+                Ok(CliInvokeResult {
+                    exit_code: 0,
+                    stdout_json: Some(json!({"issues": []})),
+                    stdout_sha256: sha256_prefixed(b"{}"),
+                    stdout_byte_count: 2,
+                    stdout_truncated: false,
+                    stderr_byte_count: 0,
+                    timed_out: false,
+                })
+            }
+        }
+
+        let output = run_multica_cli_adapter(&input, &ArgCapturingRunner);
+        assert_eq!(output["exit_reason"], json!("query_ok"));
     }
 
     #[test]
@@ -453,6 +607,7 @@ mod tests {
                 exit_code: 0,
                 stdout: br#"{}"#.to_vec(),
                 stderr_len: 0,
+                timed_out: false,
             },
         );
         assert_eq!(output["exit_reason"], json!("invoke_args_missing"));
@@ -472,11 +627,45 @@ mod tests {
                 exit_code: 10,
                 stdout: br#"{"error":"auth"}"#.to_vec(),
                 stderr_len: 12,
+                timed_out: false,
             },
         );
         assert_eq!(output["valid"], json!(false));
         assert_eq!(output["exit_reason"], json!("cli_nonzero_exit"));
         assert_eq!(output["exit_code"], json!(10));
+        assert!(output.get("stdout_json").is_none());
+    }
+
+    #[test]
+    fn process_timeout_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("multica.exe");
+        fs::write(&file, b"x").unwrap();
+        let mut input = base_input("query");
+        input["cli_path"] = json!(file.canonicalize().unwrap().to_string_lossy());
+        let output = run_multica_cli_adapter(
+            &input,
+            &FakeRunner {
+                exit_code: -1,
+                stdout: vec![],
+                stderr_len: 0,
+                timed_out: true,
+            },
+        );
+        assert_eq!(output["exit_reason"], json!("process_timeout"));
+        assert_eq!(output["timed_out"], json!(true));
+    }
+
+    #[test]
+    fn rejects_invalid_timeout_ms() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("multica.exe");
+        fs::write(&file, b"x").unwrap();
+        let mut input = base_input("probe");
+        input["cli_path"] = json!(file.canonicalize().unwrap().to_string_lossy());
+        input["timeout_ms"] = json!(50);
+        let output = run_multica_cli_adapter(&input, &OsProcessRunner);
+        assert_eq!(output["exit_reason"], json!("input_invalid"));
     }
 
     #[test]

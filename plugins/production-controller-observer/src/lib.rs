@@ -5,6 +5,7 @@
 
 use agentmesh_local_control_ledger::run_local_control_ledger;
 use agentmesh_multica_cli_adapter::{run_multica_cli_adapter, ProcessRunner};
+use chrono::{DateTime, FixedOffset};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -13,6 +14,10 @@ use sha2::{Digest, Sha256};
 pub const PRODUCTION_CONTROLLER_OBSERVER_VERSION: &str = "production-controller-observer.v0";
 const INPUT_SCHEMA_VERSION: &str = "production-controller-observer-input.v0";
 const OUTPUT_SCHEMA_VERSION: &str = "production-controller-observer-output.v0";
+const DEFAULT_LEASE_TTL_SECS: u64 = 300;
+const MIN_LEASE_TTL_SECS: u64 = 30;
+const MAX_LEASE_TTL_SECS: u64 = 3600;
+const DEFAULT_CLI_TIMEOUT_MS: u64 = 60_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -31,7 +36,9 @@ struct ObserverInput {
     #[serde(default)]
     prefix_args: Vec<String>,
     #[serde(default)]
-    invoke_args: Vec<String>,
+    lease_ttl_seconds: Option<u64>,
+    #[serde(default)]
+    cli_timeout_ms: Option<u64>,
 }
 
 fn issue(code: &str, message: impl Into<String>) -> Value {
@@ -42,6 +49,29 @@ fn sha256_hex(value: &Value) -> String {
     let bytes = serde_json::to_vec(value).unwrap_or_default();
     let digest = Sha256::digest(bytes);
     format!("sha256:{}", hex::encode(digest))
+}
+
+fn resolve_lease_ttl_seconds(raw: Option<u64>) -> Result<u64, String> {
+    let ttl = raw.unwrap_or(DEFAULT_LEASE_TTL_SECS);
+    if (MIN_LEASE_TTL_SECS..=MAX_LEASE_TTL_SECS).contains(&ttl) {
+        Ok(ttl)
+    } else {
+        Err(format!(
+            "lease_ttl_seconds must be {MIN_LEASE_TTL_SECS}..={MAX_LEASE_TTL_SECS}"
+        ))
+    }
+}
+
+fn resolve_cli_timeout_ms(raw: Option<u64>) -> Result<u64, String> {
+    let timeout = raw.unwrap_or(DEFAULT_CLI_TIMEOUT_MS);
+    agentmesh_proto::Limits::validate_run_timeout_ms(timeout).map_err(|e| e.to_string())
+}
+
+fn lease_expires_at(now: &str, ttl_seconds: u64) -> Result<String, String> {
+    let parsed = DateTime::parse_from_rfc3339(now).map_err(|e| e.to_string())?;
+    let expires: DateTime<FixedOffset> =
+        parsed + chrono::Duration::seconds(i64::try_from(ttl_seconds).unwrap());
+    Ok(expires.to_rfc3339())
 }
 
 fn compact(
@@ -86,6 +116,72 @@ fn ledger_op(base: &ObserverInput, operation: &str, extra: Value) -> Value {
     run_local_control_ledger(&payload)
 }
 
+fn redact_cli_summary(cli: &Value) -> Value {
+    json!({
+        "schema_version": cli["schema_version"],
+        "operation": cli["operation"],
+        "valid": cli["valid"],
+        "exit_reason": cli["exit_reason"],
+        "exit_code": cli["exit_code"],
+        "stdout_sha256": cli["stdout_sha256"],
+        "stdout_byte_count": cli["stdout_byte_count"],
+        "stdout_truncated": cli["stdout_truncated"],
+        "stderr_byte_count": cli["stderr_byte_count"],
+        "json_parse_ok": cli["json_parse_ok"],
+        "json_top_level_kind": cli["json_top_level_kind"],
+        "timed_out": cli["timed_out"],
+    })
+}
+
+fn persistence_exit_reason(decision: &Value, watermark: &Value) -> Option<&'static str> {
+    if decision["valid"] != json!(true) {
+        Some("decision_record_failed")
+    } else if watermark["valid"] != json!(true) {
+        Some("watermark_persist_failed")
+    } else {
+        None
+    }
+}
+
+struct RunGuard<'a> {
+    input: &'a ObserverInput,
+    lease_id: String,
+    scope_key: String,
+    armed: bool,
+}
+
+impl<'a> RunGuard<'a> {
+    fn new(input: &'a ObserverInput, lease_id: String, scope_key: String) -> Self {
+        Self {
+            input,
+            lease_id,
+            scope_key,
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for RunGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = ledger_op(
+                self.input,
+                "release_claim",
+                json!({"scope_key": self.scope_key}),
+            );
+            let _ = ledger_op(
+                self.input,
+                "release_lease",
+                json!({"lease_id": self.lease_id}),
+            );
+        }
+    }
+}
+
 /// Run observer one-shot wiring with injectable CLI runner for tests.
 pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRunner) -> Value {
     let Ok(input) = serde_json::from_value::<ObserverInput>(value.clone()) else {
@@ -119,6 +215,12 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
     if input.now.is_empty() {
         issues.push(issue("now_missing", "now is required"));
     }
+    if let Err(message) = resolve_lease_ttl_seconds(input.lease_ttl_seconds) {
+        issues.push(issue("lease_ttl_invalid", message));
+    }
+    if let Err(message) = resolve_cli_timeout_ms(input.cli_timeout_ms) {
+        issues.push(issue("cli_timeout_invalid", message));
+    }
     if !issues.is_empty() {
         return compact(
             operation,
@@ -144,6 +246,22 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
         );
     }
 
+    let lease_ttl_seconds = resolve_lease_ttl_seconds(input.lease_ttl_seconds).unwrap();
+    let cli_timeout_ms = resolve_cli_timeout_ms(input.cli_timeout_ms).unwrap();
+    let expires_at = match lease_expires_at(&input.now, lease_ttl_seconds) {
+        Ok(ts) => ts,
+        Err(message) => {
+            return compact(
+                operation,
+                false,
+                "now_invalid",
+                vec![issue("now_invalid", message)],
+                json!(null),
+                json!(null),
+            );
+        }
+    };
+
     let init = ledger_op(&input, "init", json!({}));
     if init["valid"] != json!(true) {
         return compact(
@@ -164,9 +282,6 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
         .scope_key
         .clone()
         .unwrap_or_else(|| input.controller_id.clone());
-    // Lease must remain active for the duration of the run; use a far-future expiry
-    // because foundation input carries a deterministic `now` only.
-    let expires_at = "2099-01-01T00:00:00Z".to_string();
 
     let lease = ledger_op(
         &input,
@@ -178,19 +293,15 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
         }),
     );
     if lease["valid"] != json!(true) {
-        let reason = if lease["issues"][0]["message"]
+        let reason = lease["exit_reason"]
             .as_str()
-            .is_some_and(|m| m.contains("lease_already_held"))
-        {
-            "lease_already_held"
-        } else {
-            "lease_acquire_failed"
-        };
+            .unwrap_or("lease_acquire_failed")
+            .to_string();
         return compact(
             operation,
             false,
-            reason,
-            vec![issue(reason, "could not acquire schedule lease")],
+            &reason,
+            vec![issue(&reason, "could not acquire schedule lease")],
             json!(null),
             lease,
         );
@@ -203,24 +314,29 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
             "scope_key": scope_key,
             "claim_id": format!("claim-{lease_id}"),
             "holder": input.controller_id,
+            "expires_at": expires_at,
         }),
     );
     if claim["valid"] != json!(true) {
+        let reason = claim["exit_reason"]
+            .as_str()
+            .unwrap_or("scope_claim_failed")
+            .to_string();
         let _ = ledger_op(&input, "release_lease", json!({"lease_id": lease_id}));
         return compact(
             operation,
             false,
-            "scope_claim_failed",
-            vec![issue("scope_claim_failed", "could not claim scope")],
+            &reason,
+            vec![issue(&reason, "could not claim scope")],
             json!(null),
             claim,
         );
     }
 
+    let mut guard = RunGuard::new(&input, lease_id.clone(), scope_key.clone());
+
     let authority = ledger_op(&input, "get_authority_mode", json!({}));
     if authority["valid"] != json!(true) {
-        let _ = ledger_op(&input, "release_claim", json!({"scope_key": scope_key}));
-        let _ = ledger_op(&input, "release_lease", json!({"lease_id": lease_id}));
         return compact(
             operation,
             false,
@@ -233,12 +349,13 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
 
     let cli_input = json!({
         "schema_version": "multica-cli-adapter-input.v0",
-        "operation": if input.invoke_args.is_empty() { "probe" } else { "invoke" },
+        "operation": "query",
         "cli_path": input.cli_path,
         "prefix_args": input.prefix_args,
-        "invoke_args": input.invoke_args,
+        "timeout_ms": cli_timeout_ms,
     });
-    let cli = run_multica_cli_adapter(&cli_input, runner);
+    let cli_raw = run_multica_cli_adapter(&cli_input, runner);
+    let cli = redact_cli_summary(&cli_raw);
 
     let input_hash = sha256_hex(&cli_input);
     let output_hash = sha256_hex(&cli);
@@ -266,18 +383,32 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
         }),
     );
 
+    guard.disarm();
     let _ = ledger_op(&input, "release_claim", json!({"scope_key": scope_key}));
     let _ = ledger_op(&input, "release_lease", json!({"lease_id": lease_id}));
 
-    let exit_reason = if cli["valid"] == json!(true) && decision["valid"] == json!(true) {
+    if let Some(reason) = persistence_exit_reason(&decision, &watermark) {
+        return compact(
+            operation,
+            false,
+            reason,
+            vec![issue(reason, "ledger persistence failed")],
+            cli,
+            json!({
+                "decision": decision,
+                "watermark": watermark,
+                "authority": authority,
+            }),
+        );
+    }
+
+    let exit_reason = if cli["valid"] == json!(true) {
         "observer_success_no_mutation".to_string()
-    } else if cli["valid"] != json!(true) {
+    } else {
         cli["exit_reason"]
             .as_str()
             .unwrap_or("cli_failed")
             .to_string()
-    } else {
-        "decision_record_failed".to_string()
     };
     let valid = exit_reason == "observer_success_no_mutation";
 
@@ -306,19 +437,36 @@ mod tests {
     use agentmesh_multica_cli_adapter::{CliCommandSpec, CliInvokeResult};
     use std::fs;
 
-    struct FakeRunner;
+    struct FakeRunner {
+        exit_code: i32,
+        stdout: Vec<u8>,
+        timed_out: bool,
+    }
 
     impl ProcessRunner for FakeRunner {
         fn run(
             &self,
             _spec: &CliCommandSpec,
-            _operation_args: &[String],
+            operation_args: &[String],
+            _timeout_ms: u64,
         ) -> Result<CliInvokeResult, String> {
+            assert_eq!(
+                operation_args,
+                &[
+                    "issues".to_string(),
+                    "list".to_string(),
+                    "--json".to_string()
+                ]
+            );
+            let bounded = self.stdout.as_slice();
             Ok(CliInvokeResult {
-                exit_code: 0,
-                stdout_json: Some(json!({"issues": []})),
+                exit_code: self.exit_code,
+                stdout_json: serde_json::from_slice(bounded).ok(),
+                stdout_sha256: format!("sha256:{}", hex::encode(Sha256::digest(bounded))),
+                stdout_byte_count: bounded.len(),
                 stdout_truncated: false,
                 stderr_byte_count: 0,
+                timed_out: self.timed_out,
             })
         }
     }
@@ -341,10 +489,22 @@ mod tests {
     #[test]
     fn observer_run_once_is_deterministic() {
         let dir = tempfile::tempdir().unwrap();
-        let output = run_production_controller_observer(&base_input(&dir), &FakeRunner);
+        let output = run_production_controller_observer(
+            &base_input(&dir),
+            &FakeRunner {
+                exit_code: 0,
+                stdout: br#"{"issues":[]}"#.to_vec(),
+                timed_out: false,
+            },
+        );
         assert_eq!(output["valid"], json!(true));
         assert_eq!(output["exit_reason"], json!("observer_success_no_mutation"));
         assert_eq!(output["mutation_performed"], json!(false));
+        assert!(output["cli"].get("stdout_json").is_none());
+        assert!(output["cli"]["stdout_sha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:"));
     }
 
     #[test]
@@ -352,8 +512,31 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut input = base_input(&dir);
         input["authority_mode"] = json!("safe_writer");
-        let output = run_production_controller_observer(&input, &FakeRunner);
+        let output = run_production_controller_observer(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: br#"{}"#.to_vec(),
+                timed_out: false,
+            },
+        );
         assert_eq!(output["exit_reason"], json!("authority_not_observer"));
+    }
+
+    #[test]
+    fn rejects_unknown_invoke_args_field() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut input = base_input(&dir);
+        input["invoke_args"] = json!(["issues", "list"]);
+        let output = run_production_controller_observer(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: br#"{}"#.to_vec(),
+                timed_out: false,
+            },
+        );
+        assert_eq!(output["exit_reason"], json!("input_invalid"));
     }
 
     #[test]
@@ -367,10 +550,115 @@ mod tests {
             "lease_id": "held-lease",
             "holder": "other-controller",
             "acquired_at": "2026-08-30T12:00:00+09:00",
-            "expires_at": "2099-01-01T00:00:00Z",
+            "expires_at": "2026-08-30T12:30:00+09:00",
         });
         run_local_control_ledger(&hold);
-        let output = run_production_controller_observer(&input, &FakeRunner);
+        let output = run_production_controller_observer(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: br#"{}"#.to_vec(),
+                timed_out: false,
+            },
+        );
         assert_eq!(output["exit_reason"], json!("lease_already_held"));
+    }
+
+    #[test]
+    fn expired_lease_is_reclaimed_before_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = base_input(&dir);
+        run_local_control_ledger(&json!({
+            "schema_version": "local-control-ledger-input.v0",
+            "operation": "init",
+            "ledger_path": input["ledger_path"],
+        }));
+        run_local_control_ledger(&json!({
+            "schema_version": "local-control-ledger-input.v0",
+            "operation": "acquire_lease",
+            "ledger_path": input["ledger_path"],
+            "lease_id": "old-lease",
+            "holder": "other-controller",
+            "acquired_at": "2026-08-30T11:00:00+09:00",
+            "expires_at": "2026-08-30T11:05:00+09:00",
+        }));
+        let output = run_production_controller_observer(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: br#"{"issues":[]}"#.to_vec(),
+                timed_out: false,
+            },
+        );
+        assert_eq!(output["exit_reason"], json!("observer_success_no_mutation"));
+    }
+
+    #[test]
+    fn cli_timeout_is_surfaced_without_raw_stdout() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = run_production_controller_observer(
+            &base_input(&dir),
+            &FakeRunner {
+                exit_code: -1,
+                stdout: br#"{"secret":"token"}"#.to_vec(),
+                timed_out: true,
+            },
+        );
+        assert_eq!(output["exit_reason"], json!("process_timeout"));
+        assert!(output["cli"].get("stdout_json").is_none());
+        assert_eq!(output["cli"]["timed_out"], json!(true));
+    }
+
+    #[test]
+    fn persistence_failure_exit_reasons_are_deterministic() {
+        let decision_fail = json!({"valid": false});
+        let ok = json!({"valid": true});
+        assert_eq!(
+            persistence_exit_reason(&decision_fail, &ok),
+            Some("decision_record_failed")
+        );
+        assert_eq!(
+            persistence_exit_reason(&ok, &json!({"valid": false})),
+            Some("watermark_persist_failed")
+        );
+        assert_eq!(persistence_exit_reason(&ok, &ok), None);
+    }
+
+    #[test]
+    fn guard_releases_lease_so_second_run_can_acquire() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = base_input(&dir);
+        run_local_control_ledger(&json!({
+            "schema_version": "local-control-ledger-input.v0",
+            "operation": "init",
+            "ledger_path": input["ledger_path"],
+        }));
+
+        struct FailingAfterClaimRunner;
+        impl ProcessRunner for FailingAfterClaimRunner {
+            fn run(
+                &self,
+                _spec: &CliCommandSpec,
+                _operation_args: &[String],
+                _timeout_ms: u64,
+            ) -> Result<CliInvokeResult, String> {
+                Ok(CliInvokeResult {
+                    exit_code: 0,
+                    stdout_json: Some(json!({"issues": []})),
+                    stdout_sha256: "sha256:00".into(),
+                    stdout_byte_count: 2,
+                    stdout_truncated: false,
+                    stderr_byte_count: 0,
+                    timed_out: false,
+                })
+            }
+        }
+
+        let first = run_production_controller_observer(&input, &FailingAfterClaimRunner);
+        assert_eq!(first["valid"], json!(true));
+
+        let second = run_production_controller_observer(&input, &FailingAfterClaimRunner);
+        assert_eq!(second["valid"], json!(true));
+        assert_eq!(second["exit_reason"], json!("observer_success_no_mutation"));
     }
 }

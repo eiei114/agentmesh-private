@@ -13,5 +13,8 @@ output = "schemas/production-controller-observer-output-v0.schema.json"
 retention_class = "owner_local"
 capture_plugin_stderr = false
 
+[limits]
+run_timeout_ms = 120000
+
 [conformance]
 cargo_package = "agentmesh-production-controller-observer"

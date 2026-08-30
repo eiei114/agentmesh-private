@@ -3,6 +3,31 @@
   "$id": "https://agentmesh.local/schemas/multica-cli-adapter-output-v0.schema.json",
   "title": "Multica CLI Adapter Output v0",
   "type": "object",
-  "additionalProperties": true,
-  "required": ["schema_version", "app_version", "operation", "valid", "exit_reason"]
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "app_version",
+    "operation",
+    "valid",
+    "exit_reason",
+    "issue_count",
+    "issues"
+  ],
+  "properties": {
+    "schema_version": { "const": "multica-cli-adapter-output.v0" },
+    "app_version": { "type": "string" },
+    "operation": { "enum": ["probe", "query", "invoke"] },
+    "valid": { "type": "boolean" },
+    "exit_reason": { "type": "string" },
+    "issue_count": { "type": "integer", "minimum": 0 },
+    "issues": { "type": "array" },
+    "exit_code": { "type": "integer" },
+    "stdout_sha256": { "type": "string" },
+    "stdout_byte_count": { "type": "integer", "minimum": 0 },
+    "stdout_truncated": { "type": "boolean" },
+    "stderr_byte_count": { "type": "integer", "minimum": 0 },
+    "json_parse_ok": { "type": "boolean" },
+    "json_top_level_kind": { "type": "string" },
+    "timed_out": { "type": "boolean" }
+  }
 }

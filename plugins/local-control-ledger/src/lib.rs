@@ -3,7 +3,7 @@
 //! Stores schedule leases, scope claims, watermarks, authority mode, decisions, and
 //! rollback correlation metadata only. Never stores prompts, comments, task output, or secrets.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::Path;
@@ -13,6 +13,9 @@ use thiserror::Error;
 pub const LOCAL_CONTROL_LEDGER_VERSION: &str = "local-control-ledger.v0";
 const INPUT_SCHEMA_VERSION: &str = "local-control-ledger-input.v0";
 const OUTPUT_SCHEMA_VERSION: &str = "local-control-ledger-output.v0";
+/// SQLite schema version stored in `ledger_meta`.
+pub const LEDGER_DB_SCHEMA_VERSION: &str = "1";
+const BUSY_TIMEOUT_MS: i32 = 5_000;
 const MAX_ID_CHARS: usize = 128;
 const MAX_SCOPE_CHARS: usize = 256;
 const MAX_HASH_CHARS: usize = 128;
@@ -46,6 +49,7 @@ fn compact(
     json!({
         "schema_version": OUTPUT_SCHEMA_VERSION,
         "app_version": LOCAL_CONTROL_LEDGER_VERSION,
+        "ledger_schema_version": LEDGER_DB_SCHEMA_VERSION,
         "operation": operation,
         "valid": valid,
         "exit_reason": exit_reason,
@@ -109,6 +113,98 @@ fn validate_authority_mode(value: &str) -> Result<(), LedgerError> {
     Ok(())
 }
 
+/// Parse an RFC 3339 timestamp into epoch seconds for canonical ordering.
+pub fn parse_rfc3339_epoch(ts: &str) -> Option<i64> {
+    let bytes = ts.as_bytes();
+    if bytes.len() < 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || (bytes[10] != b'T' && bytes[10] != b't')
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+    {
+        return None;
+    }
+    let num = |range: std::ops::Range<usize>| -> Option<i64> { ts.get(range)?.parse().ok() };
+    let (year, month, day) = (num(0..4)?, num(5..7)?, num(8..10)?);
+    let (hour, minute, second) = (num(11..13)?, num(14..16)?, num(17..19)?);
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let offset_seconds: i64 = match ts.get(19..)?.chars().next()? {
+        'Z' | 'z' => 0,
+        sign @ ('+' | '-') => {
+            let offset_hours: i64 = ts.get(20..22)?.parse().ok()?;
+            let offset_minutes: i64 = ts.get(23..25)?.parse().ok()?;
+            if ts.as_bytes().get(22)? != &b':' {
+                return None;
+            }
+            let magnitude = offset_hours * 3600 + offset_minutes * 60;
+            if sign == '+' {
+                magnitude
+            } else {
+                -magnitude
+            }
+        }
+        _ => return None,
+    };
+    Some(
+        days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second
+            - offset_seconds,
+    )
+}
+
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let shifted_year = if month <= 2 { year - 1 } else { year };
+    let era = if shifted_year >= 0 {
+        shifted_year
+    } else {
+        shifted_year - 399
+    } / 400;
+    let year_of_era = shifted_year - era * 400;
+    let month_of_year = (month + 9) % 12;
+    let day_of_year = (153 * month_of_year + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
+/// Returns true when `candidate` is strictly after `reference` using canonical RFC 3339 ordering.
+pub fn ts_is_after(candidate: &str, reference: &str) -> bool {
+    match (
+        parse_rfc3339_epoch(candidate),
+        parse_rfc3339_epoch(reference),
+    ) {
+        (Some(c), Some(r)) => c > r,
+        _ => candidate > reference,
+    }
+}
+
+fn configure_connection(conn: &Connection) -> Result<(), LedgerError> {
+    conn.busy_timeout(std::time::Duration::from_millis(
+        u64::try_from(BUSY_TIMEOUT_MS).unwrap(),
+    ))?;
+    Ok(())
+}
+
+fn ensure_schema_version(conn: &Connection) -> Result<(), LedgerError> {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT value FROM ledger_meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match stored {
+        Some(version) if version == LEDGER_DB_SCHEMA_VERSION => Ok(()),
+        Some(version) => Err(LedgerError::Validation(format!(
+            "ledger schema_version mismatch: expected {LEDGER_DB_SCHEMA_VERSION}, found {version}"
+        ))),
+        None => Err(LedgerError::Validation(
+            "ledger schema_version missing; run init".into(),
+        )),
+    }
+}
+
 /// Initialize ledger schema at the given path.
 pub fn init_ledger(path: &Path) -> Result<(), LedgerError> {
     if let Some(parent) = path.parent() {
@@ -117,9 +213,14 @@ pub fn init_ledger(path: &Path) -> Result<(), LedgerError> {
         }
     }
     let conn = Connection::open(path)?;
+    configure_connection(&conn)?;
     conn.execute_batch(
         "
         PRAGMA journal_mode=WAL;
+        CREATE TABLE IF NOT EXISTS ledger_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS schedule_leases (
             lease_id TEXT PRIMARY KEY,
             holder TEXT NOT NULL,
@@ -132,6 +233,7 @@ pub fn init_ledger(path: &Path) -> Result<(), LedgerError> {
             claim_id TEXT NOT NULL,
             holder TEXT NOT NULL,
             acquired_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
             released_at TEXT
         );
         CREATE TABLE IF NOT EXISTS watermarks (
@@ -164,12 +266,35 @@ pub fn init_ledger(path: &Path) -> Result<(), LedgerError> {
         );
         ",
     )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('schema_version', ?1)",
+        params![LEDGER_DB_SCHEMA_VERSION],
+    )?;
     Ok(())
 }
 
 fn open_ledger(path: &Path) -> Result<Connection, LedgerError> {
     init_ledger(path)?;
-    Ok(Connection::open(path)?)
+    let conn = Connection::open(path)?;
+    configure_connection(&conn)?;
+    ensure_schema_version(&conn)?;
+    Ok(conn)
+}
+
+fn reclaim_expired_leases(conn: &Connection, now: &str) -> Result<usize, LedgerError> {
+    Ok(conn.execute(
+        "UPDATE schedule_leases SET released_at = ?1
+         WHERE released_at IS NULL AND expires_at <= ?1",
+        params![now],
+    )?)
+}
+
+fn reclaim_expired_claims(conn: &Connection, now: &str) -> Result<usize, LedgerError> {
+    Ok(conn.execute(
+        "UPDATE scope_claims SET released_at = ?1
+         WHERE released_at IS NULL AND expires_at <= ?1",
+        params![now],
+    )?)
 }
 
 #[derive(Debug, Deserialize)]
@@ -268,7 +393,7 @@ pub fn run_local_control_ledger(value: &Value) -> Value {
 
     let ledger_path = Path::new(&input.ledger_path);
     match dispatch(operation, ledger_path, &input) {
-        Ok(data) => compact(operation, true, "ok", Vec::new(), data),
+        Ok((data, exit_reason, valid)) => compact(operation, valid, exit_reason, Vec::new(), data),
         Err(LedgerError::Validation(message)) => compact(
             operation,
             false,
@@ -293,11 +418,22 @@ pub fn run_local_control_ledger(value: &Value) -> Value {
     }
 }
 
-fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, LedgerError> {
+fn dispatch(
+    operation: &str,
+    path: &Path,
+    input: &LedgerInput,
+) -> Result<(Value, &'static str, bool), LedgerError> {
     match operation {
         "init" => {
             init_ledger(path)?;
-            Ok(json!({"initialized": true}))
+            Ok((
+                json!({
+                    "initialized": true,
+                    "ledger_schema_version": LEDGER_DB_SCHEMA_VERSION,
+                }),
+                "ok",
+                true,
+            ))
         }
         "acquire_lease" => {
             let lease_id = require(input.lease_id.as_deref(), "lease_id")?;
@@ -308,22 +444,68 @@ fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, 
             validate_id("holder", holder)?;
             validate_ts(acquired_at)?;
             validate_ts(expires_at)?;
-            let conn = open_ledger(path)?;
-            let active: Option<String> = conn
+            if !ts_is_after(expires_at, acquired_at) {
+                return Err(LedgerError::Validation(
+                    "expires_at must be after acquired_at".into(),
+                ));
+            }
+            let mut conn = open_ledger(path)?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let reclaimed = reclaim_expired_leases(&tx, acquired_at)?;
+            let active: Option<String> = tx
                 .query_row(
-                    "SELECT lease_id FROM schedule_leases WHERE released_at IS NULL AND expires_at > ?1 LIMIT 1",
+                    "SELECT lease_id FROM schedule_leases
+                     WHERE released_at IS NULL AND expires_at > ?1 LIMIT 1",
                     params![acquired_at],
                     |row| row.get(0),
                 )
                 .optional()?;
             if active.is_some() {
-                return Err(LedgerError::Validation("lease_already_held".into()));
+                tx.commit()?;
+                return Ok((
+                    json!({"lease_id": lease_id, "acquired": false, "reclaimed_expired": reclaimed > 0}),
+                    "lease_already_held",
+                    false,
+                ));
             }
-            conn.execute(
-                "INSERT INTO schedule_leases (lease_id, holder, acquired_at, expires_at, released_at) VALUES (?1, ?2, ?3, ?4, NULL)",
-                params![lease_id, holder, acquired_at, expires_at],
-            )?;
-            Ok(json!({"lease_id": lease_id, "acquired": true}))
+            let existing_state: Option<Option<String>> = tx
+                .query_row(
+                    "SELECT released_at FROM schedule_leases WHERE lease_id = ?1",
+                    params![lease_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            match existing_state {
+                None => {
+                    tx.execute(
+                        "INSERT INTO schedule_leases (lease_id, holder, acquired_at, expires_at, released_at)
+                         VALUES (?1, ?2, ?3, ?4, NULL)",
+                        params![lease_id, holder, acquired_at, expires_at],
+                    )?;
+                }
+                Some(None) => {
+                    tx.commit()?;
+                    return Ok((
+                        json!({"lease_id": lease_id, "acquired": false, "reclaimed_expired": reclaimed > 0}),
+                        "lease_already_held",
+                        false,
+                    ));
+                }
+                Some(Some(_)) => {
+                    tx.execute(
+                        "UPDATE schedule_leases
+                         SET holder = ?1, acquired_at = ?2, expires_at = ?3, released_at = NULL
+                         WHERE lease_id = ?4",
+                        params![holder, acquired_at, expires_at, lease_id],
+                    )?;
+                }
+            }
+            tx.commit()?;
+            Ok((
+                json!({"lease_id": lease_id, "acquired": true, "reclaimed_expired": reclaimed > 0}),
+                "ok",
+                true,
+            ))
         }
         "release_lease" => {
             let lease_id = require(input.lease_id.as_deref(), "lease_id")?;
@@ -338,42 +520,63 @@ fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, 
             if changed == 0 {
                 return Err(LedgerError::Validation("lease_not_found".into()));
             }
-            Ok(json!({"lease_id": lease_id, "released": true}))
+            Ok((json!({"lease_id": lease_id, "released": true}), "ok", true))
         }
         "claim_scope" => {
             let scope_key = require(input.scope_key.as_deref(), "scope_key")?;
             let claim_id = require(input.claim_id.as_deref(), "claim_id")?;
             let holder = require(input.holder.as_deref(), "holder")?;
             let acquired_at = require(input.acquired_at.as_deref(), "acquired_at")?;
+            let expires_at = require(input.expires_at.as_deref(), "expires_at")?;
             validate_scope(scope_key)?;
             validate_id("claim_id", claim_id)?;
             validate_id("holder", holder)?;
             validate_ts(acquired_at)?;
-            let conn = open_ledger(path)?;
-            let active: Option<String> = conn
+            validate_ts(expires_at)?;
+            if !ts_is_after(expires_at, acquired_at) {
+                return Err(LedgerError::Validation(
+                    "expires_at must be after acquired_at".into(),
+                ));
+            }
+            let mut conn = open_ledger(path)?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let reclaimed = reclaim_expired_claims(&tx, acquired_at)?;
+            let active: Option<(String, String)> = tx
                 .query_row(
-                    "SELECT scope_key FROM scope_claims WHERE released_at IS NULL LIMIT 1",
-                    [],
-                    |row| row.get(0),
+                    "SELECT scope_key, claim_id FROM scope_claims
+                     WHERE released_at IS NULL AND expires_at > ?1 LIMIT 1",
+                    params![acquired_at],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()?;
-            if let Some(existing) = active {
-                if existing != scope_key {
-                    return Err(LedgerError::Validation("scope_claim_conflict".into()));
+            if let Some((existing_scope, _)) = active {
+                if existing_scope != scope_key {
+                    tx.commit()?;
+                    return Ok((
+                        json!({"scope_key": scope_key, "claimed": false, "reclaimed_expired": reclaimed > 0}),
+                        "scope_claim_conflict",
+                        false,
+                    ));
                 }
             }
-            conn.execute(
-                "INSERT INTO scope_claims (scope_key, claim_id, holder, acquired_at, released_at)
-                 VALUES (?1, ?2, ?3, ?4, NULL)
+            tx.execute(
+                "INSERT INTO scope_claims (scope_key, claim_id, holder, acquired_at, expires_at, released_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, NULL)
                  ON CONFLICT(scope_key) DO UPDATE SET
                    claim_id = excluded.claim_id,
                    holder = excluded.holder,
                    acquired_at = excluded.acquired_at,
+                   expires_at = excluded.expires_at,
                    released_at = NULL
-                 WHERE scope_claims.released_at IS NOT NULL",
-                params![scope_key, claim_id, holder, acquired_at],
+                 WHERE scope_claims.released_at IS NOT NULL OR scope_claims.expires_at <= ?4",
+                params![scope_key, claim_id, holder, acquired_at, expires_at],
             )?;
-            Ok(json!({"scope_key": scope_key, "claimed": true}))
+            tx.commit()?;
+            Ok((
+                json!({"scope_key": scope_key, "claimed": true, "reclaimed_expired": reclaimed > 0}),
+                "ok",
+                true,
+            ))
         }
         "release_claim" => {
             let scope_key = require(input.scope_key.as_deref(), "scope_key")?;
@@ -388,7 +591,11 @@ fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, 
             if changed == 0 {
                 return Err(LedgerError::Validation("claim_not_found".into()));
             }
-            Ok(json!({"scope_key": scope_key, "released": true}))
+            Ok((
+                json!({"scope_key": scope_key, "released": true}),
+                "ok",
+                true,
+            ))
         }
         "set_watermark" => {
             let scope_key = require(input.scope_key.as_deref(), "scope_key")?;
@@ -408,7 +615,11 @@ fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, 
                    updated_at = excluded.updated_at",
                 params![scope_key, watermark_key, value_hash, updated_at],
             )?;
-            Ok(json!({"scope_key": scope_key, "watermark_key": watermark_key}))
+            Ok((
+                json!({"scope_key": scope_key, "watermark_key": watermark_key}),
+                "ok",
+                true,
+            ))
         }
         "get_watermark" => {
             let scope_key = require(input.scope_key.as_deref(), "scope_key")?;
@@ -424,18 +635,26 @@ fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, 
                 )
                 .optional()?;
             match row {
-                Some((value_hash, updated_at)) => Ok(json!({
-                    "scope_key": scope_key,
-                    "watermark_key": watermark_key,
-                    "value_hash": value_hash,
-                    "updated_at": updated_at,
-                    "found": true
-                })),
-                None => Ok(json!({
-                    "scope_key": scope_key,
-                    "watermark_key": watermark_key,
-                    "found": false
-                })),
+                Some((value_hash, updated_at)) => Ok((
+                    json!({
+                        "scope_key": scope_key,
+                        "watermark_key": watermark_key,
+                        "value_hash": value_hash,
+                        "updated_at": updated_at,
+                        "found": true
+                    }),
+                    "ok",
+                    true,
+                )),
+                None => Ok((
+                    json!({
+                        "scope_key": scope_key,
+                        "watermark_key": watermark_key,
+                        "found": false
+                    }),
+                    "ok",
+                    true,
+                )),
             }
         }
         "get_authority_mode" => {
@@ -450,17 +669,25 @@ fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, 
                 )
                 .optional()?;
             match row {
-                Some((mode, updated_at)) => Ok(json!({
-                    "controller_id": controller_id,
-                    "authority_mode": mode,
-                    "updated_at": updated_at,
-                    "found": true
-                })),
-                None => Ok(json!({
-                    "controller_id": controller_id,
-                    "authority_mode": "shadow",
-                    "found": false
-                })),
+                Some((mode, updated_at)) => Ok((
+                    json!({
+                        "controller_id": controller_id,
+                        "authority_mode": mode,
+                        "updated_at": updated_at,
+                        "found": true
+                    }),
+                    "ok",
+                    true,
+                )),
+                None => Ok((
+                    json!({
+                        "controller_id": controller_id,
+                        "authority_mode": "shadow",
+                        "found": false
+                    }),
+                    "ok",
+                    true,
+                )),
             }
         }
         "set_authority_mode" => {
@@ -477,7 +704,11 @@ fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, 
                  ON CONFLICT(controller_id) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at",
                 params![controller_id, authority_mode, updated_at],
             )?;
-            Ok(json!({"controller_id": controller_id, "authority_mode": authority_mode}))
+            Ok((
+                json!({"controller_id": controller_id, "authority_mode": authority_mode}),
+                "ok",
+                true,
+            ))
         }
         "record_decision" => {
             let controller_id = require(input.controller_id.as_deref(), "controller_id")?;
@@ -509,7 +740,11 @@ fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, 
                     recorded_at
                 ],
             )?;
-            Ok(json!({"decision_id": decision_id, "recorded": true}))
+            Ok((
+                json!({"decision_id": decision_id, "recorded": true}),
+                "ok",
+                true,
+            ))
         }
         "record_rollback" => {
             let controller_id = require(input.controller_id.as_deref(), "controller_id")?;
@@ -535,7 +770,7 @@ fn dispatch(operation: &str, path: &Path, input: &LedgerInput) -> Result<Value, 
                     recorded_at
                 ],
             )?;
-            Ok(json!({"event_id": event_id, "recorded": true}))
+            Ok((json!({"event_id": event_id, "recorded": true}), "ok", true))
         }
         _ => Err(LedgerError::Validation("unknown_operation".into())),
     }
@@ -548,6 +783,8 @@ fn require<'a>(value: Option<&'a str>, field: &str) -> Result<&'a str, LedgerErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
 
     fn ledger_input(operation: &str, path: &Path) -> Value {
         json!({
@@ -557,12 +794,22 @@ mod tests {
         })
     }
 
+    fn acquire_lease(path: &Path, lease_id: &str, acquired_at: &str, expires_at: &str) -> Value {
+        let mut input = ledger_input("acquire_lease", path);
+        input["lease_id"] = json!(lease_id);
+        input["holder"] = json!("scheduler");
+        input["acquired_at"] = json!(acquired_at);
+        input["expires_at"] = json!(expires_at);
+        run_local_control_ledger(&input)
+    }
+
     #[test]
     fn init_and_authority_mode_roundtrip() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("control.db");
         let init = run_local_control_ledger(&ledger_input("init", &path));
         assert_eq!(init["valid"], json!(true));
+        assert_eq!(init["data"]["ledger_schema_version"], json!("1"));
 
         let mut set = ledger_input("set_authority_mode", &path);
         set["controller_id"] = json!("workflow_audit");
@@ -577,23 +824,122 @@ mod tests {
     }
 
     #[test]
-    fn lease_conflict_is_deterministic() {
+    fn lease_conflict_returns_acquired_false() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("control.db");
         run_local_control_ledger(&ledger_input("init", &path));
 
-        let mut first = ledger_input("acquire_lease", &path);
-        first["lease_id"] = json!("lease-1");
-        first["holder"] = json!("scheduler");
+        let first = acquire_lease(
+            &path,
+            "lease-1",
+            "2026-08-30T12:00:00+09:00",
+            "2026-08-30T12:05:00+09:00",
+        );
+        assert_eq!(first["valid"], json!(true));
+        assert_eq!(first["data"]["acquired"], json!(true));
+
+        let conflict = acquire_lease(
+            &path,
+            "lease-2",
+            "2026-08-30T12:00:00+09:00",
+            "2026-08-30T12:05:00+09:00",
+        );
+        assert_eq!(conflict["valid"], json!(false));
+        assert_eq!(conflict["exit_reason"], json!("lease_already_held"));
+        assert_eq!(conflict["data"]["acquired"], json!(false));
+    }
+
+    #[test]
+    fn expired_lease_is_reclaimed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control.db");
+        run_local_control_ledger(&ledger_input("init", &path));
+
+        let first = acquire_lease(
+            &path,
+            "lease-1",
+            "2026-08-30T12:00:00+09:00",
+            "2026-08-30T12:01:00+09:00",
+        );
+        assert_eq!(first["data"]["acquired"], json!(true));
+
+        let second = acquire_lease(
+            &path,
+            "lease-2",
+            "2026-08-30T12:02:00+09:00",
+            "2026-08-30T12:07:00+09:00",
+        );
+        assert_eq!(second["valid"], json!(true));
+        assert_eq!(second["data"]["acquired"], json!(true));
+        assert_eq!(second["data"]["reclaimed_expired"], json!(true));
+    }
+
+    #[test]
+    fn concurrent_acquire_only_one_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = Arc::new(dir.path().join("control.db"));
+        run_local_control_ledger(&ledger_input("init", path.as_path()));
+
+        let barrier = Arc::new(Barrier::new(2));
+        let path_a = Arc::clone(&path);
+        let barrier_a = Arc::clone(&barrier);
+        let handle_a = thread::spawn(move || {
+            barrier_a.wait();
+            acquire_lease(
+                path_a.as_path(),
+                "lease-a",
+                "2026-08-30T12:00:00+09:00",
+                "2026-08-30T12:05:00+09:00",
+            )
+        });
+        let path_b = Arc::clone(&path);
+        let barrier_b = Arc::clone(&barrier);
+        let handle_b = thread::spawn(move || {
+            barrier_b.wait();
+            acquire_lease(
+                path_b.as_path(),
+                "lease-b",
+                "2026-08-30T12:00:00+09:00",
+                "2026-08-30T12:05:00+09:00",
+            )
+        });
+
+        let result_a = handle_a.join().unwrap();
+        let result_b = handle_b.join().unwrap();
+        let wins = [&result_a, &result_b]
+            .iter()
+            .filter(|r| r["data"]["acquired"] == json!(true))
+            .count();
+        assert_eq!(wins, 1);
+    }
+
+    #[test]
+    fn claim_conflict_returns_claimed_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control.db");
+        run_local_control_ledger(&ledger_input("init", &path));
+
+        let mut first = ledger_input("claim_scope", &path);
+        first["scope_key"] = json!("scope-a");
+        first["claim_id"] = json!("claim-1");
+        first["holder"] = json!("controller-a");
         first["acquired_at"] = json!("2026-08-30T12:00:00+09:00");
         first["expires_at"] = json!("2026-08-30T12:05:00+09:00");
-        assert_eq!(run_local_control_ledger(&first)["valid"], json!(true));
+        assert_eq!(
+            run_local_control_ledger(&first)["data"]["claimed"],
+            json!(true)
+        );
 
-        let mut second = first.clone();
-        second["lease_id"] = json!("lease-2");
+        let mut second = ledger_input("claim_scope", &path);
+        second["scope_key"] = json!("scope-b");
+        second["claim_id"] = json!("claim-2");
+        second["holder"] = json!("controller-b");
+        second["acquired_at"] = json!("2026-08-30T12:00:00+09:00");
+        second["expires_at"] = json!("2026-08-30T12:05:00+09:00");
         let conflict = run_local_control_ledger(&second);
         assert_eq!(conflict["valid"], json!(false));
-        assert_eq!(conflict["exit_reason"], json!("validation_failed"));
+        assert_eq!(conflict["exit_reason"], json!("scope_claim_conflict"));
+        assert_eq!(conflict["data"]["claimed"], json!(false));
     }
 
     #[test]
