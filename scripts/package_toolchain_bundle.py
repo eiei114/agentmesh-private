@@ -11,8 +11,15 @@ Produces the layout consumed by `agentmesh toolchain install`:
     bin/agentmesh-request-markdown-normalizer[.exe]
     bin/agentmesh-public-0x-readiness-report[.exe]
     bin/agentmesh-public-0x-rollback-replay[.exe]
+    bin/agentmesh-multica-cli-adapter[.exe]
+    bin/agentmesh-local-control-ledger[.exe]
+    bin/agentmesh-production-controller-observer[.exe]
+    bin/agentmesh-production-authority[.exe]
+    bin/agentmesh-production-evaluation-report[.exe]
     apps/<app>/...
+    scripts/task-scheduler/*.ps1
     docs/agentmesh-app-v0.md
+    docs/local-production-control-v0.md
     docs/public-0x-readiness-gate.md
     docs/public-0x-readiness-report.md
     README.bundle.md
@@ -39,6 +46,18 @@ SUPPORTED_TARGETS = (
 
 RELEASE_MANIFEST_SCHEMA = "agentmesh-release-manifest.v0"
 PROTOCOL_VERSION = "2026-07-15"
+PLUGIN_STEMS = (
+    "agentmesh-multica-selector-shadow",
+    "agentmesh-markdown-request-validator",
+    "agentmesh-request-markdown-normalizer",
+    "agentmesh-public-0x-readiness-report",
+    "agentmesh-public-0x-rollback-replay",
+    "agentmesh-multica-cli-adapter",
+    "agentmesh-local-control-ledger",
+    "agentmesh-production-controller-observer",
+    "agentmesh-production-authority",
+    "agentmesh-production-evaluation-report",
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -106,25 +125,7 @@ def main() -> int:
     staged_bin.mkdir(parents=True)
 
     cli_name = logical_bin_name("agentmesh", args.target)
-    multica_plugin_name = logical_bin_name("agentmesh-multica-selector-shadow", args.target)
-    markdown_plugin_name = logical_bin_name("agentmesh-markdown-request-validator", args.target)
-    request_normalizer_plugin_name = logical_bin_name(
-        "agentmesh-request-markdown-normalizer", args.target
-    )
-    readiness_report_plugin_name = logical_bin_name(
-        "agentmesh-public-0x-readiness-report", args.target
-    )
-    rollback_replay_plugin_name = logical_bin_name(
-        "agentmesh-public-0x-rollback-replay", args.target
-    )
-    required = [
-        cli_name,
-        multica_plugin_name,
-        markdown_plugin_name,
-        request_normalizer_plugin_name,
-        readiness_report_plugin_name,
-        rollback_replay_plugin_name,
-    ]
+    required = [cli_name, *(logical_bin_name(stem, args.target) for stem in PLUGIN_STEMS)]
     if args.include_echo:
         required.append(logical_bin_name("agentmesh-fixture-echo", args.target))
 
@@ -150,6 +151,9 @@ def main() -> int:
     app_src = repo / "apps"
     if app_src.is_dir():
         copy_tree(app_src, out / "apps")
+    scheduler_src = repo / "scripts" / "task-scheduler"
+    if scheduler_src.is_dir():
+        copy_tree(scheduler_src, out / "scripts" / "task-scheduler")
     docs_dst = out / "docs"
     docs_dst.mkdir(parents=True, exist_ok=True)
     for doc_name in [
@@ -157,6 +161,7 @@ def main() -> int:
         "public-0x-readiness-gate.md",
         "public-0x-readiness-report.md",
         "request-markdown-normalizer-v0.md",
+        "local-production-control-v0.md",
     ]:
         docs_src = repo / "docs" / doc_name
         if docs_src.is_file():
@@ -212,6 +217,7 @@ def main() -> int:
                 "```",
                 "",
                 "Directories under the cache are immutable: existing `<tag>/<target>/` is never overwritten.",
+                "Windows Task Scheduler install/run/rollback scripts are packaged under `scripts/task-scheduler/`.",
                 "",
             ]
         )

@@ -14,6 +14,18 @@ Bounded local production adapter for deterministic Multica controllers. One-shot
 | Production authority | `agentmesh-production-authority` | Authority modes through `todo_runner`, promotion gates, allowed CLI argv, Cursor recovery |
 | Evaluation report | `agentmesh-production-evaluation-report` | 7-day rollback gate and 30-day result from compact aggregate inputs |
 
+Observer CLI reads are fixed to the current shell-free Multica contract:
+`multica issue list --output json`. Arbitrary query arguments are not accepted.
+
+On Windows, Multica-invoking App manifests forward only `USERPROFILE`,
+`LOCALAPPDATA`, `APPDATA`, and `PROGRAMDATA` so the pinned CLI can locate its
+existing owner-local state after the host clears the plugin environment. Token
+and API-key environment variables remain forbidden.
+
+CLI subprocess timeouts are constrained to 1,000–85,000 ms. Every composing
+App has a 120,000 ms host limit, reserving 35 seconds for process-tree
+termination, bounded pipe drain, ledger persistence, and compact output.
+
 ## Authority modes
 
 Promotion ladder (external thresholds apply before mode changes):
@@ -48,7 +60,7 @@ Observer `run_once` emits stable `exit_reason` values including:
 
 ## Idempotency and manual recovery
 
-Observer and authority `run_once` paths claim controller-scoped idempotency **before** invoking the Multica CLI. Duplicate inputs suppress the CLI call and release leases.
+Observer and authority `run_once` paths claim controller-scoped idempotency **before** invoking the Multica CLI. Duplicate inputs suppress the CLI call and release leases. Scheduled observer inputs include a bounded `occurrence_id` derived from the anchored schedule slot; retries inside the same slot retain that identity even though `now` advances for lease safety.
 
 Failed **non-Cursor** mutation runs that already claimed idempotency but exited with CLI failure, timeout, or uncertain Multica effect leave a **consumed ambiguous claim**. Operators must inspect ledger decisions and live Multica state and perform **explicit manual recovery**. There is no generic automatic retry for those mutations.
 
@@ -67,10 +79,27 @@ The ledger stores identifiers, hashes, timestamps, and bounded result codes. It 
 Scripts under `scripts/task-scheduler/`:
 
 - `install-production-controller.ps1` — register one-shot `agentmesh app run` task
+- `run-production-controller.ps1` — materialize a unique UTC `now`/`lease_id` for each scheduled occurrence, run the pinned App, then remove the temporary input
 - `uninstall-production-controller.ps1` — remove task
-- `rollback-production-controller.ps1` — disable task, record rollback only when the compact envelope has `outcome=ok` and `payload.data.recorded=true`
+- `rollback-production-controller.ps1` — disable task, then record rollback through the durable pinned ledger App/cache; missing or malformed receipt exits nonzero
 
 Operators install/configure tasks manually; CI does not activate schedules.
+The checked-in input is a template. The installer pins one UTC schedule anchor and interval into the task action. The runner derives a stable fixed-length occurrence/lease identity from that slot, so retries of one occurrence deduplicate while the next interval receives a distinct identity.
+Before registration, the installer verifies the pin, release manifest, and every
+pinned binary, then copies the AgentMesh host, runner/rollback/uninstall scripts,
+observer and ledger App directories, toolchain pin/cache, and input template into
+an immutable content-addressed directory under
+`%LOCALAPPDATA%\AgentMesh\scheduler-assets\`. Scheduled runs and rollback pass
+that durable cache explicitly, so they never depend on a temporary release
+extraction or mutable default cache. `-PrepareOnly` stages and verifies those
+assets without registering a task. Supported intervals are 1–1440 minutes.
+
+Task Scheduler success requires both process exit zero and a valid compact
+observer result. Only `observer_success_no_mutation` with a successful,
+non-truncated CLI summary and complete ledger receipts is success. A duplicate
+claim is fail-closed because a claim alone does not prove the prior occurrence
+completed; CLI, ledger, duplicate, malformed-envelope, or host failures return
+nonzero.
 
 ## Development smoke
 

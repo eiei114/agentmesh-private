@@ -18,6 +18,12 @@ param(
     [string]$ToolchainPin,
 
     [Parameter(Mandatory = $true)]
+    [string]$ToolchainCache,
+
+    [Parameter(Mandatory = $true)]
+    [string]$SidecarDir,
+
+    [Parameter(Mandatory = $true)]
     [string]$LedgerPath,
 
     [Parameter(Mandatory = $true)]
@@ -37,18 +43,11 @@ function Test-RequiredFile([string]$Path) {
     }
 }
 
-function Format-ScheduledTaskArgument([string]$Value) {
-    if ($Value -match '[\s"]') {
-        return ('"' + $Value.Replace('"', '""') + '"')
+function Test-RequiredDirectory([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        throw "Missing required directory: $Path"
     }
-    return $Value
 }
-
-. (Join-Path $PSScriptRoot "rollback-ledger-parse.ps1")
-
-Test-RequiredFile -Path $AgentMeshExe
-Test-RequiredFile -Path $LedgerManifestPath
-Test-RequiredFile -Path $ToolchainPin
 
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Disable-ScheduledTask -TaskName $TaskName | Out-Null
@@ -57,40 +56,59 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     $status = "not_found"
 }
 
-$rollbackInput = @{
-    schema_version = "local-control-ledger-input.v0"
-    operation = "record_rollback"
-    ledger_path = $LedgerPath
-    controller_id = $ControllerId
-    event_id = "rollback-$CorrelationId"
-    reason_code = $ReasonCode
-    correlation_id = $CorrelationId
-    recorded_at = $Now
-} | ConvertTo-Json -Compress
+$rollbackInputFile = $null
+$ledgerExitCode = -1
+$rollbackRecorded = $false
+try {
+    . (Join-Path $PSScriptRoot "rollback-ledger-parse.ps1")
+    Test-RequiredFile -Path $AgentMeshExe
+    Test-RequiredFile -Path $LedgerManifestPath
+    Test-RequiredFile -Path $ToolchainPin
+    Test-RequiredDirectory -Path $ToolchainCache
+    Test-RequiredDirectory -Path $SidecarDir
 
-$rollbackInputFile = Join-Path $env:TEMP ("agentmesh-rollback-input-$CorrelationId.json")
-Set-Content -LiteralPath $rollbackInputFile -Value $rollbackInput -Encoding UTF8
+    $eventId = "rollback-$CorrelationId"
+    $rollbackInput = @{
+        schema_version = "local-control-ledger-input.v0"
+        operation = "record_rollback"
+        ledger_path = $LedgerPath
+        controller_id = $ControllerId
+        event_id = $eventId
+        reason_code = $ReasonCode
+        correlation_id = $CorrelationId
+        recorded_at = $Now
+    } | ConvertTo-Json -Compress
 
-$argumentParts = @(
-    'app',
-    'run',
-    '--manifest', $LedgerManifestPath,
-    '--toolchain-pin', $ToolchainPin,
-    '--input', $rollbackInputFile
-) | ForEach-Object { Format-ScheduledTaskArgument $_ }
+    $rollbackInputDir = Join-Path $env:LOCALAPPDATA "AgentMesh\rollback-inputs"
+    New-Item -ItemType Directory -Path $rollbackInputDir -Force | Out-Null
+    $rollbackInputFile = Join-Path $rollbackInputDir ("rollback-$PID-$([Guid]::NewGuid().ToString('N')).json")
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($rollbackInputFile, $rollbackInput, $utf8NoBom)
 
-$argumentLine = $argumentParts -join ' '
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $AgentMeshExe
-$psi.Arguments = $argumentLine
-$psi.RedirectStandardOutput = $true
-$psi.RedirectStandardError = $true
-$psi.UseShellExecute = $false
-$ledgerProcess = [System.Diagnostics.Process]::Start($psi)
-$ledgerStdout = $ledgerProcess.StandardOutput.ReadToEnd() + $ledgerProcess.StandardError.ReadToEnd()
-$ledgerProcess.WaitForExit() | Out-Null
-$ledgerExitCode = $ledgerProcess.ExitCode
-$rollbackRecorded = Test-RollbackLedgerRecorded -Stdout $ledgerStdout -ExitCode $ledgerExitCode
+    $arguments = @(
+        "app",
+        "run",
+        "--manifest", $LedgerManifestPath,
+        "--toolchain-pin", $ToolchainPin,
+        "--toolchain-cache", $ToolchainCache,
+        "--input", $rollbackInputFile,
+        "--sidecar-dir", $SidecarDir,
+        "--mode", "production"
+    )
+    $ledgerOutput = & $AgentMeshExe @arguments 2>&1
+    $ledgerExitCode = $LASTEXITCODE
+    $ledgerStdout = (@($ledgerOutput) | ForEach-Object { $_.ToString() }) -join "`n"
+    $rollbackRecorded = Test-RollbackLedgerRecorded `
+        -Stdout $ledgerStdout `
+        -ExitCode $ledgerExitCode `
+        -ExpectedEventId $eventId
+} catch {
+    $rollbackRecorded = $false
+} finally {
+    if ($rollbackInputFile) {
+        Remove-Item -LiteralPath $rollbackInputFile -Force -ErrorAction SilentlyContinue
+    }
+}
 
 Write-Output (@{
     task = $TaskName
@@ -100,3 +118,8 @@ Write-Output (@{
     rollback_recorded = $rollbackRecorded
     ledger_exit_code = $ledgerExitCode
 } | ConvertTo-Json -Compress)
+
+if (-not $rollbackRecorded) {
+    exit 30
+}
+exit 0

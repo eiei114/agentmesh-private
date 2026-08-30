@@ -99,6 +99,11 @@ jobs:
           -p agentmesh-multica-selector-shadow
           -p agentmesh-markdown-request-validator
           -p agentmesh-adapter-metadata-canonicalizer
+          -p agentmesh-multica-cli-adapter
+          -p agentmesh-local-control-ledger
+          -p agentmesh-production-controller-observer
+          -p agentmesh-production-authority
+          -p agentmesh-production-evaluation-report
           -p agentmesh-fixture-echo
 
       - name: package + local downloaded smoke

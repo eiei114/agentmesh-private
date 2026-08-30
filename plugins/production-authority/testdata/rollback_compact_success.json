@@ -4,6 +4,7 @@
   "outcome": "ok",
   "payload": {
     "schema_version": "local-control-ledger-output.v0",
+    "operation": "record_rollback",
     "valid": true,
     "exit_reason": "ok",
     "data": {

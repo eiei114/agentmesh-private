@@ -21,6 +21,7 @@
     "ledger_path": { "type": "string", "minLength": 1 },
     "cli_path": { "type": "string", "minLength": 1 },
     "now": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "occurrence_id": { "type": "string", "minLength": 1, "maxLength": 64 },
     "scope_key": { "type": "string", "minLength": 1, "maxLength": 256 },
     "lease_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "prefix_args": {
@@ -36,7 +37,7 @@
     "cli_timeout_ms": {
       "type": "integer",
       "minimum": 1000,
-      "maximum": 3600000
+      "maximum": 85000
     }
   }
 }

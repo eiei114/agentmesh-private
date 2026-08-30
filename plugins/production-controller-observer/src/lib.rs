@@ -4,7 +4,9 @@
 //! performs read-only CLI probes and records bounded decision metadata only.
 
 use agentmesh_local_control_ledger::run_local_control_ledger;
-use agentmesh_multica_cli_adapter::{run_multica_cli_adapter, ProcessRunner};
+use agentmesh_multica_cli_adapter::{
+    resolve_cli_timeout_ms, run_multica_cli_adapter, ProcessRunner,
+};
 use chrono::{DateTime, FixedOffset};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -17,7 +19,7 @@ const OUTPUT_SCHEMA_VERSION: &str = "production-controller-observer-output.v0";
 const DEFAULT_LEASE_TTL_SECS: u64 = 300;
 const MIN_LEASE_TTL_SECS: u64 = 30;
 const MAX_LEASE_TTL_SECS: u64 = 3600;
-const DEFAULT_CLI_TIMEOUT_MS: u64 = 60_000;
+const MAX_OCCURRENCE_ID_CHARS: usize = 64;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -29,6 +31,8 @@ struct ObserverInput {
     ledger_path: String,
     cli_path: String,
     now: String,
+    #[serde(default)]
+    occurrence_id: Option<String>,
     #[serde(default)]
     scope_key: Option<String>,
     #[serde(default)]
@@ -60,11 +64,6 @@ fn resolve_lease_ttl_seconds(raw: Option<u64>) -> Result<u64, String> {
             "lease_ttl_seconds must be {MIN_LEASE_TTL_SECS}..={MAX_LEASE_TTL_SECS}"
         ))
     }
-}
-
-fn resolve_cli_timeout_ms(raw: Option<u64>) -> Result<u64, String> {
-    let timeout = raw.unwrap_or(DEFAULT_CLI_TIMEOUT_MS);
-    agentmesh_proto::Limits::validate_run_timeout_ms(timeout).map_err(|e| e.to_string())
 }
 
 fn lease_expires_at(now: &str, ttl_seconds: u64) -> Result<String, String> {
@@ -215,6 +214,16 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
     if input.now.is_empty() {
         issues.push(issue("now_missing", "now is required"));
     }
+    if input
+        .occurrence_id
+        .as_deref()
+        .is_some_and(|value| value.is_empty() || value.chars().count() > MAX_OCCURRENCE_ID_CHARS)
+    {
+        issues.push(issue(
+            "occurrence_id_invalid",
+            format!("occurrence_id must be 1..={MAX_OCCURRENCE_ID_CHARS} chars"),
+        ));
+    }
     if let Err(message) = resolve_lease_ttl_seconds(input.lease_ttl_seconds) {
         issues.push(issue("lease_ttl_invalid", message));
     }
@@ -354,9 +363,11 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
         "prefix_args": input.prefix_args,
         "timeout_ms": cli_timeout_ms,
     });
+    let occurrence_id = input.occurrence_id.as_deref().unwrap_or(&input.now);
     let decision_hash = sha256_hex(&json!({
         "controller_id": input.controller_id,
         "decision_code": "observer_run_once",
+        "occurrence_id": occurrence_id,
         "input_hash": sha256_hex(&cli_input),
     }));
     let idempotency = ledger_op(
@@ -503,9 +514,10 @@ mod tests {
             assert_eq!(
                 operation_args,
                 &[
-                    "issues".to_string(),
+                    "issue".to_string(),
                     "list".to_string(),
-                    "--json".to_string()
+                    "--output".to_string(),
+                    "json".to_string()
                 ]
             );
             let bounded = self.stdout.as_slice();
@@ -601,7 +613,128 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         let dup = run_production_controller_observer(&input, &runner);
         assert_eq!(dup["exit_reason"], json!("duplicate_suppressed"));
+        assert_eq!(dup["valid"], json!(false));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn crash_after_idempotency_claim_never_becomes_scheduler_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = base_input(&dir);
+
+        struct PanicAfterClaimRunner;
+        impl ProcessRunner for PanicAfterClaimRunner {
+            fn run(
+                &self,
+                _spec: &CliCommandSpec,
+                _operation_args: &[String],
+                _timeout_ms: u64,
+            ) -> Result<CliInvokeResult, String> {
+                panic!("simulated host crash after idempotency claim")
+            }
+        }
+
+        let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_production_controller_observer(&input, &PanicAfterClaimRunner)
+        }));
+        assert!(crashed.is_err());
+
+        let retry = run_production_controller_observer(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: br#"{"issues":[]}"#.to_vec(),
+                timed_out: false,
+            },
+        );
+        assert_eq!(retry["exit_reason"], json!("duplicate_suppressed"));
+        assert_eq!(retry["valid"], json!(false));
+    }
+
+    #[test]
+    fn retry_in_same_scheduled_occurrence_suppresses_cli() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut first_input = base_input(&dir);
+        first_input["occurrence_id"] = json!("schedule-slot-20260830-1200");
+        first_input["lease_id"] = json!("lease-a");
+        let mut retry_input = first_input.clone();
+        retry_input["now"] = json!("2026-08-30T12:01:00+09:00");
+        retry_input["lease_id"] = json!("lease-b");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{"issues":[]}"#.to_vec(),
+        };
+
+        assert_eq!(
+            run_production_controller_observer(&first_input, &runner)["valid"],
+            json!(true)
+        );
+        let retry = run_production_controller_observer(&retry_input, &runner);
+        assert_eq!(retry["exit_reason"], json!("duplicate_suppressed"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn bounded_occurrence_ids_support_max_length_controller_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut input = base_input(&dir);
+        input["controller_id"] = json!("c".repeat(128));
+        input["scope_key"] = json!("scope-max-controller");
+        input["occurrence_id"] = json!("a".repeat(64));
+        input["lease_id"] = json!("lease-0123456789abcdef0123456789abcdef");
+        let output = run_production_controller_observer(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: br#"{"issues":[]}"#.to_vec(),
+                timed_out: false,
+            },
+        );
+        assert_eq!(output["valid"], json!(true));
+        assert_eq!(output["exit_reason"], json!("observer_success_no_mutation"));
+    }
+
+    #[test]
+    fn rejects_oversized_occurrence_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut input = base_input(&dir);
+        input["occurrence_id"] = json!("x".repeat(65));
+        let output = run_production_controller_observer(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: br#"{}"#.to_vec(),
+                timed_out: false,
+            },
+        );
+        assert_eq!(output["valid"], json!(false));
+        assert_eq!(output["exit_reason"], json!("input_invalid"));
+        assert_eq!(output["issues"][0]["code"], json!("occurrence_id_invalid"));
+    }
+
+    #[test]
+    fn next_scheduled_occurrence_runs_the_query_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let first_input = base_input(&dir);
+        let mut second_input = first_input.clone();
+        second_input["now"] = json!("2026-08-30T12:15:00+09:00");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{"issues":[]}"#.to_vec(),
+        };
+        assert_eq!(
+            run_production_controller_observer(&first_input, &runner)["valid"],
+            json!(true)
+        );
+        assert_eq!(
+            run_production_controller_observer(&second_input, &runner)["valid"],
+            json!(true)
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     #[test]
