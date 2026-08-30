@@ -96,6 +96,9 @@ an immutable content-addressed directory under
 that durable cache explicitly, so they never depend on a temporary release
 extraction or mutable default cache. `-PrepareOnly` stages and verifies those
 assets without registering a task. Supported intervals are 1–1440 minutes.
+Registered tasks use a schema-valid 3,650-day repetition horizon; rerun the
+installer before that horizon expires instead of serializing unsupported
+`TimeSpan.MaxValue`.
 
 Task Scheduler success requires both process exit zero and a valid compact
 observer result. Only `observer_success_no_mutation` with a successful,

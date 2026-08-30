@@ -311,6 +311,7 @@ if ($PrepareOnly) {
 
 $startAt = (Get-Date).AddMinutes(1)
 $anchorUtc = $startAt.ToUniversalTime().ToString("o")
+$repetitionDuration = New-TimeSpan -Days 3650
 
 $argumentParts = @(
     '-NoProfile',
@@ -331,7 +332,7 @@ $PowerShellExe = (Get-Process -Id $PID).Path
 $action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument ($argumentParts -join ' ')
 $trigger = New-ScheduledTaskTrigger -Once -At $startAt `
     -RepetitionInterval (New-TimeSpan -Minutes $intervalMinutes) `
-    -RepetitionDuration ([TimeSpan]::MaxValue)
+    -RepetitionDuration $repetitionDuration
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
