@@ -10,7 +10,9 @@ use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+#[cfg(unix)]
+use std::process::Child;
+use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -19,7 +21,11 @@ pub const MULTICA_CLI_ADAPTER_VERSION: &str = "multica-cli-adapter.v0";
 const INPUT_SCHEMA_VERSION: &str = "multica-cli-adapter-input.v0";
 const OUTPUT_SCHEMA_VERSION: &str = "multica-cli-adapter-output.v0";
 const MAX_STDOUT_BYTES: usize = 4 * 1024 * 1024;
+#[cfg(unix)]
 const CAPTURE_DRAIN_GRACE_MS: u64 = 2_000;
+#[cfg(windows)]
+const WINDOWS_JOB_DRAIN_GRACE_MS: u64 = 5_000;
+#[cfg(unix)]
 const CLEANUP_COMMAND_TIMEOUT_MS: u64 = 3_000;
 const CHILD_REAP_GRACE_MS: u64 = 2_000;
 const MAX_ARG_CHARS: usize = 256;
@@ -28,9 +34,9 @@ const MAX_ARGS: usize = 32;
 pub const DEFAULT_CLI_TIMEOUT_MS: u64 = 60_000;
 /// Minimum supported subprocess timeout.
 pub const MIN_CLI_TIMEOUT_MS: u64 = 1_000;
-/// Maximum subprocess timeout. App host limit is 120s, leaving 35s for bounded
-/// tree termination, child reaping, capture draining, and host finalization.
-pub const MAX_CLI_TIMEOUT_MS: u64 = 85_000;
+/// Maximum subprocess timeout. App host limit is 120s, reserving 50s for
+/// process-tree cleanup, ledger writes, and host finalization.
+pub const MAX_CLI_TIMEOUT_MS: u64 = 70_000;
 
 /// Fixed read-only query args for observer wiring.
 pub const QUERY_OPERATION_ARGS: &[&str] = &["issue", "list", "--output", "json"];
@@ -351,16 +357,7 @@ impl CliCommandSpec {
 
     /// Build a shell-free `Command` with cleared environment and minimal OS baseline.
     pub fn build_command(&self, operation_args: &[String]) -> Result<Command, String> {
-        if operation_args.len() > MAX_ARGS {
-            return Err(format!("operation_args exceeds {MAX_ARGS} items"));
-        }
-        for arg in operation_args {
-            if arg.is_empty() || arg.chars().count() > MAX_ARG_CHARS {
-                return Err(format!(
-                    "each operation arg must be 1..={MAX_ARG_CHARS} chars"
-                ));
-            }
-        }
+        validate_operation_args(operation_args)?;
         let mut cmd = Command::new(&self.program);
         cmd.env_clear();
         #[cfg(windows)]
@@ -395,6 +392,44 @@ impl CliCommandSpec {
             .stderr(Stdio::piped());
         Ok(cmd)
     }
+
+    #[cfg(windows)]
+    fn build_windows_command(
+        &self,
+        operation_args: &[String],
+    ) -> Result<windows_spawn::Command, String> {
+        validate_operation_args(operation_args)?;
+        let mut cmd = windows_spawn::Command::new(&self.program);
+        cmd.env_clear();
+        for key in WINDOWS_ENV_ALLOWLIST {
+            if let Ok(value) = std::env::var(key) {
+                cmd.env(key, value);
+            }
+        }
+        cmd.args(&self.prefix_args);
+        cmd.args(operation_args);
+        if let Some(cwd) = &self.working_directory {
+            cmd.current_dir(cwd);
+        }
+        cmd.stdin(windows_spawn::Stdio::null())
+            .stdout(windows_spawn::Stdio::piped())
+            .stderr(windows_spawn::Stdio::piped());
+        Ok(cmd)
+    }
+}
+
+fn validate_operation_args(operation_args: &[String]) -> Result<(), String> {
+    if operation_args.len() > MAX_ARGS {
+        return Err(format!("operation_args exceeds {MAX_ARGS} items"));
+    }
+    for arg in operation_args {
+        if arg.is_empty() || arg.chars().count() > MAX_ARG_CHARS {
+            return Err(format!(
+                "each operation arg must be 1..={MAX_ARG_CHARS} chars"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Result of one CLI invocation (internal; raw stdout is never emitted in compact output).
@@ -476,6 +511,42 @@ fn join_capture(
         .map_err(|e| format!("{label}_read_failed: {e}"))
 }
 
+#[cfg(windows)]
+fn join_captures_after_job_close(
+    stdout: std::thread::JoinHandle<std::io::Result<BoundedCapture>>,
+    stderr: std::thread::JoinHandle<std::io::Result<BoundedCapture>>,
+) -> Result<(BoundedCapture, BoundedCapture), String> {
+    let deadline = Instant::now() + Duration::from_millis(WINDOWS_JOB_DRAIN_GRACE_MS);
+    while !(stdout.is_finished() && stderr.is_finished()) {
+        if Instant::now() >= deadline {
+            return Err("capture_drain_timeout: windows_job_closed".to_string());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok((
+        join_capture(stdout, "stdout")?,
+        join_capture(stderr, "stderr")?,
+    ))
+}
+
+#[cfg(windows)]
+fn wait_windows_child_bounded(
+    child: &mut windows_spawn::Child,
+    timeout_ms: u64,
+) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    loop {
+        match child.try_wait().map_err(|e| format!("wait_failed: {e}"))? {
+            Some(status) => return Ok(status),
+            None if Instant::now() >= deadline => {
+                return Err("child_reap_timeout".to_string());
+            }
+            None => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
+#[cfg(unix)]
 fn join_captures_bounded(
     stdout: std::thread::JoinHandle<std::io::Result<BoundedCapture>>,
     stderr: std::thread::JoinHandle<std::io::Result<BoundedCapture>>,
@@ -507,6 +578,7 @@ fn join_captures_bounded(
     ))
 }
 
+#[cfg(unix)]
 fn wait_child_bounded(child: &mut Child, timeout_ms: u64) -> Result<ExitStatus, String> {
     let deadline = Instant::now() + Duration::from_millis(timeout_ms);
     loop {
@@ -520,6 +592,7 @@ fn wait_child_bounded(child: &mut Child, timeout_ms: u64) -> Result<ExitStatus, 
     }
 }
 
+#[cfg(unix)]
 fn run_cleanup_command_bounded(mut command: Command, label: &str) -> Result<(), String> {
     let mut child = command
         .spawn()
@@ -543,75 +616,6 @@ fn run_cleanup_command_bounded(mut command: Command, label: &str) -> Result<(), 
     }
 }
 
-#[cfg(windows)]
-fn terminate_process_tree(root_pid: u32) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let system_root = std::env::var_os("SystemRoot")
-        .or_else(|| std::env::var_os("windir"))
-        .ok_or_else(|| "process_tree_kill_missing_system_root".to_string())?;
-    let taskkill = PathBuf::from(system_root)
-        .join("System32")
-        .join("taskkill.exe");
-    let mut command = Command::new(taskkill);
-    command
-        .args(["/PID", &root_pid.to_string(), "/T", "/F"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    run_cleanup_command_bounded(command, "process_tree_kill")
-}
-
-#[cfg(windows)]
-fn terminate_descendants(root_pid: u32) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const SCRIPT: &str = r#"$ErrorActionPreference='Stop'; $root=[uint32]$env:AGENTMESH_ROOT_PID; $seen=New-Object 'System.Collections.Generic.HashSet[uint32]'; $frontier=@($root); while($frontier.Count -gt 0){ $parents=@($frontier); $frontier=@(); foreach($p in Get-CimInstance Win32_Process){ $pidValue=[uint32]$p.ProcessId; if(($p.Name -ne 'conhost.exe') -and ($parents -contains [uint32]$p.ParentProcessId) -and $seen.Add($pidValue)){ $frontier += $pidValue } } }; foreach($pidValue in @($seen) | Sort-Object -Descending){ Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 50; foreach($pidValue in @($seen)){ if(Get-Process -Id $pidValue -ErrorAction SilentlyContinue){ exit 1 } }; exit 0"#;
-    let system_root = std::env::var_os("SystemRoot")
-        .or_else(|| std::env::var_os("windir"))
-        .ok_or_else(|| "descendant_kill_missing_system_root".to_string())?;
-    let powershell = PathBuf::from(system_root)
-        .join("System32")
-        .join("WindowsPowerShell")
-        .join("v1.0")
-        .join("powershell.exe");
-    let mut command = Command::new(powershell);
-    command
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            SCRIPT,
-        ])
-        .env_clear()
-        .env("AGENTMESH_ROOT_PID", root_pid.to_string())
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    for key in WINDOWS_ENV_ALLOWLIST {
-        if let Ok(value) = std::env::var(key) {
-            command.env(key, value);
-        }
-    }
-    command.env(
-        "PSModulePath",
-        PathBuf::from(
-            std::env::var_os("SystemRoot")
-                .or_else(|| std::env::var_os("windir"))
-                .ok_or_else(|| "descendant_kill_missing_system_root".to_string())?,
-        )
-        .join("System32")
-        .join("WindowsPowerShell")
-        .join("v1.0")
-        .join("Modules"),
-    );
-    run_cleanup_command_bounded(command, "descendant_kill")
-}
-
 #[cfg(unix)]
 fn terminate_process_tree(root_pid: u32) -> Result<(), String> {
     let kill = if Path::new("/bin/kill").is_file() {
@@ -633,6 +637,7 @@ fn terminate_descendants(root_pid: u32) -> Result<(), String> {
     terminate_process_tree(root_pid)
 }
 
+#[cfg(unix)]
 fn cleanup_timed_out_child(
     child: &mut Child,
     root_pid: u32,
@@ -699,6 +704,7 @@ fn captured_invoke_result(
     }
 }
 
+#[cfg(unix)]
 impl ProcessRunner for OsProcessRunner {
     fn run(
         &self,
@@ -738,6 +744,80 @@ impl ProcessRunner for OsProcessRunner {
             }
         };
         let (stdout, stderr) = join_captures_bounded(stdout_thread, stderr_thread, root_pid)?;
+        if let Some(error) = cleanup_error {
+            return Err(error);
+        }
+        Ok(captured_invoke_result(
+            if timed_out {
+                -1
+            } else {
+                status.and_then(|value| value.code()).unwrap_or(-1)
+            },
+            stdout,
+            stderr.byte_count,
+            timed_out,
+        ))
+    }
+}
+
+#[cfg(windows)]
+impl ProcessRunner for OsProcessRunner {
+    fn run(
+        &self,
+        spec: &CliCommandSpec,
+        operation_args: &[String],
+        timeout_ms: u64,
+    ) -> Result<CliInvokeResult, String> {
+        use windows_spawn::{CreationFlags, DropPolicy, SpawnOptions};
+
+        let mut command = spec
+            .build_windows_command(operation_args)
+            .map_err(|e| format!("build_command: {e}"))?;
+        let options = SpawnOptions::new()
+            .creation_flags(CreationFlags::NO_WINDOW | CreationFlags::NEW_PROCESS_GROUP)
+            .drop_policy(DropPolicy::KillTree);
+        let mut child = command
+            .spawn_with(options)
+            .map_err(|e| format!("spawn_failed: {e}"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "stdout_unavailable".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "stderr_unavailable".to_string())?;
+        let stdout_thread = std::thread::spawn(move || drain_bounded(stdout, MAX_STDOUT_BYTES));
+        let stderr_thread = std::thread::spawn(move || drain_bounded(stderr, 0));
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut timed_out = false;
+        let mut cleanup_error = None;
+        let status = loop {
+            match child.try_wait().map_err(|e| format!("wait_failed: {e}"))? {
+                Some(status) => break Some(status),
+                None if Instant::now() >= deadline => {
+                    timed_out = true;
+                    let direct_kill_error = child.kill().err().map(|error| error.to_string());
+                    match wait_windows_child_bounded(&mut child, CHILD_REAP_GRACE_MS) {
+                        Ok(status) => break Some(status),
+                        Err(error) => {
+                            cleanup_error = Some(format!(
+                                "timeout_child_reap_failed: {error}; direct_kill={}",
+                                direct_kill_error.unwrap_or_else(|| "none".to_string())
+                            ));
+                            break None;
+                        }
+                    }
+                }
+                None => std::thread::sleep(Duration::from_millis(10)),
+            }
+        };
+
+        // KillTree is attached during the suspended CreateProcessW transaction.
+        // Dropping the child closes that Job before capture handles are joined,
+        // terminating every descendant without PID discovery or shell helpers.
+        drop(child);
+        let (stdout, stderr) = join_captures_after_job_close(stdout_thread, stderr_thread)?;
         if let Some(error) = cleanup_error {
             return Err(error);
         }

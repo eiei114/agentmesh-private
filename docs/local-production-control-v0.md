@@ -22,9 +22,12 @@ On Windows, Multica-invoking App manifests forward only `USERPROFILE`,
 existing owner-local state after the host clears the plugin environment. Token
 and API-key environment variables remain forbidden.
 
-CLI subprocess timeouts are constrained to 1,000–85,000 ms. Every composing
-App has a 120,000 ms host limit, reserving 35 seconds for process-tree
+CLI subprocess timeouts are constrained to 1,000–70,000 ms. Every composing
+App has a 120,000 ms host limit, reserving 50 seconds for process-tree
 termination, bounded pipe drain, ledger persistence, and compact output.
+Windows process-tree containment requires Windows 10 version 1809 or later.
+Before activation, run the observer from its installed Task Scheduler context;
+an outer Job that rejects nested Job attachment must fail closed at spawn.
 
 ## Authority modes
 

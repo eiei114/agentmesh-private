@@ -368,7 +368,7 @@ def main() -> int:
                     "prefix_args": ["-c", fake_query, "--"],
                     # Exercise the maximum configured CLI timeout through the
                     # actual 120s App host while the fixture exits immediately.
-                    "timeout_ms": 85000,
+                    "timeout_ms": 70000,
                 },
             )
             adapter_envelope = run_pinned_app(

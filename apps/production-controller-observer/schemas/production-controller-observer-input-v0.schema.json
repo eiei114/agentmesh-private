@@ -37,7 +37,7 @@
     "cli_timeout_ms": {
       "type": "integer",
       "minimum": 1000,
-      "maximum": 85000
+      "maximum": 70000
     }
   }
 }
