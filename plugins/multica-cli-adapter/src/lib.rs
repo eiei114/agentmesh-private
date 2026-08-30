@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::process::Child;
 use std::process::{Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -19,14 +21,23 @@ pub const MULTICA_CLI_ADAPTER_VERSION: &str = "multica-cli-adapter.v0";
 const INPUT_SCHEMA_VERSION: &str = "multica-cli-adapter-input.v0";
 const OUTPUT_SCHEMA_VERSION: &str = "multica-cli-adapter-output.v0";
 const MAX_STDOUT_BYTES: usize = 4 * 1024 * 1024;
+#[cfg(unix)]
+const CAPTURE_DRAIN_GRACE_MS: u64 = 2_000;
+#[cfg(windows)]
+const WINDOWS_JOB_DRAIN_GRACE_MS: u64 = 5_000;
+const CHILD_REAP_GRACE_MS: u64 = 2_000;
 const MAX_ARG_CHARS: usize = 256;
 const MAX_ARGS: usize = 32;
-const DEFAULT_TIMEOUT_MS: u64 = 60_000;
-const MIN_TIMEOUT_MS: u64 = 1_000;
-const MAX_TIMEOUT_MS: u64 = 3_600_000;
+/// Default subprocess timeout, leaving host-lifecycle cleanup headroom.
+pub const DEFAULT_CLI_TIMEOUT_MS: u64 = 60_000;
+/// Minimum supported subprocess timeout.
+pub const MIN_CLI_TIMEOUT_MS: u64 = 1_000;
+/// Maximum subprocess timeout. App host limit is 120s, reserving 50s for
+/// process-tree cleanup, ledger writes, and host finalization.
+pub const MAX_CLI_TIMEOUT_MS: u64 = 70_000;
 
 /// Fixed read-only query args for observer wiring.
-pub const QUERY_OPERATION_ARGS: &[&str] = &["issues", "list", "--json"];
+pub const QUERY_OPERATION_ARGS: &[&str] = &["issue", "list", "--output", "json"];
 
 /// Allowed authority-scoped Multica CLI operation names.
 pub const ALLOWED_MULTICA_OPERATIONS: &[&str] = &[
@@ -344,23 +355,15 @@ impl CliCommandSpec {
 
     /// Build a shell-free `Command` with cleared environment and minimal OS baseline.
     pub fn build_command(&self, operation_args: &[String]) -> Result<Command, String> {
-        if operation_args.len() > MAX_ARGS {
-            return Err(format!("operation_args exceeds {MAX_ARGS} items"));
-        }
-        for arg in operation_args {
-            if arg.is_empty() || arg.chars().count() > MAX_ARG_CHARS {
-                return Err(format!(
-                    "each operation arg must be 1..={MAX_ARG_CHARS} chars"
-                ));
-            }
-        }
+        validate_operation_args(operation_args)?;
         let mut cmd = Command::new(&self.program);
         cmd.env_clear();
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
+            const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+            cmd.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
             for key in WINDOWS_ENV_ALLOWLIST {
                 if let Ok(val) = std::env::var(key) {
                     cmd.env(key, val);
@@ -369,6 +372,8 @@ impl CliCommandSpec {
         }
         #[cfg(unix)]
         {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
             for key in ["PATH", "HOME", "LANG", "LC_ALL", "TZ"] {
                 if let Ok(val) = std::env::var(key) {
                     cmd.env(key, val);
@@ -385,6 +390,44 @@ impl CliCommandSpec {
             .stderr(Stdio::piped());
         Ok(cmd)
     }
+
+    #[cfg(windows)]
+    fn build_windows_command(
+        &self,
+        operation_args: &[String],
+    ) -> Result<windows_spawn::Command, String> {
+        validate_operation_args(operation_args)?;
+        let mut cmd = windows_spawn::Command::new(&self.program);
+        cmd.env_clear();
+        for key in WINDOWS_ENV_ALLOWLIST {
+            if let Ok(value) = std::env::var(key) {
+                cmd.env(key, value);
+            }
+        }
+        cmd.args(&self.prefix_args);
+        cmd.args(operation_args);
+        if let Some(cwd) = &self.working_directory {
+            cmd.current_dir(cwd);
+        }
+        cmd.stdin(windows_spawn::Stdio::null())
+            .stdout(windows_spawn::Stdio::piped())
+            .stderr(windows_spawn::Stdio::piped());
+        Ok(cmd)
+    }
+}
+
+fn validate_operation_args(operation_args: &[String]) -> Result<(), String> {
+    if operation_args.len() > MAX_ARGS {
+        return Err(format!("operation_args exceeds {MAX_ARGS} items"));
+    }
+    for arg in operation_args {
+        if arg.is_empty() || arg.chars().count() > MAX_ARG_CHARS {
+            return Err(format!(
+                "each operation arg must be 1..={MAX_ARG_CHARS} chars"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Result of one CLI invocation (internal; raw stdout is never emitted in compact output).
@@ -429,6 +472,212 @@ pub trait ProcessRunner {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct OsProcessRunner;
 
+#[derive(Debug)]
+struct BoundedCapture {
+    prefix: Vec<u8>,
+    byte_count: usize,
+    truncated: bool,
+}
+
+fn drain_bounded(mut reader: impl Read, retain_limit: usize) -> std::io::Result<BoundedCapture> {
+    let mut prefix = Vec::with_capacity(retain_limit.min(64 * 1024));
+    let mut byte_count = 0usize;
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        let read = reader.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        byte_count = byte_count.saturating_add(read);
+        let retain = retain_limit.saturating_sub(prefix.len()).min(read);
+        prefix.extend_from_slice(&chunk[..retain]);
+    }
+    Ok(BoundedCapture {
+        prefix,
+        byte_count,
+        truncated: byte_count > retain_limit,
+    })
+}
+
+fn join_capture(
+    handle: std::thread::JoinHandle<std::io::Result<BoundedCapture>>,
+    label: &str,
+) -> Result<BoundedCapture, String> {
+    handle
+        .join()
+        .map_err(|_| format!("{label}_join_failed"))?
+        .map_err(|e| format!("{label}_read_failed: {e}"))
+}
+
+#[cfg(windows)]
+fn join_captures_after_job_close(
+    stdout: std::thread::JoinHandle<std::io::Result<BoundedCapture>>,
+    stderr: std::thread::JoinHandle<std::io::Result<BoundedCapture>>,
+) -> Result<(BoundedCapture, BoundedCapture), String> {
+    let deadline = Instant::now() + Duration::from_millis(WINDOWS_JOB_DRAIN_GRACE_MS);
+    while !(stdout.is_finished() && stderr.is_finished()) {
+        if Instant::now() >= deadline {
+            return Err("capture_drain_timeout: windows_job_closed".to_string());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok((
+        join_capture(stdout, "stdout")?,
+        join_capture(stderr, "stderr")?,
+    ))
+}
+
+#[cfg(windows)]
+fn wait_windows_child_bounded(
+    child: &mut windows_spawn::Child,
+    timeout_ms: u64,
+) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    loop {
+        match child.try_wait().map_err(|e| format!("wait_failed: {e}"))? {
+            Some(status) => return Ok(status),
+            None if Instant::now() >= deadline => {
+                return Err("child_reap_timeout".to_string());
+            }
+            None => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
+#[cfg(unix)]
+fn join_captures_bounded(
+    stdout: std::thread::JoinHandle<std::io::Result<BoundedCapture>>,
+    stderr: std::thread::JoinHandle<std::io::Result<BoundedCapture>>,
+    root_pid: u32,
+) -> Result<(BoundedCapture, BoundedCapture), String> {
+    let deadline = Instant::now() + Duration::from_millis(CAPTURE_DRAIN_GRACE_MS);
+    while !(stdout.is_finished() && stderr.is_finished()) {
+        if Instant::now() >= deadline {
+            let cleanup = terminate_descendants(root_pid);
+            let cleanup_deadline = Instant::now() + Duration::from_millis(CAPTURE_DRAIN_GRACE_MS);
+            while !(stdout.is_finished() && stderr.is_finished()) {
+                if Instant::now() >= cleanup_deadline {
+                    return Err(format!(
+                        "capture_drain_timeout: process_tree_cleanup={}",
+                        cleanup
+                            .err()
+                            .unwrap_or_else(|| "completed_but_pipes_open".to_string())
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    Ok((
+        join_capture(stdout, "stdout")?,
+        join_capture(stderr, "stderr")?,
+    ))
+}
+
+#[cfg(unix)]
+fn wait_child_bounded(child: &mut Child, timeout_ms: u64) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    loop {
+        match child.try_wait().map_err(|e| format!("wait_failed: {e}"))? {
+            Some(status) => return Ok(status),
+            None if Instant::now() >= deadline => {
+                return Err("child_reap_timeout".to_string());
+            }
+            None => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
+#[cfg(unix)]
+fn terminate_process_tree(root_pid: u32) -> Result<(), String> {
+    use nix::errno::Errno;
+    use nix::sys::signal::{killpg, Signal};
+    use nix::unistd::Pid;
+
+    let process_group = i32::try_from(root_pid)
+        .map(Pid::from_raw)
+        .map_err(|_| "process_tree_kill_invalid_pid".to_string())?;
+    match killpg(process_group, Signal::SIGKILL) {
+        Ok(()) | Err(Errno::ESRCH) => Ok(()),
+        Err(error) => Err(format!("process_tree_kill_failed: {error}")),
+    }
+}
+
+#[cfg(unix)]
+fn terminate_descendants(root_pid: u32) -> Result<(), String> {
+    terminate_process_tree(root_pid)
+}
+
+#[cfg(unix)]
+fn cleanup_timed_out_child(
+    child: &mut Child,
+    root_pid: u32,
+) -> (Option<ExitStatus>, Option<String>) {
+    let tree_error = terminate_process_tree(root_pid).err();
+    let status = match child.try_wait() {
+        Ok(Some(status)) => Some(status),
+        Ok(None) => {
+            // A cleanup command can lose a race with a root process exiting. Always
+            // try the direct handle before the bounded reap so that this path never
+            // falls back to an unbounded Child::wait.
+            let direct_kill_error = child.kill().err().map(|error| error.to_string());
+            match wait_child_bounded(child, CHILD_REAP_GRACE_MS) {
+                Ok(status) => Some(status),
+                Err(error) => {
+                    return (
+                        None,
+                        Some(format!(
+                            "timeout_child_reap_failed: {error}; tree={}; direct_kill={}",
+                            tree_error.as_deref().unwrap_or("ok"),
+                            direct_kill_error.unwrap_or_else(|| "none".to_string())
+                        )),
+                    );
+                }
+            }
+        }
+        Err(error) => {
+            return (None, Some(format!("timeout_try_wait_failed: {error}")));
+        }
+    };
+
+    if let Some(tree_error) = tree_error {
+        if let Err(descendant_error) = terminate_descendants(root_pid) {
+            return (
+                status,
+                Some(format!(
+                    "timeout_tree_cleanup_failed: tree={tree_error}; descendants={descendant_error}"
+                )),
+            );
+        }
+    }
+    (status, None)
+}
+
+fn captured_invoke_result(
+    exit_code: i32,
+    stdout: BoundedCapture,
+    stderr_byte_count: usize,
+    timed_out: bool,
+) -> CliInvokeResult {
+    let stdout_json = if timed_out || stdout.prefix.is_empty() {
+        None
+    } else {
+        serde_json::from_slice(&stdout.prefix).ok()
+    };
+    CliInvokeResult {
+        exit_code,
+        stdout_json,
+        stdout_sha256: sha256_prefixed(&stdout.prefix),
+        stdout_byte_count: stdout.byte_count,
+        stdout_truncated: stdout.truncated,
+        stderr_byte_count,
+        timed_out,
+    }
+}
+
+#[cfg(unix)]
 impl ProcessRunner for OsProcessRunner {
     fn run(
         &self,
@@ -445,77 +694,117 @@ impl ProcessRunner for OsProcessRunner {
             .stdout
             .take()
             .ok_or_else(|| "stdout_unavailable".to_string())?;
-        let stderr = child.stderr.take();
-        let stdout_thread = std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            let mut reader = stdout;
-            let _ = reader.read_to_end(&mut buf);
-            buf
-        });
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "stderr_unavailable".to_string())?;
+        let stdout_thread = std::thread::spawn(move || drain_bounded(stdout, MAX_STDOUT_BYTES));
+        let stderr_thread = std::thread::spawn(move || drain_bounded(stderr, 0));
+        let root_pid = child.id();
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut timed_out = false;
+        let mut cleanup_error = None;
         let status = loop {
             match child.try_wait().map_err(|e| format!("wait_failed: {e}"))? {
-                Some(status) => break status,
+                Some(status) => break Some(status),
                 None if Instant::now() >= deadline => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let _ = stdout_thread.join();
-                    return Ok(CliInvokeResult {
-                        exit_code: -1,
-                        stdout_json: None,
-                        stdout_sha256: sha256_prefixed(&[]),
-                        stdout_byte_count: 0,
-                        stdout_truncated: false,
-                        stderr_byte_count: 0,
-                        timed_out: true,
-                    });
+                    timed_out = true;
+                    let (status, error) = cleanup_timed_out_child(&mut child, root_pid);
+                    cleanup_error = error;
+                    break status;
                 }
                 None => std::thread::sleep(Duration::from_millis(10)),
             }
         };
-        let stdout_buf = stdout_thread
-            .join()
-            .map_err(|_| "stdout_join_failed".to_string())?;
-        let stderr_byte_count = if let Some(mut err) = stderr {
-            let mut buf = Vec::new();
-            let _ = err.read_to_end(&mut buf);
-            buf.len()
-        } else {
-            0
-        };
-        parse_invoke_output(status, stdout_buf, stderr_byte_count, false)
+        let (stdout, stderr) = join_captures_bounded(stdout_thread, stderr_thread, root_pid)?;
+        if let Some(error) = cleanup_error {
+            return Err(error);
+        }
+        Ok(captured_invoke_result(
+            if timed_out {
+                -1
+            } else {
+                status.and_then(|value| value.code()).unwrap_or(-1)
+            },
+            stdout,
+            stderr.byte_count,
+            timed_out,
+        ))
     }
 }
 
-fn parse_invoke_output(
-    status: ExitStatus,
-    stdout_buf: Vec<u8>,
-    stderr_byte_count: usize,
-    timed_out: bool,
-) -> Result<CliInvokeResult, String> {
-    let exit_code = status.code().unwrap_or(-1);
-    let stdout_byte_count = stdout_buf.len();
-    let stdout_truncated = stdout_byte_count > MAX_STDOUT_BYTES;
-    let bounded = if stdout_truncated {
-        &stdout_buf[..MAX_STDOUT_BYTES]
-    } else {
-        &stdout_buf
-    };
-    let stdout_sha256 = sha256_prefixed(bounded);
-    let stdout_json = if bounded.is_empty() {
-        None
-    } else {
-        serde_json::from_slice(bounded).ok()
-    };
-    Ok(CliInvokeResult {
-        exit_code,
-        stdout_json,
-        stdout_sha256,
-        stdout_byte_count,
-        stdout_truncated,
-        stderr_byte_count,
-        timed_out,
-    })
+#[cfg(windows)]
+impl ProcessRunner for OsProcessRunner {
+    fn run(
+        &self,
+        spec: &CliCommandSpec,
+        operation_args: &[String],
+        timeout_ms: u64,
+    ) -> Result<CliInvokeResult, String> {
+        use windows_spawn::{CreationFlags, DropPolicy, SpawnOptions};
+
+        let mut command = spec
+            .build_windows_command(operation_args)
+            .map_err(|e| format!("build_command: {e}"))?;
+        let options = SpawnOptions::new()
+            .creation_flags(CreationFlags::NO_WINDOW | CreationFlags::NEW_PROCESS_GROUP)
+            .drop_policy(DropPolicy::KillTree);
+        let mut child = command
+            .spawn_with(options)
+            .map_err(|e| format!("spawn_failed: {e}"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "stdout_unavailable".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "stderr_unavailable".to_string())?;
+        let stdout_thread = std::thread::spawn(move || drain_bounded(stdout, MAX_STDOUT_BYTES));
+        let stderr_thread = std::thread::spawn(move || drain_bounded(stderr, 0));
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+        let mut timed_out = false;
+        let mut cleanup_error = None;
+        let status = loop {
+            match child.try_wait().map_err(|e| format!("wait_failed: {e}"))? {
+                Some(status) => break Some(status),
+                None if Instant::now() >= deadline => {
+                    timed_out = true;
+                    let direct_kill_error = child.kill().err().map(|error| error.to_string());
+                    match wait_windows_child_bounded(&mut child, CHILD_REAP_GRACE_MS) {
+                        Ok(status) => break Some(status),
+                        Err(error) => {
+                            cleanup_error = Some(format!(
+                                "timeout_child_reap_failed: {error}; direct_kill={}",
+                                direct_kill_error.unwrap_or_else(|| "none".to_string())
+                            ));
+                            break None;
+                        }
+                    }
+                }
+                None => std::thread::sleep(Duration::from_millis(10)),
+            }
+        };
+
+        // KillTree is attached during the suspended CreateProcessW transaction.
+        // Dropping the child closes that Job before capture handles are joined,
+        // terminating every descendant without PID discovery or shell helpers.
+        drop(child);
+        let (stdout, stderr) = join_captures_after_job_close(stdout_thread, stderr_thread)?;
+        if let Some(error) = cleanup_error {
+            return Err(error);
+        }
+        Ok(captured_invoke_result(
+            if timed_out {
+                -1
+            } else {
+                status.and_then(|value| value.code()).unwrap_or(-1)
+            },
+            stdout,
+            stderr.byte_count,
+            timed_out,
+        ))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -540,13 +829,14 @@ fn issue(code: &str, message: impl Into<String>) -> Value {
     json!({ "code": code, "message": message.into() })
 }
 
-fn resolve_timeout_ms(raw: Option<u64>) -> Result<u64, String> {
-    let timeout_ms = raw.unwrap_or(DEFAULT_TIMEOUT_MS);
-    if (MIN_TIMEOUT_MS..=MAX_TIMEOUT_MS).contains(&timeout_ms) {
+/// Resolve and validate a CLI subprocess timeout shared by composed Apps.
+pub fn resolve_cli_timeout_ms(raw: Option<u64>) -> Result<u64, String> {
+    let timeout_ms = raw.unwrap_or(DEFAULT_CLI_TIMEOUT_MS);
+    if (MIN_CLI_TIMEOUT_MS..=MAX_CLI_TIMEOUT_MS).contains(&timeout_ms) {
         Ok(timeout_ms)
     } else {
         Err(format!(
-            "timeout_ms must be {MIN_TIMEOUT_MS}..={MAX_TIMEOUT_MS}"
+            "timeout_ms must be {MIN_CLI_TIMEOUT_MS}..={MAX_CLI_TIMEOUT_MS}"
         ))
     }
 }
@@ -613,11 +903,11 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
             "operation must be probe, query, or invoke",
         ));
     }
-    let timeout_ms = match resolve_timeout_ms(input.timeout_ms) {
+    let timeout_ms = match resolve_cli_timeout_ms(input.timeout_ms) {
         Ok(ms) => ms,
         Err(message) => {
             issues.push(issue("timeout_ms_invalid", message));
-            DEFAULT_TIMEOUT_MS
+            DEFAULT_CLI_TIMEOUT_MS
         }
     };
     if !issues.is_empty() {
@@ -737,18 +1027,18 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
         Ok(result) => {
             let exit_reason = if result.timed_out {
                 "process_timeout"
-            } else if result.exit_code == 0 {
+            } else if result.stdout_truncated {
+                "stdout_truncated"
+            } else if result.exit_code != 0 {
+                "cli_nonzero_exit"
+            } else if result.stdout_json.is_none() && operation != "probe" {
+                "stdout_not_json"
+            } else {
                 match operation {
                     "probe" => "probe_ok",
                     "query" => "query_ok",
                     _ => "invoke_ok",
                 }
-            } else if result.stdout_truncated {
-                "stdout_truncated"
-            } else if result.stdout_json.is_none() && operation != "probe" {
-                "stdout_not_json"
-            } else {
-                "cli_nonzero_exit"
             };
             let valid = matches!(exit_reason, "probe_ok" | "query_ok" | "invoke_ok");
             compact(operation, valid, exit_reason, Vec::new(), Some(&result))
@@ -767,6 +1057,7 @@ pub fn run_multica_cli_adapter(value: &Value, runner: &dyn ProcessRunner) -> Val
 mod tests {
     use super::*;
     use std::fs;
+    use std::io::Write as _;
 
     struct FakeRunner {
         exit_code: i32,
@@ -863,9 +1154,10 @@ mod tests {
                 assert_eq!(
                     operation_args,
                     &[
-                        "issues".to_string(),
+                        "issue".to_string(),
                         "list".to_string(),
-                        "--json".to_string()
+                        "--output".to_string(),
+                        "json".to_string()
                     ]
                 );
                 Ok(CliInvokeResult {
@@ -882,6 +1174,46 @@ mod tests {
 
         let output = run_multica_cli_adapter(&input, &ArgCapturingRunner);
         assert_eq!(output["exit_reason"], json!("query_ok"));
+    }
+
+    #[test]
+    fn query_rejects_exit_zero_non_json_stdout() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("multica.exe");
+        fs::write(&file, b"x").unwrap();
+        let mut input = base_input("query");
+        input["cli_path"] = json!(file.canonicalize().unwrap().to_string_lossy());
+        let output = run_multica_cli_adapter(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: b"not-json".to_vec(),
+                stderr_len: 0,
+                timed_out: false,
+            },
+        );
+        assert_eq!(output["valid"], json!(false));
+        assert_eq!(output["exit_reason"], json!("stdout_not_json"));
+    }
+
+    #[test]
+    fn query_rejects_truncated_stdout_before_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("multica.exe");
+        fs::write(&file, b"x").unwrap();
+        let mut input = base_input("query");
+        input["cli_path"] = json!(file.canonicalize().unwrap().to_string_lossy());
+        let output = run_multica_cli_adapter(
+            &input,
+            &FakeRunner {
+                exit_code: 0,
+                stdout: vec![b' '; MAX_STDOUT_BYTES + 1],
+                stderr_len: 0,
+                timed_out: false,
+            },
+        );
+        assert_eq!(output["valid"], json!(false));
+        assert_eq!(output["exit_reason"], json!("stdout_truncated"));
     }
 
     #[test]
@@ -1012,6 +1344,207 @@ mod tests {
         );
         assert_eq!(output["exit_reason"], json!("process_timeout"));
         assert_eq!(output["timed_out"], json!(true));
+    }
+
+    fn process_fixture_spec(name: &str) -> CliCommandSpec {
+        let executable = std::env::current_exe().unwrap().canonicalize().unwrap();
+        let pinned = PinnedCliPath::resolve(executable).unwrap();
+        let prefix_args = vec![
+            format!("tests::{name}"),
+            "--exact".to_string(),
+            "--ignored".to_string(),
+            "--nocapture".to_string(),
+        ];
+        CliCommandSpec::from_pinned(&pinned, &prefix_args).unwrap()
+    }
+
+    fn run_process_fixture(name: &str) -> CliInvokeResult {
+        OsProcessRunner
+            .run(&process_fixture_spec(name), &[], 20_000)
+            .unwrap()
+    }
+
+    fn spawn_process_fixture(name: &str) {
+        let executable = std::env::current_exe().unwrap();
+        let child = Command::new(executable)
+            .args([
+                format!("tests::{name}"),
+                "--exact".to_string(),
+                "--ignored".to_string(),
+                "--nocapture".to_string(),
+            ])
+            .spawn()
+            .unwrap();
+        drop(child);
+    }
+
+    fn descendant_heartbeat_path(suffix: &str) -> PathBuf {
+        std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!("agentmesh-adapter-descendant-heartbeat-{suffix}"))
+    }
+
+    #[test]
+    fn os_runner_bounds_large_stdout_without_timeout() {
+        let output = run_process_fixture("process_fixture_large_stdout");
+        assert_eq!(output.exit_code, 0);
+        assert!(!output.timed_out);
+        assert!(output.stdout_truncated);
+        assert!(output.stdout_byte_count > MAX_STDOUT_BYTES);
+    }
+
+    #[test]
+    fn os_runner_drains_large_stderr_concurrently() {
+        let output = run_process_fixture("process_fixture_large_stderr");
+        assert_eq!(output.exit_code, 0);
+        assert!(!output.timed_out);
+        assert!(output.stderr_byte_count >= 512 * 1024);
+    }
+
+    #[test]
+    fn os_runner_timeout_terminates_process_tree() {
+        let started = Instant::now();
+        let output = OsProcessRunner
+            .run(
+                &process_fixture_spec("process_fixture_timeout_tree"),
+                &[],
+                1_000,
+            )
+            .unwrap();
+        assert!(output.timed_out);
+        assert_eq!(output.exit_code, -1);
+        assert!(started.elapsed() < Duration::from_secs(8));
+    }
+
+    #[test]
+    fn os_runner_bounds_post_exit_inherited_pipe_wait() {
+        let heartbeat = descendant_heartbeat_path("post-exit");
+        let _ = fs::remove_file(&heartbeat);
+        let started = Instant::now();
+        let result = OsProcessRunner.run(
+            &process_fixture_spec("process_fixture_descendant_holds_pipes"),
+            &[],
+            10_000,
+        );
+        let result_summary = format!("{result:?}");
+        assert!(
+            result.is_ok()
+                || result
+                    .as_ref()
+                    .unwrap_err()
+                    .starts_with("capture_drain_timeout")
+        );
+        assert!(started.elapsed() < Duration::from_secs(8));
+        let first_len = fs::metadata(&heartbeat).ok().map(|meta| meta.len());
+        std::thread::sleep(Duration::from_millis(500));
+        let second_len = fs::metadata(&heartbeat).ok().map(|meta| meta.len());
+        assert_eq!(
+            first_len, second_len,
+            "descendant heartbeat still running; runner={result_summary}"
+        );
+        let _ = fs::remove_file(heartbeat);
+    }
+
+    #[test]
+    fn os_runner_bounds_timeout_boundary_parent_exit_race() {
+        let heartbeat = descendant_heartbeat_path("timeout-boundary");
+        let _ = fs::remove_file(&heartbeat);
+        let started = Instant::now();
+        let result = OsProcessRunner.run(
+            &process_fixture_spec("process_fixture_timeout_boundary_descendant"),
+            &[],
+            1_000,
+        );
+        let result_summary = format!("{result:?}");
+        assert!(
+            result.is_ok(),
+            "timeout boundary cleanup failed: {result_summary}"
+        );
+        assert!(started.elapsed() < Duration::from_secs(8));
+        let first_len = fs::metadata(&heartbeat).ok().map(|meta| meta.len());
+        assert!(
+            first_len.is_some(),
+            "boundary descendant never started; runner={result_summary}"
+        );
+        std::thread::sleep(Duration::from_millis(500));
+        let second_len = fs::metadata(&heartbeat).ok().map(|meta| meta.len());
+        assert_eq!(
+            first_len, second_len,
+            "boundary descendant heartbeat still running; runner={result_summary}"
+        );
+        let _ = fs::remove_file(heartbeat);
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture invoked by os_runner_bounds_large_stdout_without_timeout"]
+    fn process_fixture_large_stdout() {
+        let bytes = vec![b'x'; MAX_STDOUT_BYTES + 64 * 1024];
+        let mut stdout = std::io::stdout().lock();
+        stdout.write_all(&bytes).unwrap();
+        stdout.flush().unwrap();
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture invoked by os_runner_drains_large_stderr_concurrently"]
+    fn process_fixture_large_stderr() {
+        let bytes = vec![b'e'; 512 * 1024];
+        let mut stderr = std::io::stderr().lock();
+        stderr.write_all(&bytes).unwrap();
+        stderr.flush().unwrap();
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture invoked by os_runner_timeout_terminates_process_tree"]
+    fn process_fixture_timeout_tree() {
+        spawn_process_fixture("process_fixture_sleep_long");
+        std::thread::sleep(Duration::from_secs(30));
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture invoked by os_runner_bounds_post_exit_inherited_pipe_wait"]
+    fn process_fixture_descendant_holds_pipes() {
+        spawn_process_fixture("process_fixture_heartbeat_post_exit");
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture invoked by os_runner_bounds_timeout_boundary_parent_exit_race"]
+    fn process_fixture_timeout_boundary_descendant() {
+        spawn_process_fixture("process_fixture_heartbeat_timeout_boundary");
+        std::thread::sleep(Duration::from_millis(950));
+    }
+
+    #[test]
+    #[ignore = "descendant process fixture"]
+    fn process_fixture_sleep_long() {
+        std::thread::sleep(Duration::from_secs(30));
+    }
+
+    #[test]
+    #[ignore = "descendant process fixture"]
+    fn process_fixture_heartbeat_post_exit() {
+        run_heartbeat_fixture("post-exit");
+    }
+
+    #[test]
+    #[ignore = "descendant process fixture"]
+    fn process_fixture_heartbeat_timeout_boundary() {
+        run_heartbeat_fixture("timeout-boundary");
+    }
+
+    fn run_heartbeat_fixture(suffix: &str) {
+        let heartbeat = descendant_heartbeat_path(suffix);
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(heartbeat)
+            .unwrap();
+        for _ in 0..300 {
+            file.write_all(b".").unwrap();
+            file.flush().unwrap();
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
 
     #[test]

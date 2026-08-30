@@ -28,3 +28,9 @@ thiserror.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[target."cfg(windows)".dependencies]
+windows-spawn = "=0.1.0"
+
+[target."cfg(unix)".dependencies]
+nix = { version = "=0.31.3", features = ["signal", "process"] }

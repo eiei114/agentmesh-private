@@ -59,6 +59,11 @@ jobs:
           python -m unittest scripts/test_repair_sync_local_main_with_origin.py scripts/test_assert_rust_toolchain_baseline.py
           python scripts/assert_rust_toolchain_baseline.py
 
+      - name: Task Scheduler runner regression suite
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/task-scheduler/test-production-controller-runner.ps1
+
       - name: fmt
         run: cargo fmt --check
 
@@ -75,6 +80,11 @@ jobs:
           -p agentmesh-multica-selector-shadow
           -p agentmesh-markdown-request-validator
           -p agentmesh-adapter-metadata-canonicalizer
+          -p agentmesh-multica-cli-adapter
+          -p agentmesh-local-control-ledger
+          -p agentmesh-production-controller-observer
+          -p agentmesh-production-authority
+          -p agentmesh-production-evaluation-report
           -p agentmesh-fixture-echo
 
       - name: package artifacts

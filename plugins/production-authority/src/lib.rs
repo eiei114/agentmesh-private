@@ -12,7 +12,10 @@
 #![allow(clippy::too_many_arguments)]
 
 use agentmesh_local_control_ledger::{run_local_control_ledger, AUTHORITY_MODES};
-use agentmesh_multica_cli_adapter::{run_multica_cli_adapter, ProcessRunner, QUERY_OPERATION_ARGS};
+use agentmesh_multica_cli_adapter::{
+    resolve_cli_timeout_ms, run_multica_cli_adapter, ProcessRunner, DEFAULT_CLI_TIMEOUT_MS,
+    QUERY_OPERATION_ARGS,
+};
 use chrono::{DateTime, FixedOffset};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -25,7 +28,6 @@ const OUTPUT_SCHEMA_VERSION: &str = "production-authority-output.v0";
 const DEFAULT_LEASE_TTL_SECS: u64 = 300;
 const MIN_LEASE_TTL_SECS: u64 = 30;
 const MAX_LEASE_TTL_SECS: u64 = 3600;
-const DEFAULT_CLI_TIMEOUT_MS: u64 = 60_000;
 
 const CURSOR_FAILURE_CLASSES: &[&str] = &["availability_bridge_failure"];
 const CURSOR_HEALTH_TRANSITIONS: &[&str] = &["down_to_healthy"];
@@ -161,11 +163,6 @@ fn resolve_lease_ttl_seconds(raw: Option<u64>) -> Result<u64, String> {
             "lease_ttl_seconds must be {MIN_LEASE_TTL_SECS}..={MAX_LEASE_TTL_SECS}"
         ))
     }
-}
-
-fn resolve_cli_timeout_ms(raw: Option<u64>) -> Result<u64, String> {
-    let timeout = raw.unwrap_or(DEFAULT_CLI_TIMEOUT_MS);
-    agentmesh_proto::Limits::validate_run_timeout_ms(timeout).map_err(|e| e.to_string())
 }
 
 fn lease_expires_at(now: &str, ttl_seconds: u64) -> Result<String, String> {
@@ -1550,7 +1547,12 @@ mod tests {
             &FakeRunner {
                 exit_code: 0,
                 stdout: br#"{"issues":[]}"#.to_vec(),
-                expected_args: Some(vec!["issues".into(), "list".into(), "--json".into()]),
+                expected_args: Some(vec![
+                    "issue".into(),
+                    "list".into(),
+                    "--output".into(),
+                    "json".into(),
+                ]),
             },
         );
         assert_eq!(output["valid"], json!(true));
@@ -2157,10 +2159,12 @@ mod tests {
         if envelope.get("outcome").and_then(Value::as_str) != Some("ok") {
             return false;
         }
-        envelope
-            .pointer("/payload/data/recorded")
-            .and_then(Value::as_bool)
-            == Some(true)
+        let payload = &envelope["payload"];
+        payload["schema_version"] == json!("local-control-ledger-output.v0")
+            && payload["operation"] == json!("record_rollback")
+            && payload["valid"] == json!(true)
+            && payload["exit_reason"] == json!("ok")
+            && payload["data"]["recorded"] == json!(true)
     }
 
     #[cfg(windows)]

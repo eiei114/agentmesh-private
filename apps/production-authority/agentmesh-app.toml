@@ -13,6 +13,9 @@ output = "schemas/production-authority-output-v0.schema.json"
 retention_class = "owner_local"
 capture_plugin_stderr = false
 
+[env]
+allowlist = ["USERPROFILE", "LOCALAPPDATA", "APPDATA", "PROGRAMDATA"]
+
 [limits]
 run_timeout_ms = 120000
 

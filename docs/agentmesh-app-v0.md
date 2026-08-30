@@ -572,7 +572,7 @@ python scripts/package_toolchain_bundle.py \
 ```
 
 Targets: `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`, `aarch64-apple-darwin`.
-Bundle always includes `agentmesh` + `agentmesh-multica-selector-shadow` + `agentmesh-markdown-request-validator` + `agentmesh-public-0x-readiness-report` + `agentmesh-public-0x-rollback-replay` + apps/docs + `release-manifest.json`.
+Bundle includes `agentmesh`, the selector/request/public-readiness binaries listed above, apps/docs, and `release-manifest.json`. It also includes the local production-control binaries: `agentmesh-multica-cli-adapter`, `agentmesh-local-control-ledger`, `agentmesh-production-controller-observer`, `agentmesh-production-authority`, and `agentmesh-production-evaluation-report`. Every App manifest remains pinned by the same immutable release identity.
 
 ## Install (atomic / immutable)
 

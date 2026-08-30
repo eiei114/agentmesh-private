@@ -34,7 +34,7 @@
     "timeout_ms": {
       "type": "integer",
       "minimum": 1000,
-      "maximum": 3600000
+      "maximum": 70000
     }
   }
 }
