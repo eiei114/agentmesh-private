@@ -4,6 +4,7 @@ $runner = Join-Path $PSScriptRoot "run-production-controller.ps1"
 $installer = Join-Path $PSScriptRoot "install-production-controller.ps1"
 $root = Join-Path ([System.IO.Path]::GetTempPath()) ("agentmesh-runner-test-" + [Guid]::NewGuid().ToString("N"))
 $oldLocalAppData = $env:LOCALAPPDATA
+$registrationTaskName = $null
 
 function Get-TestSha256([string]$Path) {
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
@@ -305,6 +306,30 @@ $global:LASTEXITCODE = 0
         throw "same scheduler assets did not reuse immutable content hash"
     }
 
+    # Register a disposable real task so Windows validates the serialized
+    # repetition duration. [TimeSpan]::MaxValue serializes outside the Task
+    # Scheduler schema even though New-ScheduledTaskTrigger accepts it.
+    $registrationTaskName = "AgentMesh-Runner-Registration-$PID-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $registrationArgs = $prepareArgs.Clone()
+    $registrationArgs.Remove("PrepareOnly")
+    $registrationArgs.TaskName = $registrationTaskName
+    $installed = (& $installer @registrationArgs | Select-Object -Last 1) | ConvertFrom-Json
+    if ($installed.status -ne "installed") {
+        throw "installer did not register the disposable scheduler task"
+    }
+    $registeredTask = Get-ScheduledTask -TaskName $registrationTaskName -ErrorAction Stop
+    $durationValue = $registeredTask.Triggers[0].Repetition.Duration
+    $duration = if ($durationValue -is [TimeSpan]) {
+        $durationValue
+    } else {
+        [System.Xml.XmlConvert]::ToTimeSpan([string]$durationValue)
+    }
+    if ([Math]::Round($duration.TotalDays) -ne 3650) {
+        throw "unexpected scheduler repetition duration: $durationValue"
+    }
+    Unregister-ScheduledTask -TaskName $registrationTaskName -Confirm:$false -ErrorAction Stop
+    $registrationTaskName = $null
+
     $assetCountBeforeInvalidSchedules = @(Get-ChildItem -LiteralPath (Join-Path $localAppData "AgentMesh\scheduler-assets") -Directory).Count
     foreach ($invalidSchedule in @("PT0M", "PT1441M")) {
         $rejected = $false
@@ -423,6 +448,9 @@ exit $LASTEXITCODE
 
     Write-Output "scheduler runner tests passed"
 } finally {
+    if ($registrationTaskName) {
+        Unregister-ScheduledTask -TaskName $registrationTaskName -Confirm:$false -ErrorAction SilentlyContinue
+    }
     $env:LOCALAPPDATA = $oldLocalAppData
     Remove-Item Env:AGENTMESH_TEST_CAPTURE -ErrorAction SilentlyContinue
     Remove-Item Env:AGENTMESH_TEST_RESULT -ErrorAction SilentlyContinue
