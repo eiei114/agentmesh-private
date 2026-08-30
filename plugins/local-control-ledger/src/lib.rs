@@ -186,33 +186,59 @@ fn configure_connection(conn: &Connection) -> Result<(), LedgerError> {
     Ok(())
 }
 
-fn ensure_schema_version(conn: &Connection) -> Result<(), LedgerError> {
-    let stored: Option<String> = conn
-        .query_row(
-            "SELECT value FROM ledger_meta WHERE key = 'schema_version'",
-            [],
-            |row| row.get(0),
-        )
-        .optional()?;
-    match stored.as_deref() {
-        Some(version) if version == LEDGER_DB_SCHEMA_VERSION => Ok(()),
-        Some("1") => migrate_v1_to_v2(conn),
-        Some(version) => Err(LedgerError::Validation(format!(
-            "ledger schema_version mismatch: expected {LEDGER_DB_SCHEMA_VERSION}, found {version}"
-        ))),
-        None => Err(LedgerError::Validation(
-            "ledger schema_version missing; run init".into(),
-        )),
-    }
+fn table_exists(conn: &Connection, name: &str) -> Result<bool, LedgerError> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        params![name],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
 }
 
-fn migrate_v1_to_v2(conn: &Connection) -> Result<(), LedgerError> {
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, LedgerError> {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn idempotency_pk_is_composite(conn: &Connection) -> Result<bool, LedgerError> {
+    if !table_exists(conn, "idempotency_claims")? {
+        return Ok(false);
+    }
+    let sql = "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'idempotency_claims'";
+    let ddl: Option<String> = conn.query_row(sql, [], |row| row.get(0)).optional()?;
+    Ok(ddl
+        .as_deref()
+        .is_some_and(|ddl| ddl.contains("PRIMARY KEY (controller_id, decision_hash)")))
+}
+
+fn rebuild_idempotency_composite_pk(conn: &Connection) -> Result<(), LedgerError> {
+    if idempotency_pk_is_composite(conn)? {
+        return Ok(());
+    }
+    if !table_exists(conn, "idempotency_claims")? {
+        conn.execute_batch(
+            "
+            CREATE TABLE IF NOT EXISTS idempotency_claims (
+                controller_id TEXT NOT NULL,
+                decision_hash TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                PRIMARY KEY (controller_id, decision_hash)
+            );
+            ",
+        )?;
+        return Ok(());
+    }
     conn.execute_batch(
         "
-        ALTER TABLE decisions ADD COLUMN authority_mode TEXT NOT NULL DEFAULT 'shadow';
-        ALTER TABLE decisions ADD COLUMN hard_gate_pass INTEGER NOT NULL DEFAULT 1;
-        ALTER TABLE violation_events ADD COLUMN authority_mode TEXT NOT NULL DEFAULT 'shadow';
-        CREATE TABLE IF NOT EXISTS idempotency_claims_v2 (
+        CREATE TABLE idempotency_claims_v2 (
             controller_id TEXT NOT NULL,
             decision_hash TEXT NOT NULL,
             recorded_at TEXT NOT NULL,
@@ -224,11 +250,115 @@ fn migrate_v1_to_v2(conn: &Connection) -> Result<(), LedgerError> {
         ALTER TABLE idempotency_claims_v2 RENAME TO idempotency_claims;
         ",
     )?;
+    Ok(())
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), LedgerError> {
+    if !column_exists(conn, table, column)? {
+        conn.execute_batch(&format!(
+            "ALTER TABLE {table} ADD COLUMN {column} {definition};"
+        ))?;
+    }
+    Ok(())
+}
+
+fn migrate_to_v2_idempotent(conn: &Connection) -> Result<(), LedgerError> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS ledger_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        ",
+    )?;
+    add_column_if_missing(
+        conn,
+        "scope_claims",
+        "expires_at",
+        "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "decisions",
+        "authority_mode",
+        "TEXT NOT NULL DEFAULT 'shadow'",
+    )?;
+    add_column_if_missing(
+        conn,
+        "decisions",
+        "hard_gate_pass",
+        "INTEGER NOT NULL DEFAULT 1",
+    )?;
+    if !table_exists(conn, "violation_events")? {
+        conn.execute_batch(
+            "
+            CREATE TABLE violation_events (
+                event_id TEXT PRIMARY KEY,
+                controller_id TEXT NOT NULL,
+                authority_mode TEXT NOT NULL DEFAULT 'shadow',
+                violation_type TEXT NOT NULL,
+                decision_hash TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+            ",
+        )?;
+    } else {
+        add_column_if_missing(
+            conn,
+            "violation_events",
+            "authority_mode",
+            "TEXT NOT NULL DEFAULT 'shadow'",
+        )?;
+    }
+    rebuild_idempotency_composite_pk(conn)?;
     conn.execute(
         "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('schema_version', ?1)",
         params![LEDGER_DB_SCHEMA_VERSION],
     )?;
     Ok(())
+}
+
+fn migrate_foundation_v1_to_v2(conn: &Connection) -> Result<(), LedgerError> {
+    migrate_to_v2_idempotent(conn)
+}
+
+fn migrate_authority_v1_to_v2(conn: &Connection) -> Result<(), LedgerError> {
+    migrate_to_v2_idempotent(conn)
+}
+
+fn ensure_schema_version(conn: &Connection) -> Result<(), LedgerError> {
+    if !table_exists(conn, "ledger_meta")? {
+        return migrate_foundation_v1_to_v2(conn);
+    }
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT value FROM ledger_meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match stored.as_deref() {
+        Some(version) if version == LEDGER_DB_SCHEMA_VERSION => {
+            if column_exists(conn, "decisions", "authority_mode")?
+                && idempotency_pk_is_composite(conn)?
+            {
+                Ok(())
+            } else {
+                migrate_to_v2_idempotent(conn)
+            }
+        }
+        Some("1") => migrate_authority_v1_to_v2(conn),
+        None if table_exists(conn, "schedule_leases")? => migrate_foundation_v1_to_v2(conn),
+        Some(version) => Err(LedgerError::Validation(format!(
+            "ledger schema_version mismatch: expected {LEDGER_DB_SCHEMA_VERSION}, found {version}"
+        ))),
+        None => migrate_foundation_v1_to_v2(conn),
+    }
 }
 
 /// Initialize ledger schema at the given path.
@@ -309,7 +439,7 @@ pub fn init_ledger(path: &Path) -> Result<(), LedgerError> {
         ",
     )?;
     conn.execute(
-        "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('schema_version', ?1)",
+        "INSERT OR IGNORE INTO ledger_meta (key, value) VALUES ('schema_version', ?1)",
         params![LEDGER_DB_SCHEMA_VERSION],
     )?;
     Ok(())
@@ -509,53 +639,24 @@ fn dispatch(
             let mut conn = open_ledger(path)?;
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let reclaimed = reclaim_expired_leases(&tx, acquired_at)?;
-            let active: Option<String> = tx
-                .query_row(
-                    "SELECT lease_id FROM schedule_leases
-                     WHERE released_at IS NULL AND expires_at > ?1 LIMIT 1",
-                    params![acquired_at],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            if active.is_some() {
+            let changed = tx.execute(
+                "INSERT INTO schedule_leases (lease_id, holder, acquired_at, expires_at, released_at)
+                 VALUES (?1, ?2, ?3, ?4, NULL)
+                 ON CONFLICT(lease_id) DO UPDATE SET
+                   holder = excluded.holder,
+                   acquired_at = excluded.acquired_at,
+                   expires_at = excluded.expires_at,
+                   released_at = NULL
+                 WHERE schedule_leases.released_at IS NOT NULL OR schedule_leases.expires_at <= ?3",
+                params![lease_id, holder, acquired_at, expires_at],
+            )?;
+            if changed == 0 {
                 tx.commit()?;
                 return Ok((
                     json!({"lease_id": lease_id, "acquired": false, "reclaimed_expired": reclaimed > 0}),
                     "lease_already_held",
                     false,
                 ));
-            }
-            let existing_state: Option<Option<String>> = tx
-                .query_row(
-                    "SELECT released_at FROM schedule_leases WHERE lease_id = ?1",
-                    params![lease_id],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            match existing_state {
-                None => {
-                    tx.execute(
-                        "INSERT INTO schedule_leases (lease_id, holder, acquired_at, expires_at, released_at)
-                         VALUES (?1, ?2, ?3, ?4, NULL)",
-                        params![lease_id, holder, acquired_at, expires_at],
-                    )?;
-                }
-                Some(None) => {
-                    tx.commit()?;
-                    return Ok((
-                        json!({"lease_id": lease_id, "acquired": false, "reclaimed_expired": reclaimed > 0}),
-                        "lease_already_held",
-                        false,
-                    ));
-                }
-                Some(Some(_)) => {
-                    tx.execute(
-                        "UPDATE schedule_leases
-                         SET holder = ?1, acquired_at = ?2, expires_at = ?3, released_at = NULL
-                         WHERE lease_id = ?4",
-                        params![holder, acquired_at, expires_at, lease_id],
-                    )?;
-                }
             }
             tx.commit()?;
             Ok((
@@ -598,24 +699,6 @@ fn dispatch(
             let mut conn = open_ledger(path)?;
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let reclaimed = reclaim_expired_claims(&tx, acquired_at)?;
-            let active: Option<(String, String)> = tx
-                .query_row(
-                    "SELECT scope_key, claim_id FROM scope_claims
-                     WHERE released_at IS NULL AND expires_at > ?1 LIMIT 1",
-                    params![acquired_at],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()?;
-            if let Some((existing_scope, _)) = active {
-                if existing_scope != scope_key {
-                    tx.commit()?;
-                    return Ok((
-                        json!({"scope_key": scope_key, "claimed": false, "reclaimed_expired": reclaimed > 0}),
-                        "scope_claim_conflict",
-                        false,
-                    ));
-                }
-            }
             let changed = tx.execute(
                 "INSERT INTO scope_claims (scope_key, claim_id, holder, acquired_at, expires_at, released_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, NULL)
@@ -999,13 +1082,194 @@ mod tests {
         })
     }
 
-    fn acquire_lease(path: &Path, lease_id: &str, acquired_at: &str, expires_at: &str) -> Value {
+    fn acquire_lease_with_holder(
+        path: &Path,
+        lease_id: &str,
+        holder: &str,
+        acquired_at: &str,
+        expires_at: &str,
+    ) -> Value {
         let mut input = ledger_input("acquire_lease", path);
         input["lease_id"] = json!(lease_id);
-        input["holder"] = json!("scheduler");
+        input["holder"] = json!(holder);
         input["acquired_at"] = json!(acquired_at);
         input["expires_at"] = json!(expires_at);
         run_local_control_ledger(&input)
+    }
+
+    fn acquire_lease(path: &Path, lease_id: &str, acquired_at: &str, expires_at: &str) -> Value {
+        acquire_lease_with_holder(path, lease_id, "scheduler", acquired_at, expires_at)
+    }
+
+    fn claim_scope(
+        path: &Path,
+        scope_key: &str,
+        claim_id: &str,
+        holder: &str,
+        acquired_at: &str,
+        expires_at: &str,
+    ) -> Value {
+        let mut input = ledger_input("claim_scope", path);
+        input["scope_key"] = json!(scope_key);
+        input["claim_id"] = json!(claim_id);
+        input["holder"] = json!(holder);
+        input["acquired_at"] = json!(acquired_at);
+        input["expires_at"] = json!(expires_at);
+        run_local_control_ledger(&input)
+    }
+
+    fn materialize_foundation_v1(path: &Path) {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch(
+            "
+            PRAGMA journal_mode=WAL;
+            CREATE TABLE schedule_leases (
+                lease_id TEXT PRIMARY KEY,
+                holder TEXT NOT NULL,
+                acquired_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                released_at TEXT
+            );
+            CREATE TABLE scope_claims (
+                scope_key TEXT PRIMARY KEY,
+                claim_id TEXT NOT NULL,
+                holder TEXT NOT NULL,
+                acquired_at TEXT NOT NULL,
+                released_at TEXT
+            );
+            CREATE TABLE watermarks (
+                scope_key TEXT NOT NULL,
+                watermark_key TEXT NOT NULL,
+                value_hash TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (scope_key, watermark_key)
+            );
+            CREATE TABLE authority_modes (
+                controller_id TEXT PRIMARY KEY,
+                mode TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE decisions (
+                decision_id TEXT PRIMARY KEY,
+                controller_id TEXT NOT NULL,
+                decision_code TEXT NOT NULL,
+                result_code TEXT NOT NULL,
+                input_hash TEXT NOT NULL,
+                output_hash TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+            CREATE TABLE rollback_events (
+                event_id TEXT PRIMARY KEY,
+                controller_id TEXT NOT NULL,
+                reason_code TEXT NOT NULL,
+                correlation_id TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+            INSERT INTO schedule_leases (lease_id, holder, acquired_at, expires_at, released_at)
+                VALUES ('lease-old', 'scheduler', '2026-08-29T12:00:00+09:00', '2026-08-30T12:00:00+09:00', NULL);
+            INSERT INTO scope_claims (scope_key, claim_id, holder, acquired_at, released_at)
+                VALUES ('scope-old', 'claim-old', 'controller-a', '2026-08-29T12:00:00+09:00', NULL);
+            INSERT INTO watermarks (scope_key, watermark_key, value_hash, updated_at)
+                VALUES ('scope-old', 'wm-1', 'sha256:wm', '2026-08-29T12:00:00+09:00');
+            INSERT INTO authority_modes (controller_id, mode, updated_at)
+                VALUES ('workflow_audit', 'observer', '2026-08-29T12:00:00+09:00');
+            INSERT INTO decisions
+                (decision_id, controller_id, decision_code, result_code, input_hash, output_hash, recorded_at)
+                VALUES ('dec-old', 'workflow_audit', 'run_once', 'ok', 'sha256:in', 'sha256:out', '2026-08-29T12:00:00+09:00');
+            INSERT INTO rollback_events
+                (event_id, controller_id, reason_code, correlation_id, recorded_at)
+                VALUES ('rb-old', 'workflow_audit', 'manual', 'corr-1', '2026-08-29T12:00:00+09:00');
+            ",
+        )
+        .unwrap();
+    }
+
+    fn materialize_authority_v1(path: &Path) {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch(
+            "
+            PRAGMA journal_mode=WAL;
+            CREATE TABLE ledger_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            INSERT INTO ledger_meta (key, value) VALUES ('schema_version', '1');
+            CREATE TABLE schedule_leases (
+                lease_id TEXT PRIMARY KEY,
+                holder TEXT NOT NULL,
+                acquired_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                released_at TEXT
+            );
+            CREATE TABLE scope_claims (
+                scope_key TEXT PRIMARY KEY,
+                claim_id TEXT NOT NULL,
+                holder TEXT NOT NULL,
+                acquired_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                released_at TEXT
+            );
+            CREATE TABLE watermarks (
+                scope_key TEXT NOT NULL,
+                watermark_key TEXT NOT NULL,
+                value_hash TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (scope_key, watermark_key)
+            );
+            CREATE TABLE authority_modes (
+                controller_id TEXT PRIMARY KEY,
+                mode TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE decisions (
+                decision_id TEXT PRIMARY KEY,
+                controller_id TEXT NOT NULL,
+                decision_code TEXT NOT NULL,
+                result_code TEXT NOT NULL,
+                input_hash TEXT NOT NULL,
+                output_hash TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+            CREATE TABLE rollback_events (
+                event_id TEXT PRIMARY KEY,
+                controller_id TEXT NOT NULL,
+                reason_code TEXT NOT NULL,
+                correlation_id TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+            CREATE TABLE violation_events (
+                event_id TEXT PRIMARY KEY,
+                controller_id TEXT NOT NULL,
+                violation_type TEXT NOT NULL,
+                decision_hash TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+            CREATE TABLE idempotency_claims (
+                decision_hash TEXT PRIMARY KEY,
+                controller_id TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+            INSERT INTO decisions
+                (decision_id, controller_id, decision_code, result_code, input_hash, output_hash, recorded_at)
+                VALUES ('dec-v1', 'workflow_audit', 'run_once', 'ok', 'sha256:in1', 'sha256:out1', '2026-08-29T12:00:00+09:00');
+            INSERT INTO rollback_events
+                (event_id, controller_id, reason_code, correlation_id, recorded_at)
+                VALUES ('rb-v1', 'workflow_audit', 'manual', 'corr-v1', '2026-08-29T12:00:00+09:00');
+            INSERT INTO violation_events
+                (event_id, controller_id, violation_type, decision_hash, recorded_at)
+                VALUES ('vio-v1', 'workflow_audit', 'duplicate_start', 'sha256:dup', '2026-08-29T12:00:00+09:00');
+            INSERT INTO idempotency_claims (decision_hash, controller_id, recorded_at)
+                VALUES ('sha256:idempotent', 'workflow_audit', '2026-08-29T12:00:00+09:00');
+            ",
+        )
+        .unwrap();
+    }
+
+    fn open_migrated(path: &Path) -> Connection {
+        let conn = Connection::open(path).unwrap();
+        configure_connection(&conn).unwrap();
+        ensure_schema_version(&conn).unwrap();
+        conn
     }
 
     #[test]
@@ -1029,29 +1293,55 @@ mod tests {
     }
 
     #[test]
-    fn lease_conflict_returns_acquired_false() {
+    fn lease_conflict_same_key_returns_acquired_false() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("control.db");
         run_local_control_ledger(&ledger_input("init", &path));
 
-        let first = acquire_lease(
+        let first = acquire_lease_with_holder(
             &path,
             "lease-1",
+            "controller-a",
             "2026-08-30T12:00:00+09:00",
             "2026-08-30T12:05:00+09:00",
         );
         assert_eq!(first["valid"], json!(true));
         assert_eq!(first["data"]["acquired"], json!(true));
 
-        let conflict = acquire_lease(
+        let conflict = acquire_lease_with_holder(
             &path,
-            "lease-2",
+            "lease-1",
+            "controller-b",
             "2026-08-30T12:00:00+09:00",
             "2026-08-30T12:05:00+09:00",
         );
         assert_eq!(conflict["valid"], json!(false));
         assert_eq!(conflict["exit_reason"], json!("lease_already_held"));
         assert_eq!(conflict["data"]["acquired"], json!(false));
+    }
+
+    #[test]
+    fn different_controllers_may_hold_different_leases_concurrently() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control.db");
+        run_local_control_ledger(&ledger_input("init", &path));
+
+        let first = acquire_lease_with_holder(
+            &path,
+            "lease-a",
+            "controller-a",
+            "2026-08-30T12:00:00+09:00",
+            "2026-08-30T12:05:00+09:00",
+        );
+        let second = acquire_lease_with_holder(
+            &path,
+            "lease-b",
+            "controller-b",
+            "2026-08-30T12:00:00+09:00",
+            "2026-08-30T12:05:00+09:00",
+        );
+        assert_eq!(first["data"]["acquired"], json!(true));
+        assert_eq!(second["data"]["acquired"], json!(true));
     }
 
     #[test]
@@ -1080,7 +1370,7 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_acquire_only_one_wins() {
+    fn concurrent_acquire_same_lease_only_one_wins() {
         let dir = tempfile::tempdir().unwrap();
         let path = Arc::new(dir.path().join("control.db"));
         run_local_control_ledger(&ledger_input("init", path.as_path()));
@@ -1090,9 +1380,10 @@ mod tests {
         let barrier_a = Arc::clone(&barrier);
         let handle_a = thread::spawn(move || {
             barrier_a.wait();
-            acquire_lease(
+            acquire_lease_with_holder(
                 path_a.as_path(),
-                "lease-a",
+                "lease-shared",
+                "controller-a",
                 "2026-08-30T12:00:00+09:00",
                 "2026-08-30T12:05:00+09:00",
             )
@@ -1101,9 +1392,10 @@ mod tests {
         let barrier_b = Arc::clone(&barrier);
         let handle_b = thread::spawn(move || {
             barrier_b.wait();
-            acquire_lease(
+            acquire_lease_with_holder(
                 path_b.as_path(),
-                "lease-b",
+                "lease-shared",
+                "controller-b",
                 "2026-08-30T12:00:00+09:00",
                 "2026-08-30T12:05:00+09:00",
             )
@@ -1119,32 +1411,60 @@ mod tests {
     }
 
     #[test]
-    fn claim_conflict_returns_claimed_false() {
+    fn claim_conflict_same_scope_returns_claimed_false() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("control.db");
         run_local_control_ledger(&ledger_input("init", &path));
 
-        let mut first = ledger_input("claim_scope", &path);
-        first["scope_key"] = json!("scope-a");
-        first["claim_id"] = json!("claim-1");
-        first["holder"] = json!("controller-a");
-        first["acquired_at"] = json!("2026-08-30T12:00:00+09:00");
-        first["expires_at"] = json!("2026-08-30T12:05:00+09:00");
         assert_eq!(
-            run_local_control_ledger(&first)["data"]["claimed"],
+            claim_scope(
+                &path,
+                "scope-a",
+                "claim-1",
+                "controller-a",
+                "2026-08-30T12:00:00+09:00",
+                "2026-08-30T12:05:00+09:00",
+            )["data"]["claimed"],
             json!(true)
         );
 
-        let mut second = ledger_input("claim_scope", &path);
-        second["scope_key"] = json!("scope-b");
-        second["claim_id"] = json!("claim-2");
-        second["holder"] = json!("controller-b");
-        second["acquired_at"] = json!("2026-08-30T12:00:00+09:00");
-        second["expires_at"] = json!("2026-08-30T12:05:00+09:00");
-        let conflict = run_local_control_ledger(&second);
+        let conflict = claim_scope(
+            &path,
+            "scope-a",
+            "claim-2",
+            "controller-b",
+            "2026-08-30T12:00:00+09:00",
+            "2026-08-30T12:05:00+09:00",
+        );
         assert_eq!(conflict["valid"], json!(false));
         assert_eq!(conflict["exit_reason"], json!("scope_claim_conflict"));
         assert_eq!(conflict["data"]["claimed"], json!(false));
+    }
+
+    #[test]
+    fn different_scopes_may_be_claimed_concurrently() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control.db");
+        run_local_control_ledger(&ledger_input("init", &path));
+
+        let first = claim_scope(
+            &path,
+            "scope-a",
+            "claim-1",
+            "controller-a",
+            "2026-08-30T12:00:00+09:00",
+            "2026-08-30T12:05:00+09:00",
+        );
+        let second = claim_scope(
+            &path,
+            "scope-b",
+            "claim-2",
+            "controller-b",
+            "2026-08-30T12:00:00+09:00",
+            "2026-08-30T12:05:00+09:00",
+        );
+        assert_eq!(first["data"]["claimed"], json!(true));
+        assert_eq!(second["data"]["claimed"], json!(true));
     }
 
     #[test]
@@ -1166,6 +1486,139 @@ mod tests {
     }
 
     #[test]
+    fn migrate_foundation_v1_preserves_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control.db");
+        materialize_foundation_v1(&path);
+        let conn = open_migrated(&path);
+
+        let schema_version: String = conn
+            .query_row(
+                "SELECT value FROM ledger_meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(schema_version, LEDGER_DB_SCHEMA_VERSION);
+
+        let decision_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM decisions", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(decision_count, 1);
+        let rollback_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM rollback_events", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rollback_count, 1);
+        let watermark_hash: String = conn
+            .query_row(
+                "SELECT value_hash FROM watermarks WHERE scope_key = 'scope-old' AND watermark_key = 'wm-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(watermark_hash, "sha256:wm");
+        assert!(table_exists(&conn, "violation_events").unwrap());
+        assert!(idempotency_pk_is_composite(&conn).unwrap());
+    }
+
+    #[test]
+    fn migrate_authority_v1_preserves_rows_and_rebuilds_idempotency() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control.db");
+        materialize_authority_v1(&path);
+        let conn = open_migrated(&path);
+
+        let schema_version: String = conn
+            .query_row(
+                "SELECT value FROM ledger_meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(schema_version, LEDGER_DB_SCHEMA_VERSION);
+        assert!(idempotency_pk_is_composite(&conn).unwrap());
+
+        let idempotency_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM idempotency_claims", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(idempotency_count, 1);
+        let authority_mode: String = conn
+            .query_row(
+                "SELECT authority_mode FROM violation_events WHERE event_id = 'vio-v1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(authority_mode, "shadow");
+
+        let mut claim = ledger_input("claim_idempotency", &path);
+        claim["controller_id"] = json!("workflow_audit");
+        claim["decision_hash"] = json!("sha256:idempotent");
+        claim["recorded_at"] = json!("2026-08-30T12:00:00+09:00");
+        let duplicate = run_local_control_ledger(&claim);
+        assert_eq!(duplicate["valid"], json!(false));
+        assert_eq!(duplicate["data"]["duplicate"], json!(true));
+    }
+
+    #[test]
+    fn migrate_v2_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control.db");
+        run_local_control_ledger(&ledger_input("init", &path));
+        open_migrated(&path);
+        let conn = open_migrated(&path);
+        let schema_version: String = conn
+            .query_row(
+                "SELECT value FROM ledger_meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(schema_version, LEDGER_DB_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn concurrent_different_scopes_both_win() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = Arc::new(dir.path().join("control.db"));
+        run_local_control_ledger(&ledger_input("init", path.as_path()));
+
+        let barrier = Arc::new(Barrier::new(2));
+        let path_a = Arc::clone(&path);
+        let barrier_a = Arc::clone(&barrier);
+        let handle_a = thread::spawn(move || {
+            barrier_a.wait();
+            claim_scope(
+                path_a.as_path(),
+                "scope-a",
+                "claim-a",
+                "controller-a",
+                "2026-08-30T12:00:00+09:00",
+                "2026-08-30T12:05:00+09:00",
+            )
+        });
+        let path_b = Arc::clone(&path);
+        let barrier_b = Arc::clone(&barrier);
+        let handle_b = thread::spawn(move || {
+            barrier_b.wait();
+            claim_scope(
+                path_b.as_path(),
+                "scope-b",
+                "claim-b",
+                "controller-b",
+                "2026-08-30T12:00:00+09:00",
+                "2026-08-30T12:05:00+09:00",
+            )
+        });
+        let result_a = handle_a.join().unwrap();
+        let result_b = handle_b.join().unwrap();
+        assert_eq!(result_a["data"]["claimed"], json!(true));
+        assert_eq!(result_b["data"]["claimed"], json!(true));
+    }
+
+    #[test]
     fn concurrent_same_scope_claim_conflicts() {
         let dir = tempfile::tempdir().unwrap();
         let path = Arc::new(dir.path().join("control.db"));
@@ -1176,25 +1629,27 @@ mod tests {
         let barrier_a = Arc::clone(&barrier);
         let handle_a = thread::spawn(move || {
             barrier_a.wait();
-            let mut claim = ledger_input("claim_scope", path_a.as_path());
-            claim["scope_key"] = json!("scope-shared");
-            claim["claim_id"] = json!("claim-a");
-            claim["holder"] = json!("controller-a");
-            claim["acquired_at"] = json!("2026-08-30T12:00:00+09:00");
-            claim["expires_at"] = json!("2026-08-30T12:05:00+09:00");
-            run_local_control_ledger(&claim)
+            claim_scope(
+                path_a.as_path(),
+                "scope-shared",
+                "claim-a",
+                "controller-a",
+                "2026-08-30T12:00:00+09:00",
+                "2026-08-30T12:05:00+09:00",
+            )
         });
         let path_b = Arc::clone(&path);
         let barrier_b = Arc::clone(&barrier);
         let handle_b = thread::spawn(move || {
             barrier_b.wait();
-            let mut claim = ledger_input("claim_scope", path_b.as_path());
-            claim["scope_key"] = json!("scope-shared");
-            claim["claim_id"] = json!("claim-b");
-            claim["holder"] = json!("controller-b");
-            claim["acquired_at"] = json!("2026-08-30T12:00:00+09:00");
-            claim["expires_at"] = json!("2026-08-30T12:05:00+09:00");
-            run_local_control_ledger(&claim)
+            claim_scope(
+                path_b.as_path(),
+                "scope-shared",
+                "claim-b",
+                "controller-b",
+                "2026-08-30T12:00:00+09:00",
+                "2026-08-30T12:05:00+09:00",
+            )
         });
         let result_a = handle_a.join().unwrap();
         let result_b = handle_b.join().unwrap();

@@ -549,7 +549,7 @@ mod tests {
             "schema_version": "local-control-ledger-input.v0",
             "operation": "acquire_lease",
             "ledger_path": input["ledger_path"],
-            "lease_id": "held-lease",
+            "lease_id": "workflow_audit-2026-08-30T12:00:00+09:00",
             "holder": "other-controller",
             "acquired_at": "2026-08-30T12:00:00+09:00",
             "expires_at": "2026-08-30T12:30:00+09:00",
