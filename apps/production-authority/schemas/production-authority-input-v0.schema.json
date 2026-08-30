@@ -8,6 +8,7 @@
     "schema_version",
     "operation",
     "controller_id",
+    "execution_kind",
     "authority_mode",
     "ledger_path",
     "cli_path",
@@ -21,6 +22,10 @@
     "controller_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "authority_mode": {
       "enum": ["shadow", "observer", "safe_writer", "queue", "todo_runner"]
+    },
+    "execution_kind": {
+      "type": "string",
+      "enum": ["shadow", "live"]
     },
     "ledger_path": { "type": "string", "minLength": 1 },
     "cli_path": { "type": "string", "minLength": 1 },

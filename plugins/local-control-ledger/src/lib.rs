@@ -935,19 +935,32 @@ fn dispatch(
             validate_ts(since_ts)?;
             validate_ts(until_ts)?;
             let conn = open_ledger(path)?;
+            let shadow_decision_code = format!("{target_mode}_shadow_run_once");
             let decision_count: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM decisions
-                 WHERE controller_id = ?1 AND authority_mode = ?2
+                 WHERE controller_id = ?1 AND authority_mode = ?2 AND decision_code = ?5
                    AND recorded_at >= ?3 AND recorded_at <= ?4",
-                params![controller_id, target_mode, since_ts, until_ts],
+                params![
+                    controller_id,
+                    target_mode,
+                    since_ts,
+                    until_ts,
+                    shadow_decision_code
+                ],
                 |row| row.get(0),
             )?;
             let hard_gate_failures: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM decisions
-                 WHERE controller_id = ?1 AND authority_mode = ?2
+                 WHERE controller_id = ?1 AND authority_mode = ?2 AND decision_code = ?5
                    AND recorded_at >= ?3 AND recorded_at <= ?4
                    AND hard_gate_pass = 0",
-                params![controller_id, target_mode, since_ts, until_ts],
+                params![
+                    controller_id,
+                    target_mode,
+                    since_ts,
+                    until_ts,
+                    shadow_decision_code
+                ],
                 |row| row.get(0),
             )?;
             let unauthorized_writes: i64 = conn.query_row(
@@ -1670,7 +1683,7 @@ mod tests {
             record["controller_id"] = json!("workflow_audit");
             record["decision_id"] = json!(format!("dec-{idx}"));
             record["authority_mode"] = json!(mode);
-            record["decision_code"] = json!("run_once");
+            record["decision_code"] = json!(format!("{mode}_shadow_run_once"));
             record["result_code"] = json!("ok");
             record["input_hash"] = json!(format!("sha256:in{idx}"));
             record["output_hash"] = json!(format!("sha256:out{idx}"));

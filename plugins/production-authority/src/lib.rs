@@ -104,6 +104,7 @@ struct AuthorityInput {
     schema_version: String,
     operation: String,
     controller_id: String,
+    execution_kind: String,
     authority_mode: String,
     ledger_path: String,
     cli_path: String,
@@ -286,6 +287,12 @@ fn validate_base_input(input: &AuthorityInput) -> Result<(), (Vec<Value>, String
     }
     if input.controller_id.is_empty() {
         issues.push(issue("controller_id_missing", "controller_id is required"));
+    }
+    if !matches!(input.execution_kind.as_str(), "shadow" | "live") {
+        issues.push(issue(
+            "execution_kind_invalid",
+            "execution_kind must be shadow or live",
+        ));
     }
     if input.now.is_empty() {
         issues.push(issue("now_missing", "now is required"));
@@ -684,6 +691,7 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
     }
 
     let mode = input.authority_mode.as_str();
+    let execution_kind = input.execution_kind.as_str();
     let is_observer = mode == "observer";
     let multica_operation = input.multica_operation.as_deref();
     if is_observer && multica_operation.is_some() {
@@ -766,7 +774,38 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
     let stored_mode = authority["data"]["authority_mode"]
         .as_str()
         .unwrap_or("shadow");
-    if stored_mode != mode {
+    if execution_kind == "shadow" {
+        let Some(predecessor) = predecessor_mode(mode) else {
+            return compact(
+                operation,
+                false,
+                "predecessor_chain_failed",
+                vec![issue(
+                    "predecessor_chain_failed",
+                    format!("no promotion predecessor for target mode {mode}"),
+                )],
+                false,
+                json!(null),
+                json!({"authority": authority}),
+                json!(null),
+            );
+        };
+        if stored_mode != predecessor {
+            return compact(
+                operation,
+                false,
+                "predecessor_chain_failed",
+                vec![issue(
+                    "predecessor_chain_failed",
+                    format!("stored authority {stored_mode} != required predecessor {predecessor}"),
+                )],
+                false,
+                json!(null),
+                json!({"authority": authority}),
+                json!(null),
+            );
+        }
+    } else if stored_mode != mode {
         let decision_hash =
             sha256_hex(&json!({"stored_mode": stored_mode, "requested_mode": mode}));
         let violation = ledger_op(
@@ -857,6 +896,110 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
             json!(null),
             json!({"idempotency": idempotency, "violation": violation}),
             json!(null),
+        );
+    }
+
+    if idempotency["valid"] != json!(true) {
+        return compact(
+            operation,
+            false,
+            "idempotency_claim_failed",
+            vec![issue(
+                "idempotency_claim_failed",
+                idempotency["exit_reason"]
+                    .as_str()
+                    .unwrap_or("idempotency claim invalid"),
+            )],
+            false,
+            json!(null),
+            idempotency,
+            json!(null),
+        );
+    }
+
+    if execution_kind == "shadow" {
+        let output_hash = sha256_hex(&json!({"shadow_evidence": true, "mode": mode}));
+        let input_hash = sha256_hex(&cli_input);
+        let decision_id = format!("decision-shadow-{}", guard.lease_id);
+
+        let decision = ledger_op(
+            input,
+            "record_decision",
+            json!({
+                "decision_id": decision_id,
+                "authority_mode": mode,
+                "decision_code": format!("{mode}_shadow_run_once"),
+                "result_code": "shadow_evidence_ok",
+                "input_hash": input_hash,
+                "output_hash": output_hash,
+                "hard_gate_pass": true,
+            }),
+        );
+
+        let watermark_key = if is_observer {
+            "last_observer_run".to_string()
+        } else {
+            format!("last_{mode}_run")
+        };
+        let watermark = ledger_op(
+            input,
+            "set_watermark",
+            json!({
+                "scope_key": guard.scope_key.clone(),
+                "watermark_key": watermark_key,
+                "value_hash": output_hash,
+            }),
+        );
+
+        guard.disarm();
+        let _ = ledger_op(
+            input,
+            "release_claim",
+            json!({"scope_key": guard.scope_key.clone()}),
+        );
+        let _ = ledger_op(
+            input,
+            "release_lease",
+            json!({"lease_id": guard.lease_id.clone()}),
+        );
+
+        if decision["valid"] != json!(true) || watermark["valid"] != json!(true) {
+            return compact(
+                operation,
+                false,
+                "decision_record_failed",
+                vec![issue("decision_record_failed", "ledger persistence failed")],
+                false,
+                json!(null),
+                json!({"decision": decision, "watermark": watermark, "authority": authority}),
+                json!(null),
+            );
+        }
+
+        let exit_reason = if is_observer {
+            "observer_success_no_mutation".to_string()
+        } else {
+            format!("{mode}_shadow_evidence_ok")
+        };
+
+        return compact(
+            operation,
+            true,
+            &exit_reason,
+            Vec::new(),
+            false,
+            json!(null),
+            json!({
+                "decision": decision,
+                "watermark": watermark,
+                "authority": authority,
+                "idempotency": idempotency,
+            }),
+            json!({
+                "authority_mode": mode,
+                "multica_operation": multica_operation,
+                "query_args": if is_observer { Some(QUERY_OPERATION_ARGS) } else { None },
+            }),
         );
     }
 
@@ -1098,7 +1241,12 @@ mod tests {
     use super::*;
     use agentmesh_local_control_ledger::run_local_control_ledger;
     use agentmesh_multica_cli_adapter::{CliCommandSpec, CliInvokeResult};
+    use chrono::{DateTime, Duration, FixedOffset};
     use std::fs;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
 
     struct FakeRunner {
         exit_code: i32,
@@ -1129,6 +1277,33 @@ mod tests {
         }
     }
 
+    struct CountedFakeRunner {
+        calls: Arc<AtomicUsize>,
+        exit_code: i32,
+        stdout: Vec<u8>,
+    }
+
+    impl ProcessRunner for CountedFakeRunner {
+        fn run(
+            &self,
+            _spec: &CliCommandSpec,
+            _operation_args: &[String],
+            _timeout_ms: u64,
+        ) -> Result<CliInvokeResult, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let bounded = self.stdout.as_slice();
+            Ok(CliInvokeResult {
+                exit_code: self.exit_code,
+                stdout_json: serde_json::from_slice(bounded).ok(),
+                stdout_sha256: format!("sha256:{}", hex::encode(Sha256::digest(bounded))),
+                stdout_byte_count: bounded.len(),
+                stdout_truncated: false,
+                stderr_byte_count: 0,
+                timed_out: false,
+            })
+        }
+    }
+
     fn base_input(dir: &tempfile::TempDir, mode: &str) -> Value {
         let cli = dir.path().join("multica.exe");
         fs::write(&cli, b"fake").unwrap();
@@ -1137,6 +1312,7 @@ mod tests {
             "schema_version": INPUT_SCHEMA_VERSION,
             "operation": "run_once",
             "controller_id": "workflow_audit",
+            "execution_kind": "live",
             "authority_mode": mode,
             "ledger_path": ledger.to_string_lossy(),
             "cli_path": cli.canonicalize().unwrap().to_string_lossy(),
@@ -1356,6 +1532,272 @@ mod tests {
         );
         let dup = run_production_authority(&input, &runner);
         assert_eq!(dup["exit_reason"], json!("duplicate_suppressed"));
+    }
+
+    #[test]
+    fn promotion_ready_from_observer_with_shadow_safe_writer_evidence() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = base_input(&dir, "safe_writer");
+        init_authority(base["ledger_path"].as_str().unwrap(), "observer");
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{}"#.to_vec(),
+        };
+
+        let base_now: DateTime<FixedOffset> =
+            DateTime::parse_from_rfc3339("2026-08-30T12:00:00+09:00").unwrap();
+        let since = base_now - Duration::days(7);
+
+        for i in 0..50 {
+            let mut input = base_input(&dir, "safe_writer");
+            input["execution_kind"] = json!("shadow");
+            input["multica_operation"] = json!("safe_writer_done_reconcile");
+            input["operation_params"] = json!({"issue_id": format!("AM-{}", i)});
+            input["lease_id"] = json!(format!("lease-{}", i));
+            input["now"] = json!((since + Duration::days((i * 7) / 49)).to_rfc3339());
+
+            let output = run_production_authority(&input, &runner);
+            assert_eq!(output["valid"], json!(true));
+            assert_eq!(output["mutation_performed"], json!(false));
+        }
+
+        let mut check = base_input(&dir, "observer");
+        check["operation"] = json!("check_promotion");
+        check["target_mode"] = json!("safe_writer");
+        check["execution_kind"] = json!("shadow");
+        check["now"] = json!(base_now.to_rfc3339());
+
+        let output = run_production_authority(&check, &runner);
+        assert_eq!(output["valid"], json!(true));
+        assert_eq!(output["exit_reason"], json!("promotion_ready"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        let metrics = &output["extra"]["metrics"];
+        assert_eq!(metrics["decision_count"], json!(50));
+        assert_eq!(metrics["hard_gate_parity_pct"], json!(100));
+        assert_eq!(metrics["unauthorized_writes"], json!(0));
+    }
+
+    #[test]
+    fn promotion_rejects_insufficient_shadow_safe_writer_duration() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = base_input(&dir, "safe_writer");
+        init_authority(base["ledger_path"].as_str().unwrap(), "observer");
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{}"#.to_vec(),
+        };
+
+        let base_now: DateTime<FixedOffset> =
+            DateTime::parse_from_rfc3339("2026-08-30T12:00:00+09:00").unwrap();
+        let too_old = base_now - Duration::days(8);
+
+        for i in 0..50 {
+            let mut input = base_input(&dir, "safe_writer");
+            input["execution_kind"] = json!("shadow");
+            input["multica_operation"] = json!("safe_writer_done_reconcile");
+            input["operation_params"] = json!({"issue_id": format!("AM-{}", i)});
+            input["lease_id"] = json!(format!("lease-{}", i));
+            input["now"] = json!(too_old.to_rfc3339());
+
+            let output = run_production_authority(&input, &runner);
+            assert_eq!(output["valid"], json!(true));
+            assert_eq!(output["mutation_performed"], json!(false));
+        }
+
+        let mut check = base_input(&dir, "observer");
+        check["operation"] = json!("check_promotion");
+        check["target_mode"] = json!("safe_writer");
+        check["execution_kind"] = json!("shadow");
+        check["now"] = json!(base_now.to_rfc3339());
+
+        let output = run_production_authority(&check, &runner);
+        assert_eq!(output["valid"], json!(false));
+        assert_eq!(output["exit_reason"], json!("promotion_not_ready"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(output["extra"]["metrics"]["decision_count"], json!(0));
+    }
+
+    #[test]
+    fn promotion_rejects_insufficient_shadow_safe_writer_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = base_input(&dir, "safe_writer");
+        init_authority(base["ledger_path"].as_str().unwrap(), "observer");
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{}"#.to_vec(),
+        };
+
+        let base_now: DateTime<FixedOffset> =
+            DateTime::parse_from_rfc3339("2026-08-30T12:00:00+09:00").unwrap();
+        let since = base_now - Duration::days(7);
+
+        for i in 0..49 {
+            let mut input = base_input(&dir, "safe_writer");
+            input["execution_kind"] = json!("shadow");
+            input["multica_operation"] = json!("safe_writer_done_reconcile");
+            input["operation_params"] = json!({"issue_id": format!("AM-{}", i)});
+            input["lease_id"] = json!(format!("lease-{}", i));
+            input["now"] = json!((since + Duration::days((i * 7) / 48)).to_rfc3339());
+
+            let output = run_production_authority(&input, &runner);
+            assert_eq!(output["valid"], json!(true));
+            assert_eq!(output["mutation_performed"], json!(false));
+        }
+
+        let mut check = base_input(&dir, "observer");
+        check["operation"] = json!("check_promotion");
+        check["target_mode"] = json!("safe_writer");
+        check["execution_kind"] = json!("shadow");
+        check["now"] = json!(base_now.to_rfc3339());
+
+        let output = run_production_authority(&check, &runner);
+        assert_eq!(output["valid"], json!(false));
+        assert_eq!(output["exit_reason"], json!("promotion_not_ready"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(output["extra"]["metrics"]["decision_count"], json!(49));
+    }
+
+    #[test]
+    fn promotion_rejects_shadow_safe_writer_hard_gate_parity() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = base_input(&dir, "safe_writer");
+        let ledger_path = base["ledger_path"].as_str().unwrap();
+        init_authority(ledger_path, "observer");
+
+        // No ProcessRunner call needed.
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{}"#.to_vec(),
+        };
+
+        let base_now: DateTime<FixedOffset> =
+            DateTime::parse_from_rfc3339("2026-08-30T12:00:00+09:00").unwrap();
+        let since = base_now - Duration::days(7);
+        let target_mode = "safe_writer";
+        let shadow_decision_code = format!("{target_mode}_shadow_run_once");
+
+        for i in 0..50 {
+            let decision_now = since + Duration::days((i * 7) / 49);
+            run_local_control_ledger(&json!({
+                "schema_version": "local-control-ledger-input.v0",
+                "operation": "record_decision",
+                "ledger_path": ledger_path,
+                "controller_id": "workflow_audit",
+                "decision_id": format!("dec-{}", i),
+                "authority_mode": target_mode,
+                "decision_code": shadow_decision_code.clone(),
+                "result_code": "shadow_evidence_ok",
+                "input_hash": format!("sha256:in-{}", i),
+                "output_hash": format!("sha256:out-{}", i),
+                "hard_gate_pass": i != 0,
+                "recorded_at": decision_now.to_rfc3339(),
+            }));
+        }
+
+        let mut check = base_input(&dir, "observer");
+        check["operation"] = json!("check_promotion");
+        check["target_mode"] = json!(target_mode);
+        check["execution_kind"] = json!("shadow");
+        check["now"] = json!(base_now.to_rfc3339());
+
+        let output = run_production_authority(&check, &runner);
+        assert_eq!(output["valid"], json!(false));
+        assert_eq!(output["exit_reason"], json!("promotion_not_ready"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            output["extra"]["metrics"]["hard_gate_parity_pct"],
+            json!(98)
+        );
+    }
+
+    #[test]
+    fn promotion_rejects_unauthorized_write_from_wrong_mode_live_mutation() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = base_input(&dir, "safe_writer");
+        init_authority(base["ledger_path"].as_str().unwrap(), "observer");
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{}"#.to_vec(),
+        };
+
+        let base_now: DateTime<FixedOffset> =
+            DateTime::parse_from_rfc3339("2026-08-30T12:00:00+09:00").unwrap();
+        let since = base_now - Duration::days(7);
+
+        for i in 0..50 {
+            let mut input = base_input(&dir, "safe_writer");
+            input["execution_kind"] = json!("shadow");
+            input["multica_operation"] = json!("safe_writer_done_reconcile");
+            input["operation_params"] = json!({"issue_id": format!("AM-{}", i)});
+            input["lease_id"] = json!(format!("lease-{}", i));
+            input["now"] = json!((since + Duration::days((i * 7) / 49)).to_rfc3339());
+
+            let output = run_production_authority(&input, &runner);
+            assert_eq!(output["valid"], json!(true));
+            assert_eq!(output["mutation_performed"], json!(false));
+        }
+
+        let mut wrong = base_input(&dir, "safe_writer");
+        wrong["execution_kind"] = json!("live");
+        wrong["multica_operation"] = json!("safe_writer_done_reconcile");
+        wrong["operation_params"] = json!({"issue_id": "AM-live-viol"});
+        wrong["lease_id"] = json!("lease-wrong");
+        wrong["now"] = json!(base_now.to_rfc3339());
+
+        let wrong_out = run_production_authority(&wrong, &runner);
+        assert_eq!(wrong_out["valid"], json!(false));
+        assert_eq!(wrong_out["exit_reason"], json!("authority_mode_mismatch"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        let mut check = base_input(&dir, "observer");
+        check["operation"] = json!("check_promotion");
+        check["target_mode"] = json!("safe_writer");
+        check["execution_kind"] = json!("shadow");
+        check["now"] = json!(base_now.to_rfc3339());
+
+        let output = run_production_authority(&check, &runner);
+        assert_eq!(output["valid"], json!(false));
+        assert_eq!(output["exit_reason"], json!("promotion_not_ready"));
+        assert_eq!(output["extra"]["metrics"]["unauthorized_writes"], json!(1));
+    }
+
+    #[test]
+    fn ledger_error_blocks_runner_before_live_mutation() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut input = base_input(&dir, "safe_writer");
+        input["execution_kind"] = json!("live");
+        input["multica_operation"] = json!("safe_writer_done_reconcile");
+        input["operation_params"] = json!({"issue_id": "AM-1"});
+
+        // Make ledger path a directory => sqlite open/initialization fails.
+        let ledger_path = input["ledger_path"].as_str().unwrap();
+        let _ = std::fs::create_dir_all(ledger_path);
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let runner = CountedFakeRunner {
+            calls: calls.clone(),
+            exit_code: 0,
+            stdout: br#"{}"#.to_vec(),
+        };
+
+        let output = run_production_authority(&input, &runner);
+        assert_eq!(output["valid"], json!(false));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]

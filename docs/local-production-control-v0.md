@@ -27,6 +27,13 @@ Promotion ladder (external thresholds apply before mode changes):
 
 Foundation slice accepts `authority_mode: observer` only. The **authority slice** adds `production-authority` and `production-evaluation-report` Apps with promotion gates, allowed Multica CLI argv mapping, health-gated Cursor recovery, and synthetic/fake contract tests only.
 
+## `production-authority` execution kind
+
+`production-authority` `run_once` inputs require `execution_kind`:
+
+- `shadow`: predecessor gate + allowed-operation validation, no Multica CLI process; records `{authority_mode}_shadow_run_once` decision evidence only; `mutation_performed: false`. Promotion consumes this shadow evidence.
+- `live`: stored authority must match requested `authority_mode` and existing Multica CLI invocation/mutation applies; wrong-mode attempts record `unauthorized_write`.
+
 ## Deterministic exit reasons
 
 Observer `run_once` emits stable `exit_reason` values including:
