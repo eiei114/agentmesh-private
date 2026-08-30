@@ -25,7 +25,9 @@
         "safe_writer_issue_create",
         "safe_writer_issue_import",
         "queue_backlog_promote",
-        "todo_runner_assign_rerun"
+        "todo_runner_assign",
+        "todo_runner_rerun",
+        "cursor_recovery_rerun"
       ]
     },
     "operation_params": { "type": "object" },

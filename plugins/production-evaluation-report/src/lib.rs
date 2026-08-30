@@ -46,26 +46,27 @@ fn issue(code: &str, message: impl Into<String>) -> Value {
     json!({ "code": code, "message": message.into() })
 }
 
-fn pct_reduction(baseline: f64, current: f64) -> f64 {
+fn pct_reduction(baseline: f64, current: f64) -> Result<f64, &'static str> {
     if baseline <= 0.0 {
-        0.0
+        Err("token_baseline_nonpositive")
     } else {
-        ((baseline - current) / baseline) * 100.0
+        Ok(((baseline - current) / baseline) * 100.0)
     }
 }
 
-fn pct_decline(baseline: f64, current: f64) -> f64 {
+fn pct_decline(baseline: f64, current: f64) -> Result<f64, &'static str> {
     if baseline <= 0.0 {
-        0.0
+        Err("throughput_baseline_nonpositive")
     } else {
-        ((baseline - current) / baseline) * 100.0
+        Ok(((baseline - current) / baseline) * 100.0)
     }
 }
 
-fn evaluate_window(window: &AggregateWindow, is_rollback: bool) -> Value {
-    let token_reduction_pct = pct_reduction(window.token_baseline, window.token_current);
+fn evaluate_window(window: &AggregateWindow, is_rollback: bool) -> Result<Value, &'static str> {
+    let token_reduction_pct = pct_reduction(window.token_baseline, window.token_current)?;
     let failure_delta_pp = window.failure_rate_current_pct - window.failure_rate_baseline_pct;
-    let throughput_decline_pct = pct_decline(window.throughput_baseline, window.throughput_current);
+    let throughput_decline_pct =
+        pct_decline(window.throughput_baseline, window.throughput_current)?;
     let token_pass = token_reduction_pct >= TOKEN_REDUCTION_TARGET_PCT;
     let failure_pass = failure_delta_pp <= FAILURE_REWORK_MAX_PP;
     let throughput_pass = throughput_decline_pct <= THROUGHPUT_DECLINE_MAX_PCT;
@@ -78,7 +79,7 @@ fn evaluate_window(window: &AggregateWindow, is_rollback: bool) -> Value {
         && attribution_pass
         && duplicate_pass
         && unauthorized_pass;
-    json!({
+    Ok(json!({
         "window_days": window.window_days,
         "decision_count": window.decision_count,
         "token_reduction_pct": token_reduction_pct,
@@ -98,8 +99,8 @@ fn evaluate_window(window: &AggregateWindow, is_rollback: bool) -> Value {
         "unauthorized_count": window.unauthorized_count,
         "unauthorized_pass": unauthorized_pass,
         "gate_pass": pass,
-        "gate_kind": if is_rollback { "rollback_7d" } else { "result_30d" },
-    })
+        "gate_kind": if is_rollback { "rollback_7d" } else { "final_gate_30d" },
+    }))
 }
 
 fn compact(
@@ -166,13 +167,37 @@ pub fn run_production_evaluation_report(value: &Value) -> Value {
         return compact(operation, false, "input_invalid", issues, json!(null));
     }
 
-    let rollback = evaluate_window(&input.rollback_window, true);
-    let result = evaluate_window(&input.result_window, false);
-    let overall_pass = rollback["gate_pass"] == json!(true) && result["gate_pass"] == json!(true);
+    let rollback = match evaluate_window(&input.rollback_window, true) {
+        Ok(v) => v,
+        Err(code) => {
+            return compact(
+                operation,
+                false,
+                code,
+                vec![issue(code, "rollback window baseline invalid")],
+                json!(null),
+            );
+        }
+    };
+    let result = match evaluate_window(&input.result_window, false) {
+        Ok(v) => v,
+        Err(code) => {
+            return compact(
+                operation,
+                false,
+                code,
+                vec![issue(code, "result window baseline invalid")],
+                json!(null),
+            );
+        }
+    };
+    let rollback_pass = rollback["gate_pass"] == json!(true);
+    let result_pass = result["gate_pass"] == json!(true);
+    let overall_pass = rollback_pass && result_pass;
     let report = json!({
         "controller_id": input.controller_id,
         "rollback_gate_7d": rollback,
-        "result_30d": result,
+        "final_gate_30d": result,
         "overall_pass": overall_pass,
     });
     compact(
@@ -180,8 +205,10 @@ pub fn run_production_evaluation_report(value: &Value) -> Value {
         overall_pass,
         if overall_pass {
             "evaluation_pass"
+        } else if !rollback_pass {
+            "rollback_gate_7d_failed"
         } else {
-            "evaluation_threshold_failed"
+            "final_gate_30d_failed"
         },
         if overall_pass {
             Vec::new()
@@ -243,7 +270,7 @@ mod tests {
         });
         let output = run_production_evaluation_report(&input);
         assert_eq!(output["valid"], json!(false));
-        assert_eq!(output["exit_reason"], json!("evaluation_threshold_failed"));
+        assert_eq!(output["exit_reason"], json!("rollback_gate_7d_failed"));
     }
 
     #[test]
@@ -259,8 +286,24 @@ mod tests {
         });
         let output = run_production_evaluation_report(&input);
         assert_eq!(
-            output["report"]["result_30d"]["unauthorized_pass"],
+            output["report"]["final_gate_30d"]["unauthorized_pass"],
             json!(false)
         );
+    }
+
+    #[test]
+    fn zero_token_baseline_fails_closed() {
+        let mut rollback = sample_window(7);
+        rollback["token_baseline"] = json!(0.0);
+        let input = json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "operation": "evaluate",
+            "controller_id": "workflow_audit",
+            "rollback_window": rollback,
+            "result_window": sample_window(30),
+        });
+        let output = run_production_evaluation_report(&input);
+        assert_eq!(output["valid"], json!(false));
+        assert_eq!(output["exit_reason"], json!("token_baseline_nonpositive"));
     }
 }

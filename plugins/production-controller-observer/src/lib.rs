@@ -366,10 +366,12 @@ pub fn run_production_controller_observer(value: &Value, runner: &dyn ProcessRun
         "record_decision",
         json!({
             "decision_id": decision_id,
+            "authority_mode": "observer",
             "decision_code": "observer_run_once",
             "result_code": result_code,
             "input_hash": input_hash,
             "output_hash": output_hash,
+            "hard_gate_pass": cli["valid"] == json!(true),
         }),
     );
 

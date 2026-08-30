@@ -50,6 +50,10 @@
     "correlation_id": { "type": "string", "minLength": 1, "maxLength": 128 },
     "since_ts": { "type": "string", "minLength": 1, "maxLength": 64 },
     "until_ts": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "hard_gate_pass": { "type": "boolean" },
+    "target_mode": {
+      "enum": ["shadow", "observer", "safe_writer", "queue", "todo_runner"]
+    },
     "violation_type": {
       "enum": ["unauthorized_write", "duplicate_mutation", "duplicate_start"]
     },

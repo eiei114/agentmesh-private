@@ -24,7 +24,13 @@ const DEFAULT_CLI_TIMEOUT_MS: u64 = 60_000;
 
 const CURSOR_FAILURE_CLASSES: &[&str] = &["availability_bridge_failure"];
 const CURSOR_HEALTH_TRANSITIONS: &[&str] = &["down_to_healthy"];
-const FORBIDDEN_FALLBACK_PROVIDERS: &[&str] = &["codex", "glm"];
+
+const AUTHORITY_PREDECESSORS: &[(&str, &str)] = &[
+    ("observer", "shadow"),
+    ("safe_writer", "observer"),
+    ("queue", "safe_writer"),
+    ("todo_runner", "queue"),
+];
 
 #[derive(Debug, Clone, Copy)]
 struct PromotionGate {
@@ -82,7 +88,12 @@ fn allowed_multica_operation(mode: &str, multica_operation: &str) -> bool {
             "safe_writer_done_reconcile" | "safe_writer_issue_create" | "safe_writer_issue_import"
         ),
         "queue" => multica_operation == "queue_backlog_promote",
-        "todo_runner" => multica_operation == "todo_runner_assign_rerun",
+        "todo_runner" => {
+            matches!(
+                multica_operation,
+                "todo_runner_assign" | "todo_runner_rerun"
+            )
+        }
         _ => false,
     }
 }
@@ -101,8 +112,6 @@ struct AuthorityInput {
     scope_key: Option<String>,
     #[serde(default)]
     lease_id: Option<String>,
-    #[serde(default)]
-    prefix_args: Vec<String>,
     #[serde(default)]
     lease_ttl_seconds: Option<u64>,
     #[serde(default)]
@@ -125,9 +134,6 @@ struct CursorRecoveryInput {
     health_transition: String,
     no_artifacts: bool,
     same_issue: bool,
-    rerun_command: String,
-    #[serde(default)]
-    fallback_provider: Option<String>,
 }
 
 fn issue(code: &str, message: impl Into<String>) -> Value {
@@ -302,6 +308,12 @@ fn validate_base_input(input: &AuthorityInput) -> Result<(), (Vec<Value>, String
     Ok(())
 }
 
+fn predecessor_mode(target_mode: &str) -> Option<&'static str> {
+    AUTHORITY_PREDECESSORS
+        .iter()
+        .find_map(|(mode, pred)| (*mode == target_mode).then_some(*pred))
+}
+
 fn evaluate_promotion(
     input: &AuthorityInput,
     target_mode: &str,
@@ -315,12 +327,41 @@ fn evaluate_promotion(
             "target_mode_invalid".into(),
         )
     })?;
+    let predecessor = predecessor_mode(target_mode).ok_or_else(|| {
+        (
+            vec![issue("target_mode_invalid", "unknown promotion target")],
+            "target_mode_invalid".into(),
+        )
+    })?;
+    let authority = ledger_op(input, "get_authority_mode", json!({}));
+    if authority["valid"] != json!(true) {
+        return Err((
+            vec![issue(
+                "authority_lookup_failed",
+                "could not load authority mode",
+            )],
+            "authority_lookup_failed".into(),
+        ));
+    }
+    let stored_mode = authority["data"]["authority_mode"]
+        .as_str()
+        .unwrap_or("shadow");
+    if stored_mode != predecessor {
+        return Err((
+            vec![issue(
+                "predecessor_chain_failed",
+                format!("stored authority {stored_mode} != required predecessor {predecessor}"),
+            )],
+            "predecessor_chain_failed".into(),
+        ));
+    }
     let since = since_ts(&input.now, gate.min_days)
         .map_err(|message| (vec![issue("now_invalid", message)], "now_invalid".into()))?;
     let metrics = ledger_op(
         input,
         "get_promotion_metrics",
         json!({
+            "target_mode": target_mode,
             "since_ts": since,
             "until_ts": input.now,
         }),
@@ -349,6 +390,8 @@ fn evaluate_promotion(
         pass,
         json!({
             "target_mode": target_mode,
+            "required_predecessor": predecessor,
+            "stored_authority_mode": stored_mode,
             "gate": {
                 "min_days": gate.min_days,
                 "min_decisions": gate.min_decisions,
@@ -363,7 +406,11 @@ fn evaluate_promotion(
     ))
 }
 
-fn run_cursor_recovery(input: &AuthorityInput, recovery: &CursorRecoveryInput) -> Value {
+fn run_cursor_recovery(
+    input: &AuthorityInput,
+    recovery: &CursorRecoveryInput,
+    runner: &dyn ProcessRunner,
+) -> Value {
     let operation = input.operation.as_str();
     if !CURSOR_FAILURE_CLASSES.contains(&recovery.failure_class.as_str()) {
         return compact(
@@ -410,38 +457,6 @@ fn run_cursor_recovery(input: &AuthorityInput, recovery: &CursorRecoveryInput) -
             json!(null),
         );
     }
-    if recovery.rerun_command.is_empty() {
-        return compact(
-            operation,
-            false,
-            "cursor_recovery_rerun_missing",
-            vec![issue(
-                "cursor_recovery_rerun_missing",
-                "rerun_command is required",
-            )],
-            false,
-            json!(null),
-            json!(null),
-            json!(null),
-        );
-    }
-    if let Some(provider) = recovery.fallback_provider.as_deref() {
-        if FORBIDDEN_FALLBACK_PROVIDERS.contains(&provider) {
-            return compact(
-                operation,
-                false,
-                "cursor_recovery_fallback_forbidden",
-                vec![issue(
-                    "cursor_recovery_fallback_forbidden",
-                    "Codex/GLM fallback is forbidden",
-                )],
-                false,
-                json!(null),
-                json!(null),
-                json!(null),
-            );
-        }
-    }
     let retry_key = format!("cursor_retry:{}", recovery.issue_id);
     let prior = ledger_op(
         input,
@@ -467,23 +482,23 @@ fn run_cursor_recovery(input: &AuthorityInput, recovery: &CursorRecoveryInput) -
         );
     }
     let decision_hash = sha256_hex(&json!({
+        "controller_id": input.controller_id,
         "issue_id": recovery.issue_id,
-        "rerun_command": recovery.rerun_command,
-        "failure_class": recovery.failure_class,
+        "operation": "cursor_recovery_rerun",
     }));
     let claim = ledger_op(
         input,
         "claim_idempotency",
         json!({"decision_hash": decision_hash}),
     );
-    if claim["valid"] != json!(true) {
+    if claim["valid"] != json!(true) || claim["exit_reason"] == "duplicate_suppressed" {
         return compact(
             operation,
             false,
             "cursor_recovery_idempotency_failed",
             vec![issue(
                 "cursor_recovery_idempotency_failed",
-                "idempotency claim failed",
+                "idempotency claim failed or duplicate",
             )],
             false,
             json!(null),
@@ -491,21 +506,19 @@ fn run_cursor_recovery(input: &AuthorityInput, recovery: &CursorRecoveryInput) -
             json!(null),
         );
     }
-    if claim["exit_reason"] == "duplicate_suppressed" {
-        return compact(
-            operation,
-            false,
-            "cursor_recovery_duplicate_suppressed",
-            vec![issue(
-                "cursor_recovery_duplicate_suppressed",
-                "duplicate recovery suppressed",
-            )],
-            false,
-            json!(null),
-            claim,
-            json!(null),
-        );
-    }
+    let cli_timeout_ms =
+        resolve_cli_timeout_ms(input.cli_timeout_ms).unwrap_or(DEFAULT_CLI_TIMEOUT_MS);
+    let cli_input = json!({
+        "schema_version": "multica-cli-adapter-input.v0",
+        "operation": "invoke",
+        "cli_path": input.cli_path,
+        "timeout_ms": cli_timeout_ms,
+        "multica_operation": "cursor_recovery_rerun",
+        "operation_params": json!({"issue_id": recovery.issue_id}),
+    });
+    let cli_raw = run_multica_cli_adapter(&cli_input, runner);
+    let cli = redact_cli_summary(&cli_raw);
+    let cli_ok = cli["valid"] == json!(true);
     let watermark = ledger_op(
         input,
         "set_watermark",
@@ -515,18 +528,43 @@ fn run_cursor_recovery(input: &AuthorityInput, recovery: &CursorRecoveryInput) -
             "value_hash": decision_hash,
         }),
     );
+    let output_hash = sha256_hex(&cli);
+    let decision = ledger_op(
+        input,
+        "record_decision",
+        json!({
+            "decision_id": format!("cursor-recovery-{}", recovery.issue_id),
+            "authority_mode": input.authority_mode,
+            "decision_code": "cursor_recovery_rerun",
+            "result_code": cli["exit_reason"].as_str().unwrap_or("unknown"),
+            "input_hash": decision_hash,
+            "output_hash": output_hash,
+            "hard_gate_pass": cli_ok,
+        }),
+    );
+    let exit_reason = if cli_ok {
+        "cursor_recovery_rerun_ok".to_string()
+    } else {
+        cli["exit_reason"]
+            .as_str()
+            .unwrap_or("cursor_recovery_rerun_failed")
+            .to_string()
+    };
     compact(
         operation,
-        true,
-        "cursor_recovery_retry_scheduled",
-        Vec::new(),
+        cli_ok,
+        &exit_reason,
+        if cli_ok {
+            Vec::new()
+        } else {
+            vec![issue(&exit_reason, "cursor recovery rerun failed")]
+        },
         false,
-        json!(null),
-        json!({"claim": claim, "watermark": watermark}),
+        cli,
+        json!({"claim": claim, "watermark": watermark, "decision": decision}),
         json!({
             "issue_id": recovery.issue_id,
-            "rerun_command": recovery.rerun_command,
-            "retry_count": 1,
+            "retry_consumed": true,
         }),
     )
 }
@@ -680,6 +718,17 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
             );
         };
         if !allowed_multica_operation(mode, op) {
+            let decision_hash = sha256_hex(&json!({"mode": mode, "multica_operation": op}));
+            let violation = ledger_op(
+                input,
+                "record_violation",
+                json!({
+                    "event_id": format!("unauth-{decision_hash}"),
+                    "authority_mode": mode,
+                    "violation_type": "unauthorized_write",
+                    "decision_hash": decision_hash,
+                }),
+            );
             return compact(
                 operation,
                 false,
@@ -690,7 +739,7 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
                 )],
                 false,
                 json!(null),
-                json!(null),
+                json!({"violation": violation}),
                 json!(null),
             );
         }
@@ -718,6 +767,18 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
         .as_str()
         .unwrap_or("shadow");
     if stored_mode != mode {
+        let decision_hash =
+            sha256_hex(&json!({"stored_mode": stored_mode, "requested_mode": mode}));
+        let violation = ledger_op(
+            input,
+            "record_violation",
+            json!({
+                "event_id": format!("unauth-{decision_hash}"),
+                "authority_mode": mode,
+                "violation_type": "unauthorized_write",
+                "decision_hash": decision_hash,
+            }),
+        );
         return compact(
             operation,
             false,
@@ -728,7 +789,7 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
             )],
             false,
             json!(null),
-            authority,
+            json!({"authority": authority, "violation": violation}),
             json!(null),
         );
     }
@@ -739,7 +800,6 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
             "schema_version": "multica-cli-adapter-input.v0",
             "operation": "query",
             "cli_path": input.cli_path,
-            "prefix_args": input.prefix_args,
             "timeout_ms": cli_timeout_ms,
         })
     } else {
@@ -747,7 +807,6 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
             "schema_version": "multica-cli-adapter-input.v0",
             "operation": "invoke",
             "cli_path": input.cli_path,
-            "prefix_args": input.prefix_args,
             "timeout_ms": cli_timeout_ms,
             "multica_operation": multica_operation,
             "operation_params": input.operation_params.clone().unwrap_or(json!({})),
@@ -766,6 +825,7 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
             "record_violation",
             json!({
                 "event_id": format!("dup-{}", decision_hash),
+                "authority_mode": mode,
                 "violation_type": match mode {
                     "queue" => "duplicate_mutation",
                     "todo_runner" => "duplicate_start",
@@ -808,15 +868,22 @@ fn run_once(input: &AuthorityInput, runner: &dyn ProcessRunner) -> Value {
     let output_hash = sha256_hex(&cli);
     let decision_id = format!("decision-{}", guard.lease_id);
     let result_code = cli["exit_reason"].as_str().unwrap_or("unknown");
+    let hard_gate_pass = if is_observer {
+        cli["valid"] == json!(true)
+    } else {
+        cli["valid"] == json!(true)
+    };
     let decision = ledger_op(
         input,
         "record_decision",
         json!({
             "decision_id": decision_id,
+            "authority_mode": mode,
             "decision_code": format!("{mode}_run_once"),
             "result_code": result_code,
             "input_hash": input_hash,
             "output_hash": output_hash,
+            "hard_gate_pass": hard_gate_pass,
         }),
     );
 
@@ -1008,7 +1075,7 @@ pub fn run_production_authority(value: &Value, runner: &dyn ProcessRunner) -> Va
                     json!(null),
                 );
             };
-            run_cursor_recovery(&input, recovery)
+            run_cursor_recovery(&input, recovery, runner)
         }
         _ => compact(
             operation,
@@ -1160,7 +1227,7 @@ mod tests {
     fn promotion_boundary_requires_minimum_decisions() {
         let dir = tempfile::tempdir().unwrap();
         let input = base_input(&dir, "observer");
-        init_authority(input["ledger_path"].as_str().unwrap(), "observer");
+        init_authority(input["ledger_path"].as_str().unwrap(), "shadow");
         let mut check = input.clone();
         check["operation"] = json!("check_promotion");
         check["target_mode"] = json!("observer");
@@ -1186,29 +1253,23 @@ mod tests {
             "failure_class": "availability_bridge_failure",
             "health_transition": "down_to_healthy",
             "no_artifacts": true,
-            "same_issue": true,
-            "rerun_command": "agentmesh app run --manifest x.toml"
+            "same_issue": true
         });
-        let first = run_production_authority(
-            &input,
-            &FakeRunner {
-                exit_code: 0,
-                stdout: vec![],
-                expected_args: None,
-            },
-        );
-        assert_eq!(
-            first["exit_reason"],
-            json!("cursor_recovery_retry_scheduled")
-        );
-        let second = run_production_authority(
-            &input,
-            &FakeRunner {
-                exit_code: 0,
-                stdout: vec![],
-                expected_args: None,
-            },
-        );
+        let runner = FakeRunner {
+            exit_code: 0,
+            stdout: br#"{"ok":true}"#.to_vec(),
+            expected_args: Some(vec![
+                "issue".into(),
+                "rerun".into(),
+                "AM-99".into(),
+                "--output".into(),
+                "json".into(),
+            ]),
+        };
+        let first = run_production_authority(&input, &runner);
+        assert_eq!(first["exit_reason"], json!("cursor_recovery_rerun_ok"));
+        assert_eq!(first["extra"]["retry_consumed"], json!(true));
+        let second = run_production_authority(&input, &runner);
         assert_eq!(
             second["exit_reason"],
             json!("cursor_recovery_retry_already_used")
@@ -1216,31 +1277,56 @@ mod tests {
     }
 
     #[test]
-    fn cursor_recovery_rejects_codex_fallback() {
+    fn cursor_recovery_failed_rerun_still_consumes_retry() {
         let dir = tempfile::tempdir().unwrap();
         let mut input = base_input(&dir, "todo_runner");
+        init_authority(input["ledger_path"].as_str().unwrap(), "todo_runner");
         input["operation"] = json!("cursor_recovery");
         input["cursor_recovery"] = json!({
-            "issue_id": "AM-99",
+            "issue_id": "AM-100",
             "failure_class": "availability_bridge_failure",
             "health_transition": "down_to_healthy",
             "no_artifacts": true,
-            "same_issue": true,
-            "rerun_command": "agentmesh app run",
-            "fallback_provider": "codex"
+            "same_issue": true
         });
+        let runner = FakeRunner {
+            exit_code: 1,
+            stdout: br#"{"error":"fail"}"#.to_vec(),
+            expected_args: Some(vec![
+                "issue".into(),
+                "rerun".into(),
+                "AM-100".into(),
+                "--output".into(),
+                "json".into(),
+            ]),
+        };
+        let first = run_production_authority(&input, &runner);
+        assert_eq!(first["valid"], json!(false));
+        assert_eq!(first["extra"]["retry_consumed"], json!(true));
+        let second = run_production_authority(&input, &runner);
+        assert_eq!(
+            second["exit_reason"],
+            json!("cursor_recovery_retry_already_used")
+        );
+    }
+
+    #[test]
+    fn wrong_mode_mutation_records_unauthorized_violation() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut input = base_input(&dir, "queue");
+        init_authority(input["ledger_path"].as_str().unwrap(), "safe_writer");
+        input["multica_operation"] = json!("queue_backlog_promote");
+        input["operation_params"] = json!({"issue_id": "AM-7"});
         let output = run_production_authority(
             &input,
             &FakeRunner {
                 exit_code: 0,
-                stdout: vec![],
+                stdout: br#"{}"#.to_vec(),
                 expected_args: None,
             },
         );
-        assert_eq!(
-            output["exit_reason"],
-            json!("cursor_recovery_fallback_forbidden")
-        );
+        assert_eq!(output["exit_reason"], json!("authority_mode_mismatch"));
+        assert!(output["ledger"]["violation"]["valid"] == json!(true));
     }
 
     #[test]
@@ -1270,5 +1356,22 @@ mod tests {
         );
         let dup = run_production_authority(&input, &runner);
         assert_eq!(dup["exit_reason"], json!("duplicate_suppressed"));
+    }
+
+    #[test]
+    fn scheduler_install_script_uses_scheduled_task_apis() {
+        let script =
+            include_str!("../../../scripts/task-scheduler/install-production-controller.ps1");
+        assert!(script.contains("New-ScheduledTaskAction"));
+        assert!(script.contains("Register-ScheduledTask"));
+        assert!(!script.contains("-Execute ('\"' +"));
+    }
+
+    #[test]
+    fn scheduler_rollback_checks_recorded_true() {
+        let script =
+            include_str!("../../../scripts/task-scheduler/rollback-production-controller.ps1");
+        assert!(script.contains("ConvertFrom-Json"));
+        assert!(script.contains("data.recorded"));
     }
 }

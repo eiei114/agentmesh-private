@@ -34,13 +34,47 @@ pub const ALLOWED_MULTICA_OPERATIONS: &[&str] = &[
     "safe_writer_issue_create",
     "safe_writer_issue_import",
     "queue_backlog_promote",
-    "todo_runner_assign_rerun",
+    "todo_runner_assign",
+    "todo_runner_rerun",
+    "cursor_recovery_rerun",
 ];
 
 const MAX_ISSUE_ID_CHARS: usize = 64;
 const MAX_TITLE_CHARS: usize = 256;
-const MAX_IMPORT_REF_CHARS: usize = 256;
 const MAX_UUID_CHARS: usize = 64;
+
+/// Validate a relative import path stays inside an allowlisted root directory.
+pub fn validate_import_description_file(
+    import_root: &Path,
+    description_file: &str,
+) -> Result<String, String> {
+    if description_file.is_empty() {
+        return Err("description_file is required".into());
+    }
+    if Path::new(description_file).is_absolute() {
+        return Err("description_file must be relative".into());
+    }
+    if description_file.contains('\\') {
+        return Err("description_file must use forward slashes".into());
+    }
+    let rel = Path::new(description_file);
+    for component in rel.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            return Err("description_file must not contain ..".into());
+        }
+    }
+    let root = import_root
+        .canonicalize()
+        .map_err(|_| "import_root does not exist".to_string())?;
+    let joined = root.join(rel);
+    let canonical = joined
+        .canonicalize()
+        .map_err(|_| "description_file does not exist under import_root".to_string())?;
+    if !canonical.starts_with(&root) {
+        return Err("description_file escapes import_root".into());
+    }
+    Ok(description_file.to_string())
+}
 
 /// Build shell-free argv for one allowed authority operation.
 pub fn build_allowed_operation_argv(
@@ -81,14 +115,24 @@ pub fn build_allowed_operation_argv(
             ])
         }
         "safe_writer_issue_import" => {
-            let import_ref = require_param_str(params, "import_ref")?;
-            validate_bounded_text("import_ref", &import_ref, MAX_IMPORT_REF_CHARS)?;
+            let title = require_param_str(params, "title")?;
+            let description_file = require_param_str(params, "description_file")?;
+            let project_id = require_param_str(params, "project_id")?;
+            let import_root = require_param_str(params, "import_root")?;
+            validate_bounded_text("title", &title, MAX_TITLE_CHARS)?;
+            validate_bounded_text("project_id", &project_id, MAX_ISSUE_ID_CHARS)?;
+            let rel = validate_import_description_file(Path::new(&import_root), &description_file)?;
             Ok(vec![
                 "issue".into(),
-                "import".into(),
-                "--input".into(),
-                import_ref,
-                "--no-start".into(),
+                "create".into(),
+                "--title".into(),
+                title,
+                "--description-file".into(),
+                rel,
+                "--project".into(),
+                project_id,
+                "--status".into(),
+                "todo".into(),
                 "--output".into(),
                 "json".into(),
             ])
@@ -107,19 +151,28 @@ pub fn build_allowed_operation_argv(
                 "json".into(),
             ])
         }
-        "todo_runner_assign_rerun" => {
+        "todo_runner_assign" => {
             let issue_id = require_param_str(params, "issue_id")?;
             let assignee_uuid = require_param_str(params, "assignee_uuid")?;
             validate_issue_id(&issue_id)?;
             validate_uuid(&assignee_uuid)?;
             Ok(vec![
                 "issue".into(),
-                "update".into(),
+                "assign".into(),
                 issue_id,
-                "--assignee".into(),
+                "--to-id".into(),
                 assignee_uuid,
-                "--rerun".into(),
-                "--no-start".into(),
+                "--output".into(),
+                "json".into(),
+            ])
+        }
+        "todo_runner_rerun" | "cursor_recovery_rerun" => {
+            let issue_id = require_param_str(params, "issue_id")?;
+            validate_issue_id(&issue_id)?;
+            Ok(vec![
+                "issue".into(),
+                "rerun".into(),
+                issue_id,
                 "--output".into(),
                 "json".into(),
             ])
@@ -927,6 +980,89 @@ mod tests {
         input["timeout_ms"] = json!(50);
         let output = run_multica_cli_adapter(&input, &OsProcessRunner);
         assert_eq!(output["exit_reason"], json!("input_invalid"));
+    }
+
+    #[test]
+    fn todo_runner_assign_builds_fixed_argv() {
+        let args = build_allowed_operation_argv(
+            "todo_runner_assign",
+            &json!({"issue_id": "AM-2", "assignee_uuid": "550e8400-e29b-41d4-a716-446655440000"}),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "issue",
+                "assign",
+                "AM-2",
+                "--to-id",
+                "550e8400-e29b-41d4-a716-446655440000",
+                "--output",
+                "json"
+            ]
+        );
+    }
+
+    #[test]
+    fn todo_runner_rerun_has_no_no_start() {
+        let args = build_allowed_operation_argv("todo_runner_rerun", &json!({"issue_id": "AM-3"}))
+            .unwrap();
+        assert_eq!(args, vec!["issue", "rerun", "AM-3", "--output", "json"]);
+        assert!(!args.contains(&"--no-start".to_string()));
+    }
+
+    #[test]
+    fn import_rejects_path_escape() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("imports");
+        std::fs::create_dir_all(&root).unwrap();
+        let err = validate_import_description_file(&root, "../outside.md").unwrap_err();
+        assert!(err.contains(".."));
+    }
+
+    #[test]
+    fn import_accepts_canonical_relative_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("imports");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("issue.md"), b"# issue").unwrap();
+        let rel = validate_import_description_file(&root, "issue.md").unwrap();
+        assert_eq!(rel, "issue.md");
+    }
+
+    #[test]
+    fn issue_import_builds_create_argv() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("imports");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("issue.md"), b"# issue").unwrap();
+        let args = build_allowed_operation_argv(
+            "safe_writer_issue_import",
+            &json!({
+                "title": "Imported",
+                "description_file": "issue.md",
+                "project_id": "agentmesh-private",
+                "import_root": root.to_string_lossy(),
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "issue",
+                "create",
+                "--title",
+                "Imported",
+                "--description-file",
+                "issue.md",
+                "--project",
+                "agentmesh-private",
+                "--status",
+                "todo",
+                "--output",
+                "json"
+            ]
+        );
     }
 
     #[test]

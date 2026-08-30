@@ -32,8 +32,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 foreach ($path in @($AgentMeshExe, $LedgerManifestPath, $ToolchainPin)) {
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "Missing required path: $path"
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Missing required file: $path"
     }
 }
 
@@ -58,11 +58,20 @@ $rollbackInput = @{
 $rollbackInputFile = Join-Path $env:TEMP ("agentmesh-rollback-input-$CorrelationId.json")
 Set-Content -LiteralPath $rollbackInputFile -Value $rollbackInput -Encoding UTF8
 
-& $AgentMeshExe app run `
+$ledgerStdout = & $AgentMeshExe app run `
     --manifest $LedgerManifestPath `
     --toolchain-pin $ToolchainPin `
-    --input $rollbackInputFile | Out-Null
-$rollbackRecorded = $LASTEXITCODE -eq 0
+    --input $rollbackInputFile 2>&1 | Out-String
+$ledgerExitCode = $LASTEXITCODE
+$rollbackRecorded = $false
+try {
+    $ledgerPayload = $ledgerStdout.Trim() | ConvertFrom-Json
+    if ($ledgerPayload.data.recorded -eq $true) {
+        $rollbackRecorded = $true
+    }
+} catch {
+    $rollbackRecorded = $false
+}
 
 Write-Output (@{
     task = $TaskName
@@ -70,5 +79,5 @@ Write-Output (@{
     reason_code = $ReasonCode
     correlation_id = $CorrelationId
     rollback_recorded = $rollbackRecorded
-    ledger_exit_code = $LASTEXITCODE
+    ledger_exit_code = $ledgerExitCode
 } | ConvertTo-Json -Compress)

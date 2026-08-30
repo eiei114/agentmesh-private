@@ -27,11 +27,6 @@
     "now": { "type": "string", "minLength": 1, "maxLength": 64 },
     "scope_key": { "type": "string", "minLength": 1, "maxLength": 256 },
     "lease_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "prefix_args": {
-      "type": "array",
-      "maxItems": 32,
-      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
-    },
     "lease_ttl_seconds": {
       "type": "integer",
       "minimum": 30,
@@ -48,7 +43,8 @@
         "safe_writer_issue_create",
         "safe_writer_issue_import",
         "queue_backlog_promote",
-        "todo_runner_assign_rerun"
+        "todo_runner_assign",
+        "todo_runner_rerun"
       ]
     },
     "operation_params": { "type": "object" },
@@ -63,17 +59,14 @@
         "failure_class",
         "health_transition",
         "no_artifacts",
-        "same_issue",
-        "rerun_command"
+        "same_issue"
       ],
       "properties": {
         "issue_id": { "type": "string", "minLength": 1, "maxLength": 64 },
         "failure_class": { "const": "availability_bridge_failure" },
         "health_transition": { "const": "down_to_healthy" },
         "no_artifacts": { "const": true },
-        "same_issue": { "const": true },
-        "rerun_command": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "fallback_provider": { "type": "string", "minLength": 1, "maxLength": 64 }
+        "same_issue": { "const": true }
       }
     }
   }

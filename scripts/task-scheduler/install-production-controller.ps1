@@ -25,11 +25,30 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-foreach ($path in @($AgentMeshExe, $ManifestPath, $ToolchainPin, $InputJson)) {
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "Missing required path: $path"
+function Test-RequiredFile([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Missing required file: $Path"
     }
 }
+
+function Test-RequiredDirectory([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        throw "Missing required directory: $Path"
+    }
+}
+
+function Format-ScheduledTaskArgument([string]$Value) {
+    if ($Value -match '[\s"]') {
+        return ('"' + $Value.Replace('"', '""') + '"')
+    }
+    return $Value
+}
+
+Test-RequiredFile -Path $AgentMeshExe
+Test-RequiredFile -Path $ManifestPath
+Test-RequiredFile -Path $ToolchainPin
+Test-RequiredFile -Path $InputJson
+Test-RequiredDirectory -Path $SidecarDir
 
 function Convert-Iso8601DurationToMinutes([string]$Duration) {
     if ($Duration -match '^PT(\d+)M$') {
@@ -40,16 +59,16 @@ function Convert-Iso8601DurationToMinutes([string]$Duration) {
 
 $intervalMinutes = Convert-Iso8601DurationToMinutes -Duration $Schedule
 
-$quotedArgs = @(
+$argumentParts = @(
     'app',
     'run',
-    '--manifest', ('"' + $ManifestPath.Replace('"', '""') + '"'),
-    '--toolchain-pin', ('"' + $ToolchainPin.Replace('"', '""') + '"'),
-    '--input', ('"' + $InputJson.Replace('"', '""') + '"'),
-    '--sidecar-dir', ('"' + $SidecarDir.Replace('"', '""') + '"')
-) -join ' '
+    '--manifest', $ManifestPath,
+    '--toolchain-pin', $ToolchainPin,
+    '--input', $InputJson,
+    '--sidecar-dir', $SidecarDir
+) | ForEach-Object { Format-ScheduledTaskArgument $_ }
 
-$action = New-ScheduledTaskAction -Execute ('"' + $AgentMeshExe.Replace('"', '""') + '"') -Argument $quotedArgs
+$action = New-ScheduledTaskAction -Execute $AgentMeshExe -Argument ($argumentParts -join ' ')
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
     -RepetitionInterval (New-TimeSpan -Minutes $intervalMinutes) `
     -RepetitionDuration ([TimeSpan]::MaxValue)

@@ -14,7 +14,7 @@ pub const LOCAL_CONTROL_LEDGER_VERSION: &str = "local-control-ledger.v0";
 const INPUT_SCHEMA_VERSION: &str = "local-control-ledger-input.v0";
 const OUTPUT_SCHEMA_VERSION: &str = "local-control-ledger-output.v0";
 /// SQLite schema version stored in `ledger_meta`.
-pub const LEDGER_DB_SCHEMA_VERSION: &str = "1";
+pub const LEDGER_DB_SCHEMA_VERSION: &str = "2";
 const BUSY_TIMEOUT_MS: i32 = 5_000;
 const MAX_ID_CHARS: usize = 128;
 const MAX_SCOPE_CHARS: usize = 256;
@@ -194,8 +194,9 @@ fn ensure_schema_version(conn: &Connection) -> Result<(), LedgerError> {
             |row| row.get(0),
         )
         .optional()?;
-    match stored {
+    match stored.as_deref() {
         Some(version) if version == LEDGER_DB_SCHEMA_VERSION => Ok(()),
+        Some("1") => migrate_v1_to_v2(conn),
         Some(version) => Err(LedgerError::Validation(format!(
             "ledger schema_version mismatch: expected {LEDGER_DB_SCHEMA_VERSION}, found {version}"
         ))),
@@ -203,6 +204,31 @@ fn ensure_schema_version(conn: &Connection) -> Result<(), LedgerError> {
             "ledger schema_version missing; run init".into(),
         )),
     }
+}
+
+fn migrate_v1_to_v2(conn: &Connection) -> Result<(), LedgerError> {
+    conn.execute_batch(
+        "
+        ALTER TABLE decisions ADD COLUMN authority_mode TEXT NOT NULL DEFAULT 'shadow';
+        ALTER TABLE decisions ADD COLUMN hard_gate_pass INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE violation_events ADD COLUMN authority_mode TEXT NOT NULL DEFAULT 'shadow';
+        CREATE TABLE IF NOT EXISTS idempotency_claims_v2 (
+            controller_id TEXT NOT NULL,
+            decision_hash TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            PRIMARY KEY (controller_id, decision_hash)
+        );
+        INSERT OR IGNORE INTO idempotency_claims_v2 (controller_id, decision_hash, recorded_at)
+            SELECT controller_id, decision_hash, recorded_at FROM idempotency_claims;
+        DROP TABLE idempotency_claims;
+        ALTER TABLE idempotency_claims_v2 RENAME TO idempotency_claims;
+        ",
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO ledger_meta (key, value) VALUES ('schema_version', ?1)",
+        params![LEDGER_DB_SCHEMA_VERSION],
+    )?;
+    Ok(())
 }
 
 /// Initialize ledger schema at the given path.
@@ -251,10 +277,12 @@ pub fn init_ledger(path: &Path) -> Result<(), LedgerError> {
         CREATE TABLE IF NOT EXISTS decisions (
             decision_id TEXT PRIMARY KEY,
             controller_id TEXT NOT NULL,
+            authority_mode TEXT NOT NULL,
             decision_code TEXT NOT NULL,
             result_code TEXT NOT NULL,
             input_hash TEXT NOT NULL,
             output_hash TEXT NOT NULL,
+            hard_gate_pass INTEGER NOT NULL,
             recorded_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS rollback_events (
@@ -267,14 +295,16 @@ pub fn init_ledger(path: &Path) -> Result<(), LedgerError> {
         CREATE TABLE IF NOT EXISTS violation_events (
             event_id TEXT PRIMARY KEY,
             controller_id TEXT NOT NULL,
+            authority_mode TEXT NOT NULL,
             violation_type TEXT NOT NULL,
             decision_hash TEXT NOT NULL,
             recorded_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS idempotency_claims (
-            decision_hash TEXT PRIMARY KEY,
             controller_id TEXT NOT NULL,
-            recorded_at TEXT NOT NULL
+            decision_hash TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            PRIMARY KEY (controller_id, decision_hash)
         );
         ",
     )?;
@@ -363,6 +393,10 @@ struct LedgerInput {
     violation_type: Option<String>,
     #[serde(default)]
     decision_hash: Option<String>,
+    #[serde(default)]
+    hard_gate_pass: Option<bool>,
+    #[serde(default)]
+    target_mode: Option<String>,
 }
 
 /// Run one ledger operation from opaque plugin input.
@@ -582,7 +616,7 @@ fn dispatch(
                     ));
                 }
             }
-            tx.execute(
+            let changed = tx.execute(
                 "INSERT INTO scope_claims (scope_key, claim_id, holder, acquired_at, expires_at, released_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, NULL)
                  ON CONFLICT(scope_key) DO UPDATE SET
@@ -594,6 +628,14 @@ fn dispatch(
                  WHERE scope_claims.released_at IS NOT NULL OR scope_claims.expires_at <= ?4",
                 params![scope_key, claim_id, holder, acquired_at, expires_at],
             )?;
+            if changed == 0 {
+                tx.commit()?;
+                return Ok((
+                    json!({"scope_key": scope_key, "claimed": false, "reclaimed_expired": reclaimed > 0}),
+                    "scope_claim_conflict",
+                    false,
+                ));
+            }
             tx.commit()?;
             Ok((
                 json!({"scope_key": scope_key, "claimed": true, "reclaimed_expired": reclaimed > 0}),
@@ -736,13 +778,16 @@ fn dispatch(
         "record_decision" => {
             let controller_id = require(input.controller_id.as_deref(), "controller_id")?;
             let decision_id = require(input.decision_id.as_deref(), "decision_id")?;
+            let authority_mode = require(input.authority_mode.as_deref(), "authority_mode")?;
             let decision_code = require(input.decision_code.as_deref(), "decision_code")?;
             let result_code = require(input.result_code.as_deref(), "result_code")?;
             let input_hash = require(input.input_hash.as_deref(), "input_hash")?;
             let output_hash = require(input.output_hash.as_deref(), "output_hash")?;
+            let hard_gate_pass = input.hard_gate_pass.unwrap_or(true);
             let recorded_at = require(input.recorded_at.as_deref(), "recorded_at")?;
             validate_id("controller_id", controller_id)?;
             validate_id("decision_id", decision_id)?;
+            validate_authority_mode(authority_mode)?;
             validate_code("decision_code", decision_code)?;
             validate_code("result_code", result_code)?;
             validate_hash("input_hash", input_hash)?;
@@ -751,15 +796,17 @@ fn dispatch(
             let conn = open_ledger(path)?;
             conn.execute(
                 "INSERT OR REPLACE INTO decisions
-                 (decision_id, controller_id, decision_code, result_code, input_hash, output_hash, recorded_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (decision_id, controller_id, authority_mode, decision_code, result_code, input_hash, output_hash, hard_gate_pass, recorded_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     decision_id,
                     controller_id,
+                    authority_mode,
                     decision_code,
                     result_code,
                     input_hash,
                     output_hash,
+                    i64::from(hard_gate_pass),
                     recorded_at
                 ],
             )?;
@@ -797,55 +844,62 @@ fn dispatch(
         }
         "get_promotion_metrics" => {
             let controller_id = require(input.controller_id.as_deref(), "controller_id")?;
+            let target_mode = require(input.target_mode.as_deref(), "target_mode")?;
             let since_ts = require(input.since_ts.as_deref(), "since_ts")?;
             let until_ts = require(input.until_ts.as_deref(), "until_ts")?;
             validate_id("controller_id", controller_id)?;
+            validate_authority_mode(target_mode)?;
             validate_ts(since_ts)?;
             validate_ts(until_ts)?;
             let conn = open_ledger(path)?;
             let decision_count: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM decisions
-                 WHERE controller_id = ?1 AND recorded_at >= ?2 AND recorded_at <= ?3",
-                params![controller_id, since_ts, until_ts],
+                 WHERE controller_id = ?1 AND authority_mode = ?2
+                   AND recorded_at >= ?3 AND recorded_at <= ?4",
+                params![controller_id, target_mode, since_ts, until_ts],
                 |row| row.get(0),
             )?;
             let hard_gate_failures: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM decisions
-                 WHERE controller_id = ?1 AND recorded_at >= ?2 AND recorded_at <= ?3
-                   AND result_code LIKE 'hard_gate_%'",
-                params![controller_id, since_ts, until_ts],
+                 WHERE controller_id = ?1 AND authority_mode = ?2
+                   AND recorded_at >= ?3 AND recorded_at <= ?4
+                   AND hard_gate_pass = 0",
+                params![controller_id, target_mode, since_ts, until_ts],
                 |row| row.get(0),
             )?;
             let unauthorized_writes: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM violation_events
-                 WHERE controller_id = ?1 AND violation_type = 'unauthorized_write'
-                   AND recorded_at >= ?2 AND recorded_at <= ?3",
-                params![controller_id, since_ts, until_ts],
+                 WHERE controller_id = ?1 AND authority_mode = ?2
+                   AND violation_type = 'unauthorized_write'
+                   AND recorded_at >= ?3 AND recorded_at <= ?4",
+                params![controller_id, target_mode, since_ts, until_ts],
                 |row| row.get(0),
             )?;
             let duplicate_mutations: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM violation_events
-                 WHERE controller_id = ?1 AND violation_type = 'duplicate_mutation'
-                   AND recorded_at >= ?2 AND recorded_at <= ?3",
-                params![controller_id, since_ts, until_ts],
+                 WHERE controller_id = ?1 AND authority_mode = ?2
+                   AND violation_type = 'duplicate_mutation'
+                   AND recorded_at >= ?3 AND recorded_at <= ?4",
+                params![controller_id, target_mode, since_ts, until_ts],
                 |row| row.get(0),
             )?;
             let duplicate_starts: i64 = conn.query_row(
                 "SELECT COUNT(*) FROM violation_events
-                 WHERE controller_id = ?1 AND violation_type = 'duplicate_start'
-                   AND recorded_at >= ?2 AND recorded_at <= ?3",
-                params![controller_id, since_ts, until_ts],
+                 WHERE controller_id = ?1 AND authority_mode = ?2
+                   AND violation_type = 'duplicate_start'
+                   AND recorded_at >= ?3 AND recorded_at <= ?4",
+                params![controller_id, target_mode, since_ts, until_ts],
                 |row| row.get(0),
             )?;
-            let hard_gate_total = decision_count + hard_gate_failures;
-            let hard_gate_parity_pct = if hard_gate_total == 0 {
-                100
+            let hard_gate_parity_pct = if decision_count == 0 {
+                0
             } else {
-                (decision_count * 100) / hard_gate_total
+                ((decision_count - hard_gate_failures) * 100) / decision_count
             };
             Ok((
                 json!({
                     "controller_id": controller_id,
+                    "target_mode": target_mode,
                     "decision_count": decision_count,
                     "hard_gate_failures": hard_gate_failures,
                     "hard_gate_parity_pct": hard_gate_parity_pct,
@@ -866,9 +920,9 @@ fn dispatch(
             validate_ts(recorded_at)?;
             let conn = open_ledger(path)?;
             let inserted = conn.execute(
-                "INSERT OR IGNORE INTO idempotency_claims (decision_hash, controller_id, recorded_at)
+                "INSERT OR IGNORE INTO idempotency_claims (controller_id, decision_hash, recorded_at)
                  VALUES (?1, ?2, ?3)",
-                params![decision_hash, controller_id, recorded_at],
+                params![controller_id, decision_hash, recorded_at],
             )?;
             Ok((
                 json!({
@@ -886,11 +940,13 @@ fn dispatch(
         }
         "record_violation" => {
             let controller_id = require(input.controller_id.as_deref(), "controller_id")?;
+            let authority_mode = require(input.authority_mode.as_deref(), "authority_mode")?;
             let event_id = require(input.event_id.as_deref(), "event_id")?;
             let violation_type = require(input.violation_type.as_deref(), "violation_type")?;
             let decision_hash = require(input.decision_hash.as_deref(), "decision_hash")?;
             let recorded_at = require(input.recorded_at.as_deref(), "recorded_at")?;
             validate_id("controller_id", controller_id)?;
+            validate_authority_mode(authority_mode)?;
             validate_id("event_id", event_id)?;
             validate_code("violation_type", violation_type)?;
             validate_hash("decision_hash", decision_hash)?;
@@ -908,11 +964,12 @@ fn dispatch(
             let conn = open_ledger(path)?;
             conn.execute(
                 "INSERT OR REPLACE INTO violation_events
-                 (event_id, controller_id, violation_type, decision_hash, recorded_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                 (event_id, controller_id, authority_mode, violation_type, decision_hash, recorded_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     event_id,
                     controller_id,
+                    authority_mode,
                     violation_type,
                     decision_hash,
                     recorded_at
@@ -957,7 +1014,7 @@ mod tests {
         let path = dir.path().join("control.db");
         let init = run_local_control_ledger(&ledger_input("init", &path));
         assert_eq!(init["valid"], json!(true));
-        assert_eq!(init["data"]["ledger_schema_version"], json!("1"));
+        assert_eq!(init["data"]["ledger_schema_version"], json!("2"));
 
         let mut set = ledger_input("set_authority_mode", &path);
         set["controller_id"] = json!("workflow_audit");
@@ -1098,11 +1155,81 @@ mod tests {
         let mut record = ledger_input("record_decision", &path);
         record["controller_id"] = json!("workflow_audit");
         record["decision_id"] = json!("dec-1");
+        record["authority_mode"] = json!("observer");
         record["decision_code"] = json!("audit_preflight");
+        record["hard_gate_pass"] = json!(true);
         record["result_code"] = json!("no_mutation");
         record["input_hash"] = json!("sha256:abc");
         record["output_hash"] = json!("sha256:def");
         record["recorded_at"] = json!("2026-08-30T12:00:00+09:00");
         assert_eq!(run_local_control_ledger(&record)["valid"], json!(true));
+    }
+
+    #[test]
+    fn concurrent_same_scope_claim_conflicts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = Arc::new(dir.path().join("control.db"));
+        run_local_control_ledger(&ledger_input("init", path.as_path()));
+
+        let barrier = Arc::new(Barrier::new(2));
+        let path_a = Arc::clone(&path);
+        let barrier_a = Arc::clone(&barrier);
+        let handle_a = thread::spawn(move || {
+            barrier_a.wait();
+            let mut claim = ledger_input("claim_scope", path_a.as_path());
+            claim["scope_key"] = json!("scope-shared");
+            claim["claim_id"] = json!("claim-a");
+            claim["holder"] = json!("controller-a");
+            claim["acquired_at"] = json!("2026-08-30T12:00:00+09:00");
+            claim["expires_at"] = json!("2026-08-30T12:05:00+09:00");
+            run_local_control_ledger(&claim)
+        });
+        let path_b = Arc::clone(&path);
+        let barrier_b = Arc::clone(&barrier);
+        let handle_b = thread::spawn(move || {
+            barrier_b.wait();
+            let mut claim = ledger_input("claim_scope", path_b.as_path());
+            claim["scope_key"] = json!("scope-shared");
+            claim["claim_id"] = json!("claim-b");
+            claim["holder"] = json!("controller-b");
+            claim["acquired_at"] = json!("2026-08-30T12:00:00+09:00");
+            claim["expires_at"] = json!("2026-08-30T12:05:00+09:00");
+            run_local_control_ledger(&claim)
+        });
+        let result_a = handle_a.join().unwrap();
+        let result_b = handle_b.join().unwrap();
+        let wins = [&result_a, &result_b]
+            .iter()
+            .filter(|r| r["data"]["claimed"] == json!(true))
+            .count();
+        assert_eq!(wins, 1);
+    }
+
+    #[test]
+    fn promotion_metrics_filter_by_target_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control.db");
+        run_local_control_ledger(&ledger_input("init", &path));
+        for (idx, mode) in ["observer", "safe_writer"].iter().enumerate() {
+            let mut record = ledger_input("record_decision", &path);
+            record["controller_id"] = json!("workflow_audit");
+            record["decision_id"] = json!(format!("dec-{idx}"));
+            record["authority_mode"] = json!(mode);
+            record["decision_code"] = json!("run_once");
+            record["result_code"] = json!("ok");
+            record["input_hash"] = json!(format!("sha256:in{idx}"));
+            record["output_hash"] = json!(format!("sha256:out{idx}"));
+            record["hard_gate_pass"] = json!(idx == 0);
+            record["recorded_at"] = json!("2026-08-30T12:00:00+09:00");
+            assert_eq!(run_local_control_ledger(&record)["valid"], json!(true));
+        }
+        let mut metrics = ledger_input("get_promotion_metrics", &path);
+        metrics["controller_id"] = json!("workflow_audit");
+        metrics["target_mode"] = json!("observer");
+        metrics["since_ts"] = json!("2026-08-30T11:00:00+09:00");
+        metrics["until_ts"] = json!("2026-08-30T13:00:00+09:00");
+        let got = run_local_control_ledger(&metrics);
+        assert_eq!(got["data"]["decision_count"], json!(1));
+        assert_eq!(got["data"]["hard_gate_parity_pct"], json!(100));
     }
 }
