@@ -216,7 +216,10 @@ console.log(JSON.stringify({readOnly:true,results:[{path:'docs/Adaptive.md',why:
             namespace: "test".into(),
             sensitivity_ceiling: "internal".into(),
             max_sources: 6,
-            timeout_ms: 5_000,
+            // Shared CI runners can exceed the 4s discovery budget with cold
+            // node spawns; an expired discovery silently falls back to the
+            // manifest scan, which drops the scope-filter trace this test asserts.
+            timeout_ms: 30_000,
             decision_scope: agentmesh_evidence::DecisionScope::Current,
             mode: EvidenceMode::QmdOnly,
         },
@@ -270,7 +273,9 @@ fn current_scope_excludes_candidate_without_starving_adopted_source() {
             namespace: "test".into(),
             sensitivity_ceiling: "internal".into(),
             max_sources: 1,
-            timeout_ms: 5_000,
+            // Keep discovery alive on slow CI so the rejection is recorded
+            // through the qmd path instead of the manifest fallback.
+            timeout_ms: 30_000,
             decision_scope: agentmesh_evidence::DecisionScope::Current,
             mode: EvidenceMode::DirectQmd,
         },
