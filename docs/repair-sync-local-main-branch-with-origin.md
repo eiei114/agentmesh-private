@@ -1,6 +1,6 @@
 # Repair request: sync local main branch with origin
 
-Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555, DOT-1578, DOT-1615, DOT-1641, DOT-1703, DOT-1733
+Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555, DOT-1578, DOT-1615, DOT-1641, DOT-1703, DOT-1733, DOT-1742
 
 ## Failure code
 
@@ -108,6 +108,23 @@ ad-hoc Git command sequence.
 - repair run: `before_ahead=0`, `before_behind=1`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
 - repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/cursor-composer-builder/77ba37305078`, `current_head=014931466b58e2f92c6a4cf0a6c8c368b45dc4e9`, `branch=main`, `head=014931466b58e2f92c6a4cf0a6c8c368b45dc4e9`, `ahead=0`, `behind=0`, `dirty_count=0`
+- post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
+
+## DOT-1742 execution record
+
+- request_id: `DOT-1742`
+- executed_at: `2026-09-07` (JST)
+- source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-09-07-synchronize-local-main-with-origin-main-safely.md`
+- derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-09-07-synchronize-local-main-with-origin-main-safely.md`
+- dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-09-07-synchronize-local-main-with-origin-main-safely.md`
+- stable scope: `agentmesh:agentmesh-private:repo-main-behind`
+- request status: `ready_for_multica=true`, `status=ready`
+- audited branch: `main`
+- preserved local state before repair: `refs/heads/main=014931466b58e2f92c6a4cf0a6c8c368b45dc4e9`, `refs/remotes/origin/main=8f3091caa32f586bf4bc47f4c2d11ff30da4977a`, `before_ahead=0`, `before_behind=1`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
+- pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=1`, `after_behind=1`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
+- repair run: `before_ahead=0`, `before_behind=1`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
+- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- post-repair repo metadata: `current_branch=agent/cursor-composer-builder-2/0d65f9bb1842`, `current_head=8f3091caa32f586bf4bc47f4c2d11ff30da4977a`, `branch=main`, `head=8f3091caa32f586bf4bc47f4c2d11ff30da4977a`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
 ## DOT-1703 execution record
