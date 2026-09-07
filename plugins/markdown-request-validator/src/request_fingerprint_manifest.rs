@@ -3,6 +3,9 @@
 //! The manifest is a JSON/Markdown hybrid for comparing `agentmesh-request.v0`
 //! inputs across non-Multica adapters without parsing tracker-owned payloads.
 
+use crate::adapter_compact_helpers::{
+    adapter_error_record as error, canonical_json_bytes, error_codes, inline_json, markdown_cell,
+};
 use agentmesh_evidence::sha256_prefixed;
 use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
@@ -786,69 +789,6 @@ fn manifest_markdown(manifest: &Value) -> String {
     writeln!(out).expect("write markdown");
     writeln!(out, "```").expect("write markdown");
     out
-}
-
-fn error(
-    code: &str,
-    category: &str,
-    path: Option<impl Into<String>>,
-    message: impl Into<String>,
-) -> Value {
-    json!({
-        "code": code,
-        "category": category,
-        "severity": "error",
-        "path": path.map(Into::into),
-        "message": message.into(),
-    })
-}
-
-fn error_codes(errors: &[Value]) -> Vec<String> {
-    errors
-        .iter()
-        .filter_map(|error| {
-            error
-                .get("code")
-                .and_then(Value::as_str)
-                .map(ToString::to_string)
-        })
-        .collect()
-}
-
-fn sort_json_keys(value: Value) -> Value {
-    match value {
-        Value::Object(object) => {
-            let mut entries: Vec<_> = object.into_iter().collect();
-            entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-
-            let mut sorted = Map::new();
-            for (key, value) in entries {
-                sorted.insert(key, sort_json_keys(value));
-            }
-            Value::Object(sorted)
-        }
-        Value::Array(values) => Value::Array(values.into_iter().map(sort_json_keys).collect()),
-        value => value,
-    }
-}
-
-fn canonical_json_bytes(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(&sort_json_keys(value.clone())).expect("serialize canonical json")
-}
-
-fn json_compact(value: &Value) -> String {
-    serde_json::to_string(value).expect("serialize value")
-}
-
-fn inline_json(value: &Value) -> String {
-    format!("`{}`", json_compact(value).replace('`', "\\`"))
-}
-
-fn markdown_cell(text: impl AsRef<str>) -> String {
-    text.as_ref()
-        .replace('`', "\\`")
-        .replace('|', "\\|")
-        .replace('\n', "\\n")
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@
 //! document, projects only the tool-neutral request fields local runners need,
 //! and emits byte-stable JSON/Markdown previews for fixture comparison.
 
+use crate::adapter_compact_helpers::{canonical_json_bytes, sort_json_keys};
 use agentmesh_evidence::sha256_prefixed;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -960,27 +961,6 @@ fn remediation_hint(code: &str) -> &'static str {
 
 fn collapse_inline_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn sort_json_keys(value: Value) -> Value {
-    match value {
-        Value::Object(object) => {
-            let mut entries: Vec<_> = object.into_iter().collect();
-            entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-
-            let mut sorted = Map::new();
-            for (key, value) in entries {
-                sorted.insert(key, sort_json_keys(value));
-            }
-            Value::Object(sorted)
-        }
-        Value::Array(values) => Value::Array(values.into_iter().map(sort_json_keys).collect()),
-        value => value,
-    }
-}
-
-fn canonical_json_bytes(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(&sort_json_keys(value.clone())).expect("serialize canonical json")
 }
 
 #[cfg(test)]

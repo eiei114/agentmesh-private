@@ -3,6 +3,7 @@
 //! This plugin accepts one Markdown request document as JSON, validates the
 //! deterministic request contract, and emits a compact adapter-neutral result.
 
+pub mod adapter_compact_helpers;
 pub mod adapter_error_contract;
 pub mod request_dry_run_summary;
 pub mod request_fingerprint_manifest;

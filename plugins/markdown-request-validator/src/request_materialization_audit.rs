@@ -6,6 +6,7 @@
 //! stable scope so local/non-Multica runners can suppress equivalent duplicates
 //! while surfacing conflicting same-scope edits.
 
+use crate::adapter_compact_helpers::{adapter_error_record as error, canonical_json_bytes};
 use agentmesh_evidence::sha256_prefixed;
 use serde_json::{json, Map, Value};
 use serde_yaml::Value as YamlValue;
@@ -1129,42 +1130,6 @@ fn source_values(sources: &[SourceAudit]) -> Vec<Value> {
             })
         })
         .collect()
-}
-
-fn error(
-    code: &str,
-    category: &str,
-    path: Option<impl Into<String>>,
-    message: impl Into<String>,
-) -> Value {
-    json!({
-        "code": code,
-        "category": category,
-        "severity": "error",
-        "path": path.map(Into::into),
-        "message": message.into(),
-    })
-}
-
-fn sort_json_keys(value: Value) -> Value {
-    match value {
-        Value::Object(object) => {
-            let mut entries: Vec<_> = object.into_iter().collect();
-            entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
-
-            let mut sorted = Map::new();
-            for (key, value) in entries {
-                sorted.insert(key, sort_json_keys(value));
-            }
-            Value::Object(sorted)
-        }
-        Value::Array(values) => Value::Array(values.into_iter().map(sort_json_keys).collect()),
-        value => value,
-    }
-}
-
-fn canonical_json_bytes(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(&sort_json_keys(value.clone())).expect("serialize canonical json")
 }
 
 #[cfg(test)]
