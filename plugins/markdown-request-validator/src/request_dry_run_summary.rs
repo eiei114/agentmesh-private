@@ -5,6 +5,9 @@
 //! block so non-Multica runtimes can compare dry-run outcomes without tracker
 //! fields leaking into the contract.
 
+use crate::adapter_compact_helpers::{
+    adapter_error_record as error, error_codes, inline_json, json_compact, markdown_cell,
+};
 use serde_json::{json, Map, Value};
 use std::fmt::Write as _;
 
@@ -593,48 +596,6 @@ fn preview_markdown(
     writeln!(out).expect("write markdown");
     writeln!(out, "```").expect("write markdown");
     out
-}
-
-fn error(
-    code: &str,
-    category: &str,
-    path: Option<impl Into<String>>,
-    message: impl Into<String>,
-) -> Value {
-    json!({
-        "code": code,
-        "category": category,
-        "severity": "error",
-        "path": path.map(Into::into),
-        "message": message.into(),
-    })
-}
-
-fn error_codes(errors: &[Value]) -> Vec<String> {
-    errors
-        .iter()
-        .filter_map(|error| {
-            error
-                .get("code")
-                .and_then(Value::as_str)
-                .map(ToString::to_string)
-        })
-        .collect()
-}
-
-fn json_compact(value: &Value) -> String {
-    serde_json::to_string(value).expect("serialize value")
-}
-
-fn inline_json(value: &Value) -> String {
-    format!("`{}`", json_compact(value).replace('`', "\\`"))
-}
-
-fn markdown_cell(text: impl AsRef<str>) -> String {
-    text.as_ref()
-        .replace('`', "\\`")
-        .replace('|', "\\|")
-        .replace('\n', "\\n")
 }
 
 #[cfg(test)]
