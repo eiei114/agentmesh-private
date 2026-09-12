@@ -64,10 +64,12 @@ $RunnerScript = Join-Path $PSScriptRoot "run-production-controller.ps1"
 $RollbackScript = Join-Path $PSScriptRoot "rollback-production-controller.ps1"
 $RollbackParser = Join-Path $PSScriptRoot "rollback-ledger-parse.ps1"
 $UninstallScript = Join-Path $PSScriptRoot "uninstall-production-controller.ps1"
+$LauncherScript = Join-Path $PSScriptRoot "hidden-launch.vbs"
 Test-RequiredFile -Path $RunnerScript
 Test-RequiredFile -Path $RollbackScript
 Test-RequiredFile -Path $RollbackParser
 Test-RequiredFile -Path $UninstallScript
+Test-RequiredFile -Path $LauncherScript
 
 function Get-Sha256([string]$Path) {
     $sha256 = [System.Security.Cryptography.SHA256]::Create()
@@ -211,6 +213,7 @@ $sourceDescriptor = @(
     "rollback=$(Get-Sha256 -Path $RollbackScript)"
     "rollback-parser=$(Get-Sha256 -Path $RollbackParser)"
     "uninstall=$(Get-Sha256 -Path $UninstallScript)"
+    "launcher=$(Get-Sha256 -Path $LauncherScript)"
     "pin=$(Get-Sha256 -Path $ToolchainPin)"
     "input=$(Get-Sha256 -Path $InputJson)"
 ) + @(Get-TreeDescriptor -Root $manifestRoot -Prefix "app") + @(
@@ -233,6 +236,7 @@ if (-not (Test-Path -LiteralPath $assetDir -PathType Container)) {
         Copy-Item -LiteralPath $RollbackScript -Destination (Join-Path $stageDir "rollback-production-controller.ps1")
         Copy-Item -LiteralPath $RollbackParser -Destination (Join-Path $stageDir "rollback-ledger-parse.ps1")
         Copy-Item -LiteralPath $UninstallScript -Destination (Join-Path $stageDir "uninstall-production-controller.ps1")
+        Copy-Item -LiteralPath $LauncherScript -Destination (Join-Path $stageDir "hidden-launch.vbs")
         Copy-Item -LiteralPath $ToolchainPin -Destination (Join-Path $stageDir "toolchain-pin.toml")
         Copy-Item -LiteralPath $InputJson -Destination (Join-Path $stageDir "input-template.json")
         Copy-Item -LiteralPath $manifestRoot -Destination (Join-Path $stageDir "app") -Recurse
@@ -256,6 +260,7 @@ $durableRunner = Join-Path $assetDir "run-production-controller.ps1"
 $durableRollback = Join-Path $assetDir "rollback-production-controller.ps1"
 $durableRollbackParser = Join-Path $assetDir "rollback-ledger-parse.ps1"
 $durableUninstall = Join-Path $assetDir "uninstall-production-controller.ps1"
+$durableLauncher = Join-Path $assetDir "hidden-launch.vbs"
 $durablePin = Join-Path $assetDir "toolchain-pin.toml"
 $durableInput = Join-Path $assetDir "input-template.json"
 $durableManifestRoot = Join-Path $assetDir "app"
@@ -270,6 +275,7 @@ $durableDescriptor = @(
     "rollback=$(Get-Sha256 -Path $durableRollback)"
     "rollback-parser=$(Get-Sha256 -Path $durableRollbackParser)"
     "uninstall=$(Get-Sha256 -Path $durableUninstall)"
+    "launcher=$(Get-Sha256 -Path $durableLauncher)"
     "pin=$(Get-Sha256 -Path $durablePin)"
     "input=$(Get-Sha256 -Path $durableInput)"
 ) + @(Get-TreeDescriptor -Root $durableManifestRoot -Prefix "app") + @(
@@ -300,6 +306,7 @@ if ($PrepareOnly) {
         rollback_script = $durableRollback
         rollback_parser = $durableRollbackParser
         uninstall_script = $durableUninstall
+        launcher_script = $durableLauncher
         manifest = $ManifestPath
         ledger_manifest = $LedgerManifestPath
         toolchain_pin = $ToolchainPin
@@ -329,11 +336,27 @@ $argumentParts = @(
 ) | ForEach-Object { Format-ScheduledTaskArgument $_ }
 
 $PowerShellExe = (Get-Process -Id $PID).Path
-$action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument ($argumentParts -join ' ')
+$runnerArguments = $argumentParts -join ' '
+
+# A bare powershell.exe task action flashes a console window on hosts where Windows
+# Terminal is the default terminal application, because the window exists before the
+# host hides it. Register the task through the shipped WScript launcher instead: it
+# is a windowless host, waits for PowerShell, and returns the runner exit code, so a
+# failed runner still fails the task. `conhost.exe --headless` cannot be used here
+# because it never reports the child exit code. Hosts without WScript keep the
+# direct action and accept the brief window.
+$wscriptExe = Join-Path $env:SystemRoot "System32\wscript.exe"
+if (Test-Path -LiteralPath $wscriptExe -PathType Leaf) {
+    $launcher = "wscript-hidden"
+    $action = New-ScheduledTaskAction -Execute $wscriptExe -Argument ("`"$durableLauncher`" `"$PowerShellExe`" $runnerArguments")
+} else {
+    $launcher = "powershell"
+    $action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument $runnerArguments
+}
 $trigger = New-ScheduledTaskTrigger -Once -At $startAt `
     -RepetitionInterval (New-TimeSpan -Minutes $intervalMinutes) `
     -RepetitionDuration $repetitionDuration
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
-Write-Output (@{ task = $TaskName; status = "installed"; schedule = $Schedule; interval_minutes = $intervalMinutes; schedule_anchor_utc = $anchorUtc; asset_hash = $assetHash; asset_dir = $assetDir; agentmesh_exe = $AgentMeshExe; runner = $RunnerScript; rollback_script = $durableRollback; rollback_parser = $durableRollbackParser; uninstall_script = $durableUninstall; manifest = $ManifestPath; ledger_manifest = $LedgerManifestPath; toolchain_pin = $ToolchainPin; toolchain_cache = $ToolchainCache; input_template = $InputJson } | ConvertTo-Json -Compress)
+Write-Output (@{ task = $TaskName; status = "installed"; schedule = $Schedule; interval_minutes = $intervalMinutes; schedule_anchor_utc = $anchorUtc; launcher = $launcher; launcher_script = $durableLauncher; asset_hash = $assetHash; asset_dir = $assetDir; agentmesh_exe = $AgentMeshExe; runner = $RunnerScript; rollback_script = $durableRollback; rollback_parser = $durableRollbackParser; uninstall_script = $durableUninstall; manifest = $ManifestPath; ledger_manifest = $LedgerManifestPath; toolchain_pin = $ToolchainPin; toolchain_cache = $ToolchainCache; input_template = $InputJson } | ConvertTo-Json -Compress)

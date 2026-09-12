@@ -21,6 +21,7 @@ All notable changes to this private Phase 0 workspace are documented here.
 
 ### Changed
 
+- Task Scheduler installer: register the task through the shipped `hidden-launch.vbs` WScript launcher so scheduled runs never flash a console window when Windows Terminal is the default terminal application. The launcher waits for PowerShell and returns the runner exit code, so failures still fail the task; `conhost.exe --headless` is not used because it never reports the child exit code. Hosts without `wscript.exe` keep the direct `powershell.exe` action, and the installer reports the chosen launcher and its durable path in its JSON output.
 - README workspace list: move `agentmesh-evidence` out of the `default-members` section to match root `Cargo.toml`.
 - Evidence promotion now applies the recorded 17/20 hit and 6/20 complete
   baseline to fused QMD, requires a fresh graph for every hybrid fixture, and
