@@ -100,6 +100,18 @@ Registered tasks use a schema-valid 3,650-day repetition horizon; rerun the
 installer before that horizon expires instead of serializing unsupported
 `TimeSpan.MaxValue`.
 
+On hosts with Windows Script Host, the installer registers the task through the
+shipped `hidden-launch.vbs` launcher (`wscript.exe`) instead of a bare
+`powershell.exe` action. A bare action flashes a console window on hosts where
+Windows Terminal is the default terminal application, because the window exists
+before it can be hidden. The launcher is windowless, waits for PowerShell, and
+exits with the runner exit code, so a failed runner still fails the task.
+`conhost.exe --headless` is deliberately not used: it never reports the child exit
+code, which would turn runner failures into task successes. Hosts without
+`wscript.exe` keep the direct action and accept the brief window. The installer
+reports the chosen launcher as `launcher` (`wscript-hidden` or `powershell`) and
+the durable launcher path as `launcher_script`.
+
 Task Scheduler success requires both process exit zero and a valid compact
 observer result. Only `observer_success_no_mutation` with a successful,
 non-truncated CLI summary and complete ledger receipts is success. A duplicate

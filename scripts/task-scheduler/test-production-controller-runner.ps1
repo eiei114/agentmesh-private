@@ -318,6 +318,60 @@ $global:LASTEXITCODE = 0
         throw "installer did not register the disposable scheduler task"
     }
     $registeredTask = Get-ScheduledTask -TaskName $registrationTaskName -ErrorAction Stop
+    $wscriptExe = Join-Path $env:SystemRoot "System32\wscript.exe"
+    $wscriptAvailable = Test-Path -LiteralPath $wscriptExe -PathType Leaf
+    $expectedLauncher = if ($wscriptAvailable) { "wscript-hidden" } else { "powershell" }
+    if ($installed.launcher -ne $expectedLauncher) {
+        throw "installer reported unexpected launcher '$($installed.launcher)'"
+    }
+    $registeredActions = @($registeredTask.Actions)
+    if ($registeredActions.Count -ne 1) {
+        throw "disposable scheduler task registered $($registeredActions.Count) actions"
+    }
+    $registeredAction = $registeredActions[0]
+    $registeredArguments = [string]$registeredAction.Arguments
+    if ($wscriptAvailable) {
+        if ((Split-Path -Leaf ([string]$registeredAction.Execute)) -ine "wscript.exe") {
+            throw "scheduler task must launch through the windowless WScript launcher: $($registeredAction.Execute)"
+        }
+        if ($registeredArguments -notmatch [regex]::Escape([string]$installed.launcher_script)) {
+            throw "scheduler task action does not use the durable launcher asset"
+        }
+    } elseif ((Split-Path -Leaf ([string]$registeredAction.Execute)) -ine "powershell.exe") {
+        throw "scheduler task launch executable changed on this host: $($registeredAction.Execute)"
+    }
+    if ($registeredArguments -notmatch [regex]::Escape([string]$prepared.runner)) {
+        throw "scheduler task action does not call the durable runner asset"
+    }
+    if ($registeredArguments -match "--headless") {
+        throw "conhost.exe --headless never returns the runner exit code and must not be used"
+    }
+
+    # A windowless launcher must still fail the task when the runner fails.
+    # `conhost.exe --headless` reported zero for a failing child, which would turn
+    # runner failures into task successes.
+    if ($wscriptAvailable) {
+        $exitScript = Join-Path $root "exit-21.ps1"
+        Set-Content -LiteralPath $exitScript -Value "exit 21" -Encoding UTF8
+        $exitTaskName = "AgentMesh-Runner-Exit-$PID-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+        $exitAction = New-ScheduledTaskAction -Execute $wscriptExe -Argument ("`"$($installed.launcher_script)`" `"$((Get-Process -Id $PID).Path)`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$exitScript`"")
+        Register-ScheduledTask -TaskName $exitTaskName -Action $exitAction -Force | Out-Null
+        try {
+            Start-ScheduledTask -TaskName $exitTaskName
+            $exitDeadline = (Get-Date).AddSeconds(60)
+            $exitResult = 267009
+            while ($exitResult -eq 267009 -and (Get-Date) -lt $exitDeadline) {
+                Start-Sleep -Milliseconds 500
+                $exitResult = [int64](Get-ScheduledTaskInfo -TaskName $exitTaskName).LastTaskResult
+            }
+            if ($exitResult -ne 21) {
+                throw "windowless launcher did not propagate the runner exit code: $exitResult"
+            }
+        } finally {
+            Unregister-ScheduledTask -TaskName $exitTaskName -Confirm:$false -ErrorAction SilentlyContinue
+        }
+    }
+
     $durationValue = $registeredTask.Triggers[0].Repetition.Duration
     $duration = if ($durationValue -is [TimeSpan]) {
         $durationValue
