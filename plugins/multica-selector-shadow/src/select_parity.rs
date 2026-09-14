@@ -8,8 +8,9 @@ const SNAPSHOT_SCHEMA_VERSION: &str = "backlog-promoter-snapshot.v0";
 const AI_TODO_CAP: i64 = 30;
 const PR_PRODUCING_TODO_CAP: i64 = 20;
 const REVIEW_FIX_EXEMPT_TODO_CAP: i64 = 10;
-const NORMAL_PROMOTION_LIMIT: i64 = 5;
+const NORMAL_PROMOTION_LIMIT: i64 = 8;
 const SPECIAL_PROMOTION_LIMIT: i64 = 8;
+const MIN_STARTABLE_TODO_TARGET: i64 = 5;
 const AGE_BOOST_DAYS: i64 = 7;
 const METADATA_KEY_LIMIT: usize = 50;
 const AGE_BOOST_KEYS: &[&str] = &["age_boosted", "age_boosted_at"];
@@ -203,6 +204,11 @@ pub fn select_compact_from_snapshot(snapshot: &Value) -> Result<Value, ParityErr
         .filter(|i| is_ai_todo(i) && is_review_fix_exempt(i))
         .count() as i64;
     let human_todo_total = todos.iter().filter(|i| !is_ai_todo(i)).count() as i64;
+    let startable_todo_total = todos
+        .iter()
+        .filter(|i| is_startable_todo(i, &status_by_id))
+        .count() as i64;
+    let min_startable_target = MIN_STARTABLE_TODO_TARGET.max(0);
     let cap_state = json!({
         "ai_todo_total": ai_todo_total,
         "ai_todo_headroom": (AI_TODO_CAP - ai_todo_total).max(0),
@@ -211,6 +217,9 @@ pub fn select_compact_from_snapshot(snapshot: &Value) -> Result<Value, ParityErr
         "review_fix_exempt_todo_total": review_fix_exempt_todo_total,
         "review_fix_exempt_headroom": (REVIEW_FIX_EXEMPT_TODO_CAP - review_fix_exempt_todo_total).max(0),
         "human_todo_total": human_todo_total,
+        "startable_todo_total": startable_todo_total,
+        "startable_todo_headroom": (min_startable_target - startable_todo_total).max(0),
+        "min_startable_todo_target": min_startable_target,
         "max_promotions_this_run": NORMAL_PROMOTION_LIMIT,
     });
 
@@ -317,11 +326,16 @@ pub fn select_compact_from_snapshot(snapshot: &Value) -> Result<Value, ParityErr
     let mut simulated_ai = ai_todo_total;
     let mut simulated_pr = pr_producing_todo_total;
     let mut simulated_exempt = review_fix_exempt_todo_total;
+    let mut simulated_startable = startable_todo_total;
     let mut normal_count = 0_i64;
     let mut special_count = 0_i64;
     let normal_limit = NORMAL_PROMOTION_LIMIT;
 
     for row in &candidate_rows {
+        if simulated_startable >= min_startable_target {
+            bump(&mut skipped_summary, "startable_target_reached");
+            break;
+        }
         if row.is_special {
             if special_count >= SPECIAL_PROMOTION_LIMIT {
                 bump(&mut skipped_summary, "special_run_limit_reached");
@@ -365,6 +379,9 @@ pub fn select_compact_from_snapshot(snapshot: &Value) -> Result<Value, ParityErr
         }
         if row.is_review_fix_exempt {
             simulated_exempt += 1;
+        }
+        if is_startable_todo(row.issue, &status_by_id) {
+            simulated_startable += 1;
         }
     }
 
@@ -752,6 +769,25 @@ fn is_review_fix_exempt(issue: &Value) -> bool {
         return true;
     }
     metadata_str(issue, "scheduled_task_family") == Some("coderabbit-pr-fix-monitor")
+}
+
+fn is_startable_todo(issue: &Value, status_by_id: &Map<String, Value>) -> bool {
+    if !is_ai_todo(issue) {
+        return false;
+    }
+    if metadata_str(issue, "waiting_on").is_some() || metadata_str(issue, "blocked_reason").is_some() {
+        return false;
+    }
+    if blocked_text_reason(issue) {
+        return false;
+    }
+    if unresolved_dependencies(issue, status_by_id) {
+        return false;
+    }
+    if is_review_fix_exempt(issue) {
+        return true;
+    }
+    is_pr_producing(issue)
 }
 
 fn is_dependency_unblocking(issue: &Value) -> bool {
