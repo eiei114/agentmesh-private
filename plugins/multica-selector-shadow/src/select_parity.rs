@@ -775,7 +775,9 @@ fn is_startable_todo(issue: &Value, status_by_id: &Map<String, Value>) -> bool {
     if !is_ai_todo(issue) {
         return false;
     }
-    if metadata_str(issue, "waiting_on").is_some() || metadata_str(issue, "blocked_reason").is_some() {
+    if metadata_str(issue, "waiting_on").is_some()
+        || metadata_str(issue, "blocked_reason").is_some()
+    {
         return false;
     }
     if blocked_text_reason(issue) {

@@ -1,6 +1,6 @@
 # Repair request: sync local main branch with origin
 
-Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555, DOT-1578, DOT-1615, DOT-1641, DOT-1703, DOT-1733, DOT-1742, DOT-1789, DOT-1823, DOT-1841
+Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555, DOT-1578, DOT-1615, DOT-1641, DOT-1703, DOT-1733, DOT-1742, DOT-1789, DOT-1823, DOT-1841, DOT-1865
 
 ## Failure code
 
@@ -73,7 +73,7 @@ ad-hoc Git command sequence.
 - audited branch: `main`
 - pre-repair check: `before_ahead=0`, `before_behind=1`, `after_behind=1`, `repo_main_behind=present`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=1`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/codex-release-engineer/9fc5dfc3e08f`, `current_head=4416f08fae5fc40a82ed00af90f5f22486703b2e`, `branch=main`, `head=4416f08fae5fc40a82ed00af90f5f22486703b2e`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
@@ -106,7 +106,7 @@ ad-hoc Git command sequence.
 - preserved local state before repair: `refs/heads/main=85cc51b75f4b36e70726b45497eb361910296bff`, `refs/remotes/origin/main=014931466b58e2f92c6a4cf0a6c8c368b45dc4e9`, `before_ahead=0`, `before_behind=1`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
 - pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=1`, `after_behind=1`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=1`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/cursor-composer-builder/77ba37305078`, `current_head=014931466b58e2f92c6a4cf0a6c8c368b45dc4e9`, `branch=main`, `head=014931466b58e2f92c6a4cf0a6c8c368b45dc4e9`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
@@ -123,8 +123,25 @@ ad-hoc Git command sequence.
 - preserved local state before repair: `refs/heads/main=014931466b58e2f92c6a4cf0a6c8c368b45dc4e9`, `refs/remotes/origin/main=8f3091caa32f586bf4bc47f4c2d11ff30da4977a`, `before_ahead=0`, `before_behind=1`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
 - pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=1`, `after_behind=1`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=1`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/cursor-composer-builder-2/0d65f9bb1842`, `current_head=8f3091caa32f586bf4bc47f4c2d11ff30da4977a`, `branch=main`, `head=8f3091caa32f586bf4bc47f4c2d11ff30da4977a`, `ahead=0`, `behind=0`, `dirty_count=0`
+- post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
+
+## DOT-1865 execution record
+
+- request_id: `DOT-1865`
+- executed_at: `2026-09-14` (JST)
+- source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-09-14-synchronize-local-main-with-origin-main-safely-follow-up.md`
+- derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-09-14-synchronize-local-main-with-origin-main-safely-follow-up.md`
+- dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-09-14-synchronize-local-main-with-origin-main-safely-follow-up.md`
+- stable scope: `agentmesh:repair:repo_main_behind:v17`
+- request status: `ready_for_multica=true`, `status=ready`
+- audited branch: `main`
+- preserved local state before repair: `refs/heads/main=3055f96dbe987e502d0039bd004305a789b462c1`, `refs/remotes/origin/main=43e989101083fcefe9c29b4cffafc50630a7865d`, `before_ahead=0`, `before_behind=63`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
+- pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=63`, `after_behind=63`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
+- repair run: `before_ahead=0`, `before_behind=63`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- post-repair repo metadata: `current_branch=agent/cursor-composer-builder-2/8470a6874b77`, `current_head=43e989101083fcefe9c29b4cffafc50630a7865d`, `branch=main`, `head=43e989101083fcefe9c29b4cffafc50630a7865d`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
 ## DOT-1841 execution record
@@ -140,7 +157,7 @@ ad-hoc Git command sequence.
 - preserved local state before repair: `refs/heads/main=7b82d59d40111c399e3c1e38f82cf887ee7b8a38`, `refs/remotes/origin/main=d4d8d31f50ba1fa4cbf2d1586094ae9816061adc`, `before_ahead=0`, `before_behind=2`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
 - pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=2`, `after_behind=2`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=2`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/cursor-composer-builder/5170609bde44`, `current_head=d4d8d31f50ba1fa4cbf2d1586094ae9816061adc`, `branch=main`, `head=d4d8d31f50ba1fa4cbf2d1586094ae9816061adc`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
@@ -157,7 +174,7 @@ ad-hoc Git command sequence.
 - preserved local state before repair: `refs/heads/main=ea7c7d30cebfc07a895caa1755ab8bf54f871048`, `refs/remotes/origin/main=7b82d59d40111c399e3c1e38f82cf887ee7b8a38`, `before_ahead=0`, `before_behind=5`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
 - pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=5`, `after_behind=5`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=5`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/cursor-composer-builder/ab322629446f`, `current_head=7b82d59d40111c399e3c1e38f82cf887ee7b8a38`, `branch=main`, `head=7b82d59d40111c399e3c1e38f82cf887ee7b8a38`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
@@ -174,7 +191,7 @@ ad-hoc Git command sequence.
 - preserved local state before repair: `refs/heads/main=8f3091caa32f586bf4bc47f4c2d11ff30da4977a`, `refs/remotes/origin/main=ea7c7d30cebfc07a895caa1755ab8bf54f871048`, `before_ahead=0`, `before_behind=2`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
 - pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=2`, `after_behind=2`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=2`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/cursor-composer-builder/0b53596cd921`, `current_head=ea7c7d30cebfc07a895caa1755ab8bf54f871048`, `branch=main`, `head=ea7c7d30cebfc07a895caa1755ab8bf54f871048`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
@@ -191,7 +208,7 @@ ad-hoc Git command sequence.
 - preserved local state before repair: `refs/heads/main=8d8a979ebb01e6e046933e7127548b23fcf14298`, `refs/remotes/origin/main=85cc51b75f4b36e70726b45497eb361910296bff`, `before_ahead=0`, `before_behind=5`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
 - pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=5`, `after_behind=5`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=5`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/cursor-composer-builder/898868808051`, `current_head=85cc51b75f4b36e70726b45497eb361910296bff`, `branch=main`, `head=85cc51b75f4b36e70726b45497eb361910296bff`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
@@ -208,7 +225,7 @@ ad-hoc Git command sequence.
 - preserved local state before repair: `refs/heads/main=b714e30096ce67f7489754c8f4bdcd2e043b9f37`, `refs/remotes/origin/main=8d8a979ebb01e6e046933e7127548b23fcf14298`, `before_ahead=0`, `before_behind=3`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
 - pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=3`, `after_behind=3`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=3`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/cursor-composer-builder/9d2c695bd75b`, `current_head=8d8a979ebb01e6e046933e7127548b23fcf14298`, `branch=main`, `head=8d8a979ebb01e6e046933e7127548b23fcf14298`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
@@ -224,7 +241,7 @@ ad-hoc Git command sequence.
 - preserved local state before repair: `refs/heads/main=4416f08fae5fc40a82ed00af90f5f22486703b2e`, `refs/remotes/origin/main=b714e30096ce67f7489754c8f4bdcd2e043b9f37`, `before_ahead=0`, `before_behind=4`, `dirty_count=0`; no uncommitted working-tree file modification was present in the issue worktree, and the fast-forward kept the previous main tip recoverable through Git reflog instead of force-resetting.
 - pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=4`, `after_behind=4`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=4`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a coordinated temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/codex-release-engineer/2f99d5457c77`, `current_head=b714e30096ce67f7489754c8f4bdcd2e043b9f37`, `branch=main`, `head=b714e30096ce67f7489754c8f4bdcd2e043b9f37`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
@@ -239,7 +256,7 @@ ad-hoc Git command sequence.
 - audited branch: `main`
 - pre-repair check: `before_ahead=0`, `before_behind=8`, `after_behind=8`, `repo_main_behind=present`, `request_action=repair_first`
 - repair run: `before_ahead=0`, `before_behind=8`, `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`
-- repair path: `refs/heads/main` was not checked out in the current issue worktree, so the helper created a temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a temporary worktree, fast-forwarded `main` with `--ff-only`, removed the temporary worktree afterward, and left the current issue worktree clean.
 - post-repair repo metadata: `current_branch=agent/codex-release-engineer/1dd0dee2d7db`, `current_head=6eefc46d3841a54906f9ff20e55ee58c2c3f01e0`, `branch=main`, `head=6eefc46d3841a54906f9ff20e55ee58c2c3f01e0`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
