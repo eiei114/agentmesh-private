@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/markdown-adapter-replay-fixture-compact-v0.schema.json",
+  "title": "Markdown Adapter Replay Fixture Compact Output v0",
+  "description": "Deterministic Markdown adapter replay comparison with separated request/projection fields and adapter-specific fixture diagnostics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "app_version",
+    "request_schema_version",
+    "valid",
+    "replay_status",
+    "request",
+    "projection",
+    "fixture",
+    "comparison",
+    "adapter",
+    "diagnostic_count",
+    "diagnostics",
+    "error_count",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": { "const": "markdown-adapter-replay-fixture-compact.v0" },
+    "app_version": { "const": "markdown-adapter-replay-fixture.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "valid": { "type": "boolean" },
+    "replay_status": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "canonical_projection_mismatch",
+        "adapter_error_mismatch",
+        "malformed_input"
+      ]
+    },
+    "request": { "$ref": "#/$defs/request_summary" },
+    "projection": { "$ref": "#/$defs/projection_summary" },
+    "fixture": { "$ref": "#/$defs/fixture_details" },
+    "comparison": { "$ref": "#/$defs/comparison" },
+    "adapter": { "$ref": "#/$defs/adapter_section" },
+    "diagnostic_count": { "type": "integer", "minimum": 0 },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic_record" } },
+    "error_count": { "type": "integer", "minimum": 0 },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/diagnostic_record" } }
+  },
+  "$defs": {
+    "request_summary": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {},
+        "request_kind": {},
+        "issue_type": {},
+        "project_key": {},
+        "request_slug": {}
+      }
+    },
+    "projection_summary": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "request_slug": {},
+        "content_hashes": {},
+        "projection_sha256": {}
+      }
+    },
+    "fixture_details": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["fixture_id", "adapter", "scenario", "adapter_failure", "adapter_digest"],
+      "properties": {
+        "fixture_id": {},
+        "adapter": {},
+        "scenario": {},
+        "adapter_failure": {},
+        "adapter_digest": {}
+      }
+    },
+    "comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected_replay_status",
+        "actual_replay_status",
+        "matches",
+        "mismatch_count",
+        "mismatches"
+      ],
+      "properties": {
+        "expected_replay_status": { "type": "string" },
+        "actual_replay_status": { "type": "string" },
+        "matches": { "type": "boolean" },
+        "mismatch_count": { "type": "integer", "minimum": 0 },
+        "mismatches": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/mismatch_record" }
+        }
+      }
+    },
+    "adapter_section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "valid", "error_count", "error_codes"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "valid": {},
+        "error_count": { "type": "integer", "minimum": 0 },
+        "error_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "mismatch_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "field", "expected", "actual"],
+      "properties": {
+        "path": { "type": "string" },
+        "field": { "type": "string" },
+        "expected": {},
+        "actual": {}
+      }
+    },
+    "diagnostic_record": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "category": { "type": "string" },
+        "severity": { "type": "string" },
+        "path": {},
+        "message": { "type": "string" },
+        "remediation_hint": { "type": "string" }
+      }
+    }
+  }
+}

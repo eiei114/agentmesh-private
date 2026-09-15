@@ -50,6 +50,7 @@ PLUGIN_STEMS = (
     "agentmesh-multica-selector-shadow",
     "agentmesh-markdown-request-validator",
     "agentmesh-request-markdown-normalizer",
+    "agentmesh-markdown-adapter-replay-fixture",
     "agentmesh-public-0x-readiness-report",
     "agentmesh-public-0x-rollback-replay",
     "agentmesh-multica-cli-adapter",
@@ -160,6 +161,7 @@ def main() -> int:
         "agentmesh-app-v0.md",
         "public-0x-readiness-gate.md",
         "public-0x-readiness-report.md",
+        "markdown-adapter-replay-fixture-v0.md",
         "request-markdown-normalizer-v0.md",
         "local-production-control-v0.md",
     ]:

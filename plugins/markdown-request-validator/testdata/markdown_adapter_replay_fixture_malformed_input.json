@@ -1,0 +1,16 @@
+{
+  "schema_version": "markdown-adapter-replay-fixture-input.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "markdown": "# Missing frontmatter\n\n## What to build\nIncomplete request body.\n",
+  "fixture": {
+    "fixture_id": "malformed-markdown-v0",
+    "adapter": "local-runner-adapter",
+    "scenario": "malformed_input"
+  },
+  "expected": {
+    "replay_status": "malformed_input",
+    "normalizer_error_codes": [
+      "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_FRONTMATTER_MALFORMED"
+    ]
+  }
+}

@@ -26,6 +26,11 @@ description = "Public 0.x readiness report App contract"
 source = "docs/public-0x-readiness-report.md"
 
 [[documents]]
+name = "markdown-adapter-replay-fixture-v0"
+description = "Markdown adapter replay fixture App contract for deterministic adapter regression replay"
+source = "docs/markdown-adapter-replay-fixture-v0.md"
+
+[[documents]]
 name = "request-markdown-normalizer-v0"
 description = "Request Markdown normalizer App contract for deterministic local-runner projections"
 source = "docs/request-markdown-normalizer-v0.md"

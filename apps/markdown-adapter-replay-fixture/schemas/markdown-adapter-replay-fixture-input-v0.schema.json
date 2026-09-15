@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/markdown-adapter-replay-fixture-input-v0.schema.json",
+  "title": "Markdown Adapter Replay Fixture Input v0",
+  "description": "Tool-neutral Markdown request, declared adapter fixture, and expected canonical replay result for deterministic adapter regression replay.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "markdown", "fixture", "expected"],
+  "properties": {
+    "schema_version": { "const": "markdown-adapter-replay-fixture-input.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "markdown": { "type": "string", "maxLength": 65536 },
+    "max_markdown_bytes": { "type": "integer", "minimum": 1, "maximum": 65536 },
+    "fixture": { "$ref": "#/$defs/fixture" },
+    "expected": { "$ref": "#/$defs/expected" }
+  },
+  "$defs": {
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixture_id", "adapter"],
+      "properties": {
+        "fixture_id": { "type": "string", "minLength": 1 },
+        "adapter": { "type": "string", "minLength": 1 },
+        "scenario": {
+          "type": "string",
+          "enum": [
+            "matching_result",
+            "canonical_projection_mismatch",
+            "adapter_error_mismatch",
+            "malformed_input"
+          ]
+        },
+        "source_adapter": { "type": "string", "minLength": 1 },
+        "requested_capabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "available_capabilities": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "adapter_failure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "message"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["auth", "rate_limit", "timeout", "transport", "unknown"]
+            },
+            "native_code": { "type": "string" },
+            "message": { "type": "string", "minLength": 1 },
+            "retryable": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replay_status"],
+      "properties": {
+        "replay_status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "canonical_projection_mismatch",
+            "adapter_error_mismatch",
+            "malformed_input"
+          ]
+        },
+        "request_slug": { "type": "string" },
+        "title": { "type": "string" },
+        "projection_fields": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "adapter_error_codes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "normalizer_error_codes": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

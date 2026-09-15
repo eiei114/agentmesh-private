@@ -20,6 +20,8 @@ The Markdown request validator App (`agentmesh-markdown-request-validator`) is t
 
 The request Markdown normalizer App (`agentmesh-request-markdown-normalizer`) emits canonical request projections with deterministic section order, normalized bullets/whitespace, canonical requirement ordering, and stable title-derived slug metadata for local runners.
 
+The Markdown adapter replay fixture App (`agentmesh-markdown-adapter-replay-fixture`) replays one validated request Markdown document against a declared adapter fixture and expected canonical result, emitting deterministic pass or mismatch diagnostics for local adapter regression replay.
+
 The adapter metadata canonicalizer App (`agentmesh-adapter-metadata-canonicalizer`) compares two adapter request metadata payloads, promotes only equal stable fields into a deterministic canonical subset, and preserves adapter-specific extensions separately.
 
 The adapter parity report App (`agentmesh-adapter-parity-report`) compares two validated adapter result payloads for one request and separates canonical-field drift, adapter extension drift, and normalized error-class drift in a compact deterministic report.
@@ -175,6 +177,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/request-fingerprint-manifest/` — deterministic request fingerprint JSON/Markdown manifest + hash schemas
 - `apps/request-materialization-audit/` — deterministic request materialization + same-scope dedupe audit manifest + IO schemas
 - `apps/request-markdown-normalizer/` — deterministic request Markdown projection normalizer manifest + IO schemas
+- `apps/markdown-adapter-replay-fixture/` — deterministic Markdown adapter replay fixture manifest + IO schemas
 - `apps/non-multica-request-adapter/` — tracker-neutral request adapter manifest + IO schemas
 - `apps/local-tracker-adapter/` — local taskfile tracker adapter manifest + IO schemas
 - `apps/local-runner-adapter/` — deterministic local-runner compatibility envelope manifest + IO schemas
@@ -213,6 +216,7 @@ Internal / test-only:
 - `agentmesh-request-fingerprint-manifest` — deterministic request fingerprint manifest binary (`markdown-request-validator` package)
 - `agentmesh-request-materialization-audit` — deterministic request materialization + same-scope dedupe audit binary (`markdown-request-validator` package)
 - `agentmesh-request-markdown-normalizer` — deterministic request Markdown projection normalizer binary (`markdown-request-validator` package)
+- `agentmesh-markdown-adapter-replay-fixture` — deterministic Markdown adapter replay fixture binary (`markdown-request-validator` package)
 - `agentmesh-public-0x-readiness` — public 0.x readiness evidence gate binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-public-0x-readiness-report` — post-dogfood public 0.x readiness report binary (`adapter-metadata-canonicalizer` package)
 - `agentmesh-public-0x-rollback-replay` — deterministic public 0.x rollback evidence bundle binary (`adapter-metadata-canonicalizer` package)
