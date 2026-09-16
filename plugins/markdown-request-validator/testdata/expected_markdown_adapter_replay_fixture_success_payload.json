@@ -1,0 +1,47 @@
+{
+  "adapter": {
+    "error_codes": [],
+    "error_count": 0,
+    "present": false,
+    "valid": null
+  },
+  "app_version": "markdown-adapter-replay-fixture.v0",
+  "comparison": {
+    "actual_replay_status": "pass",
+    "expected_replay_status": "pass",
+    "matches": true,
+    "mismatch_count": 0,
+    "mismatches": []
+  },
+  "diagnostic_count": 0,
+  "diagnostics": [],
+  "error_count": 0,
+  "errors": [],
+  "fixture": {
+    "adapter": "local-runner-adapter",
+    "adapter_digest": null,
+    "adapter_failure": null,
+    "fixture_id": "matching-projection-v0",
+    "scenario": "matching_result"
+  },
+  "projection": {
+    "content_hashes": {
+      "algorithm": "sha256",
+      "normalized_markdown_sha256": "sha256:6741e0f65bb3440a6f8114fcb7a4f689e1efd24eed9c499a700137a55cd33923",
+      "projection_sha256": "sha256:4c65a96dcd09538d1dbbee77ccf41005f7578268afa84d59f03d03a6e6e7b046"
+    },
+    "projection_sha256": "sha256:4c65a96dcd09538d1dbbee77ccf41005f7578268afa84d59f03d03a6e6e7b046",
+    "request_slug": "add-a-markdown-request-normalizer-app"
+  },
+  "replay_status": "pass",
+  "request": {
+    "issue_type": "AFK",
+    "project_key": "agentmesh-private",
+    "request_kind": "app",
+    "request_slug": "add-a-markdown-request-normalizer-app",
+    "title": "Add a Markdown request normalizer App"
+  },
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "markdown-adapter-replay-fixture-compact.v0",
+  "valid": true
+}

@@ -5,6 +5,7 @@
 
 pub mod adapter_compact_helpers;
 pub mod adapter_error_contract;
+pub mod markdown_adapter_replay_fixture;
 pub mod request_dry_run_summary;
 pub mod request_fingerprint_manifest;
 pub mod request_markdown_normalizer;

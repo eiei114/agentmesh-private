@@ -1,0 +1,55 @@
+{
+  "adapter": {
+    "error_codes": [],
+    "error_count": 0,
+    "present": false,
+    "valid": null
+  },
+  "app_version": "markdown-adapter-replay-fixture.v0",
+  "comparison": {
+    "actual_replay_status": "malformed_input",
+    "expected_replay_status": "malformed_input",
+    "matches": true,
+    "mismatch_count": 0,
+    "mismatches": []
+  },
+  "diagnostic_count": 1,
+  "diagnostics": [
+    {
+      "category": "malformed_frontmatter",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_FRONTMATTER_MALFORMED",
+      "message": "markdown requests require a complete YAML frontmatter block",
+      "path": "$.markdown",
+      "remediation_hint": "Use a complete YAML frontmatter fence with single-line key: value entries and JSON arrays.",
+      "severity": "error"
+    }
+  ],
+  "error_count": 1,
+  "errors": [
+    {
+      "category": "malformed_frontmatter",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_FRONTMATTER_MALFORMED",
+      "message": "markdown requests require a complete YAML frontmatter block",
+      "path": "$.markdown",
+      "remediation_hint": "Use a complete YAML frontmatter fence with single-line key: value entries and JSON arrays.",
+      "severity": "error"
+    }
+  ],
+  "fixture": {
+    "adapter": "local-runner-adapter",
+    "adapter_digest": null,
+    "adapter_failure": null,
+    "fixture_id": "malformed-markdown-v0",
+    "scenario": "malformed_input"
+  },
+  "projection": {
+    "content_hashes": null,
+    "projection_sha256": null,
+    "request_slug": null
+  },
+  "replay_status": "malformed_input",
+  "request": null,
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "markdown-adapter-replay-fixture-compact.v0",
+  "valid": false
+}

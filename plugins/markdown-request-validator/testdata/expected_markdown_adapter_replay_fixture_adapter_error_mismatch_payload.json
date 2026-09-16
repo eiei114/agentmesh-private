@@ -1,0 +1,74 @@
+{
+  "adapter": {
+    "error_codes": [
+      "AGENTMESH_EXTERNAL_ADAPTER_FAILURE"
+    ],
+    "error_count": 1,
+    "present": true,
+    "valid": false
+  },
+  "app_version": "markdown-adapter-replay-fixture.v0",
+  "comparison": {
+    "actual_replay_status": "adapter_error_mismatch",
+    "expected_replay_status": "pass",
+    "matches": false,
+    "mismatch_count": 2,
+    "mismatches": [
+      {
+        "actual": [
+          "AGENTMESH_EXTERNAL_ADAPTER_FAILURE"
+        ],
+        "expected": [
+          "AGENTMESH_INPUT_SCHEMA_INVALID"
+        ],
+        "field": "adapter_error_codes",
+        "path": "$.expected.adapter_error_codes"
+      },
+      {
+        "actual": "adapter_error_mismatch",
+        "expected": "pass",
+        "field": "replay_status",
+        "path": "$.expected.replay_status"
+      }
+    ]
+  },
+  "diagnostic_count": 0,
+  "diagnostics": [],
+  "error_count": 0,
+  "errors": [],
+  "fixture": {
+    "adapter": "non-multica-request-adapter",
+    "adapter_digest": {
+      "adapter_output_sha256": "sha256:47c13f0708827261bcb66b230f4cc0d3e851bc7eb3f5bc6570f831ab87814050",
+      "algorithm": "sha256"
+    },
+    "adapter_failure": {
+      "kind": "timeout",
+      "message": "adapter timed out after 1000ms",
+      "native_code": "ETIMEDOUT",
+      "retryable": true
+    },
+    "fixture_id": "adapter-timeout-v0",
+    "scenario": "adapter_error_mismatch"
+  },
+  "projection": {
+    "content_hashes": {
+      "algorithm": "sha256",
+      "normalized_markdown_sha256": "sha256:9d0c9615734f7fbff3863ec37fce4a3844d9ba5a9cc23f0a60c743cd89e65ccd",
+      "projection_sha256": "sha256:c22af2cd6a11c2f7ec80d353c601a5ba2750c8099ea5be0447302ecf2ca373c1"
+    },
+    "projection_sha256": "sha256:c22af2cd6a11c2f7ec80d353c601a5ba2750c8099ea5be0447302ecf2ca373c1",
+    "request_slug": "add-a-markdown-request-normalizer-app"
+  },
+  "replay_status": "adapter_error_mismatch",
+  "request": {
+    "issue_type": "AFK",
+    "project_key": "agentmesh-private",
+    "request_kind": "app",
+    "request_slug": "add-a-markdown-request-normalizer-app",
+    "title": "Add a Markdown request normalizer App"
+  },
+  "request_schema_version": "agentmesh-request.v0",
+  "schema_version": "markdown-adapter-replay-fixture-compact.v0",
+  "valid": false
+}
