@@ -460,26 +460,19 @@ See `docs/public-0x-readiness-report.md` for the full input/output contract and 
 
 ## Markdown adapter replay fixture App
 
-\pps/markdown-adapter-replay-fixture/agentmesh-app.toml\ declares a deterministic replay fixture App for local Markdown adapter regression. It accepts one bounded request Markdown document, a declared adapter fixture (\ixture_id\, \dapter\, optional \dapter_failure\), and an expected canonical replay result, then emits stable pass or mismatch diagnostics without filesystem access, credentials, or orchestrator IDs.
+`apps/markdown-adapter-replay-fixture/agentmesh-app.toml` declares a deterministic replay fixture App for local Markdown adapter regression. It accepts one bounded request Markdown document, a declared adapter fixture (`fixture_id`, `adapter`, optional `adapter_failure`), and an expected canonical replay result, then emits stable pass or mismatch diagnostics without filesystem access, credentials, or orchestrator IDs.
 
-The compact output is \markdown-adapter-replay-fixture-compact.v0\. Common request and projection fields are separated under equest\ and \projection\; adapter-specific fixture details remain under \ixture\ and \dapter\. \comparison\ reports expected vs actual eplay_status\ plus deterministic field mismatches for slug, projection fields, adapter error codes, or normalizer error codes.
+The compact output is `markdown-adapter-replay-fixture-compact.v0`. Common request and projection fields are separated under `request` and `projection`; adapter-specific fixture details remain under `fixture` and `adapter`. `comparison` reports expected vs actual `replay_status` plus deterministic field mismatches for slug, projection fields, adapter error codes, or normalizer error codes.
 
 Development smoke:
 
-\\ash
+```bash
 cargo build -p agentmesh-cli -p agentmesh-markdown-request-validator --bins
-agentmesh app validate \
-  --manifest apps/markdown-adapter-replay-fixture/agentmesh-app.toml \
-  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
-agentmesh app run \
-  --manifest apps/markdown-adapter-replay-fixture/agentmesh-app.toml \
-  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
-  --input plugins/markdown-request-validator/testdata/markdown_adapter_replay_fixture_success_input.json \
-  --sidecar-dir .agentmesh/runs \
-  --mode development \
-  --dev-plugin /absolute/path/to/target/debug/agentmesh-markdown-adapter-replay-fixture
-\
-See \docs/markdown-adapter-replay-fixture-v0.md\ for fixture scenarios and the expected compact JSON shape.
+agentmesh app validate \n  --manifest apps/markdown-adapter-replay-fixture/agentmesh-app.toml \n  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \n  --manifest apps/markdown-adapter-replay-fixture/agentmesh-app.toml \n  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \n  --input plugins/markdown-request-validator/testdata/markdown_adapter_replay_fixture_success_input.json \n  --sidecar-dir .agentmesh/runs \n  --mode development \n  --dev-plugin /absolute/path/to/target/debug/agentmesh-markdown-adapter-replay-fixture
+```
+
+See `docs/markdown-adapter-replay-fixture-v0.md` for fixture scenarios and the expected compact JSON shape.
 
 ## Public 0.x rollback replay App
 

@@ -76,21 +76,22 @@ pub fn evaluate_markdown_adapter_replay_fixture(value: &Value) -> Value {
             .unwrap_or_default();
         let actual_codes = error_codes(&normalizer_errors);
         let expected_codes = string_array(expected.as_ref(), "normalizer_error_codes");
-        let mismatches =
+        let mut mismatches =
             compare_string_sets("normalizer_error_codes", &expected_codes, &actual_codes);
-        let replay_status = if mismatches.is_empty()
-            && expected_replay_status(expected.as_ref()) == REPLAY_MALFORMED_INPUT
-        {
-            REPLAY_MALFORMED_INPUT
-        } else if !mismatches.is_empty() {
-            REPLAY_CANONICAL_PROJECTION_MISMATCH
-        } else {
-            REPLAY_MALFORMED_INPUT
-        };
-        let diagnostics = build_malformed_diagnostics(&normalized, &mismatches);
+        let expected_status = expected_replay_status(expected.as_ref());
+        if expected_status != REPLAY_MALFORMED_INPUT {
+            mismatches.push(mismatch_record(
+                "$.expected.replay_status",
+                "replay_status",
+                expected_status,
+                REPLAY_MALFORMED_INPUT,
+            ));
+        }
+        sort_mismatches(&mut mismatches);
+        let diagnostics = build_malformed_diagnostics(&normalized);
         return build_output(OutputContext {
             valid: false,
-            replay_status,
+            replay_status: REPLAY_MALFORMED_INPUT,
             fixture: fixture.as_ref(),
             expected: expected.as_ref(),
             request: request_summary.as_ref(),
@@ -136,16 +137,7 @@ pub fn evaluate_markdown_adapter_replay_fixture(value: &Value) -> Value {
             actual_replay_status,
         ));
     }
-    mismatches.sort_by(|left, right| {
-        left.get("path")
-            .and_then(Value::as_str)
-            .cmp(&right.get("path").and_then(Value::as_str))
-            .then_with(|| {
-                left.get("field")
-                    .and_then(Value::as_str)
-                    .cmp(&right.get("field").and_then(Value::as_str))
-            })
-    });
+    sort_mismatches(&mut mismatches);
 
     let replay_status = if mismatches.is_empty() {
         REPLAY_PASS
@@ -497,6 +489,19 @@ fn adapter_section(adapter_output: Option<&Value>) -> Value {
     })
 }
 
+fn sort_mismatches(mismatches: &mut [Value]) {
+    mismatches.sort_by(|left, right| {
+        left.get("path")
+            .and_then(Value::as_str)
+            .cmp(&right.get("path").and_then(Value::as_str))
+            .then_with(|| {
+                left.get("field")
+                    .and_then(Value::as_str)
+                    .cmp(&right.get("field").and_then(Value::as_str))
+            })
+    });
+}
+
 fn comparison(expected: Option<&Value>, replay_status: &str, mismatches: &[Value]) -> Value {
     json!({
         "expected_replay_status": expected_replay_status(expected),
@@ -507,13 +512,12 @@ fn comparison(expected: Option<&Value>, replay_status: &str, mismatches: &[Value
     })
 }
 
-fn build_malformed_diagnostics(normalized: &Value, mismatches: &[Value]) -> Vec<Value> {
+fn build_malformed_diagnostics(normalized: &Value) -> Vec<Value> {
     let mut diagnostics = normalized
         .get("errors")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    diagnostics.extend(mismatches.iter().cloned());
     diagnostics.sort_by(|left, right| {
         left.get("code")
             .and_then(Value::as_str)
@@ -722,6 +726,70 @@ mod tests {
         assert_eq!(output["valid"], false);
         assert_eq!(output["replay_status"], REPLAY_MALFORMED_INPUT);
         assert!(output["diagnostic_count"].as_u64().unwrap_or(0) > 0);
+    }
+
+    #[test]
+    fn malformed_markdown_with_wrong_expected_status_stays_malformed_input() {
+        let output = evaluate_markdown_adapter_replay_fixture(&json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "markdown": "# Missing frontmatter\n",
+            "fixture": {
+                "fixture_id": "malformed-markdown-v0",
+                "adapter": "local-runner-adapter",
+                "scenario": "malformed_input"
+            },
+            "expected": {
+                "replay_status": REPLAY_PASS,
+                "normalizer_error_codes": [
+                    "AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_FRONTMATTER_MALFORMED"
+                ]
+            }
+        }));
+        assert_eq!(output["replay_status"], REPLAY_MALFORMED_INPUT);
+        assert_eq!(
+            output["comparison"]["actual_replay_status"],
+            REPLAY_MALFORMED_INPUT
+        );
+        assert_eq!(output["comparison"]["matches"], false);
+        assert!(output["comparison"]["mismatches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|mismatch| mismatch["field"] == "replay_status"));
+    }
+
+    #[test]
+    fn malformed_markdown_keeps_mismatches_out_of_diagnostics() {
+        let output = evaluate_markdown_adapter_replay_fixture(&json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "markdown": "# Missing frontmatter\n",
+            "fixture": {
+                "fixture_id": "malformed-markdown-v0",
+                "adapter": "local-runner-adapter",
+                "scenario": "malformed_input"
+            },
+            "expected": {
+                "replay_status": REPLAY_MALFORMED_INPUT,
+                "normalizer_error_codes": ["AGENTMESH_REQUEST_MARKDOWN_NORMALIZER_UNEXPECTED"]
+            }
+        }));
+        assert_eq!(output["replay_status"], REPLAY_MALFORMED_INPUT);
+        assert_eq!(output["comparison"]["matches"], false);
+        assert!(output["comparison"]["mismatches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|mismatch| mismatch["field"] == "normalizer_error_codes"));
+        for diagnostic in output["diagnostics"].as_array().unwrap() {
+            assert!(
+                diagnostic["code"].is_string(),
+                "{diagnostic} must carry a diagnostic code"
+            );
+            assert!(
+                diagnostic["message"].is_string(),
+                "{diagnostic} must carry a diagnostic message"
+            );
+        }
     }
 
     #[test]
