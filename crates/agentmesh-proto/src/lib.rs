@@ -5,6 +5,7 @@ pub mod error;
 pub mod failure;
 pub mod json_strict;
 pub mod limits;
+pub mod rfc3339;
 pub mod rpc;
 pub mod schema;
 pub mod versions;
@@ -14,6 +15,7 @@ pub use error::ProtoError;
 pub use failure::{FailureCategory, FailureCode, FailureRecord, SecondaryFailure};
 pub use json_strict::{from_slice_strict, from_str_strict};
 pub use limits::Limits;
+pub use rfc3339::parse_rfc3339_epoch;
 pub use rpc::{
     ApplicationErrorData, InitializeParams, InitializeResult, JsonRpcError, JsonRpcId,
     JsonRpcRequest, JsonRpcResponse, JsonRpcVersion, ProtocolCapability, RunParams, RunResult,
