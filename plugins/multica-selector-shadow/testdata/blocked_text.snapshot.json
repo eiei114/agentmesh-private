@@ -1,0 +1,32 @@
+{
+  "snapshot_schema_version": "backlog-promoter-snapshot.v0",
+  "controller": "backlog_promoter",
+  "now_jst": "2026-07-15T12:00:00+09:00",
+  "issues": [
+    {
+      "id": "iss_unblocked",
+      "identifier": "AM-301",
+      "title": "Unblocked maintenance item",
+      "description": "",
+      "status": "backlog",
+      "assignee_type": "agent",
+      "created_at": "2026-07-14T00:00:00+09:00",
+      "metadata": {"work_owner": "ai"}
+    },
+    {
+      "id": "iss_blocked",
+      "identifier": "AM-302",
+      "title": "Blocked maintenance item",
+      "description": "",
+      "status": "backlog",
+      "assignee_type": "agent",
+      "created_at": "2026-07-14T00:00:00+09:00",
+      "metadata": {"work_owner": "ai"}
+    }
+  ],
+  "dependency_status_by_id": {},
+  "issue_run_presence": {},
+  "evidence_preflight_by_issue_id": {},
+  "warnings": [],
+  "error": null
+}
