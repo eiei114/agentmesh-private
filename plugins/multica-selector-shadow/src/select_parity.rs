@@ -9,7 +9,6 @@ const AI_TODO_CAP: i64 = 30;
 const PR_PRODUCING_TODO_CAP: i64 = 20;
 const REVIEW_FIX_EXEMPT_TODO_CAP: i64 = 10;
 const NORMAL_PROMOTION_LIMIT: i64 = 8;
-const SPECIAL_PROMOTION_LIMIT: i64 = 8;
 const MIN_STARTABLE_TODO_TARGET: i64 = 5;
 const AGE_BOOST_DAYS: i64 = 7;
 const METADATA_KEY_LIMIT: usize = 50;
@@ -264,6 +263,8 @@ pub fn select_compact_from_snapshot(snapshot: &Value) -> Result<Value, ParityErr
             skip_reason = Some("blocked_reason");
         } else if blocked_text_reason(issue) {
             skip_reason = Some("blocked_text");
+        } else if work_unit_split_required(issue) {
+            skip_reason = Some("work_unit_split_required");
         } else if unresolved_dependencies(issue, &status_by_id) {
             skip_reason = Some("blocked_dependency");
         } else {
@@ -316,7 +317,6 @@ pub fn select_compact_from_snapshot(snapshot: &Value) -> Result<Value, ParityErr
             selection_reason,
             is_pr_producing: is_pr_producing(issue),
             is_review_fix_exempt: is_review_fix_exempt(issue),
-            is_special: is_special_promotion(issue),
         });
     }
 
@@ -327,23 +327,10 @@ pub fn select_compact_from_snapshot(snapshot: &Value) -> Result<Value, ParityErr
     let mut simulated_pr = pr_producing_todo_total;
     let mut simulated_exempt = review_fix_exempt_todo_total;
     let mut simulated_startable = startable_todo_total;
-    let mut normal_count = 0_i64;
-    let mut special_count = 0_i64;
-    let normal_limit = NORMAL_PROMOTION_LIMIT;
-
     for row in &candidate_rows {
         if simulated_startable >= min_startable_target {
             bump(&mut skipped_summary, "startable_target_reached");
             break;
-        }
-        if row.is_special {
-            if special_count >= SPECIAL_PROMOTION_LIMIT {
-                bump(&mut skipped_summary, "special_run_limit_reached");
-                continue;
-            }
-        } else if normal_count >= normal_limit {
-            bump(&mut skipped_summary, "normal_run_limit_reached");
-            continue;
         }
 
         if is_ai_todo(row.issue) && simulated_ai + 1 > AI_TODO_CAP {
@@ -366,11 +353,6 @@ pub fn select_compact_from_snapshot(snapshot: &Value) -> Result<Value, ParityErr
             "title": string_field(row.issue, "title"),
             "selection_reason": row.selection_reason,
         }));
-        if row.is_special {
-            special_count += 1;
-        } else {
-            normal_count += 1;
-        }
         if is_ai_todo(row.issue) {
             simulated_ai += 1;
         }
@@ -485,7 +467,6 @@ struct CandidateRow<'a> {
     selection_reason: &'static str,
     is_pr_producing: bool,
     is_review_fix_exempt: bool,
-    is_special: bool,
 }
 
 fn stop_compact(
@@ -810,15 +791,29 @@ fn is_dependency_unblocking(issue: &Value) -> bool {
     text.contains("unblock") || text.contains("dependency")
 }
 
-fn is_special_promotion(issue: &Value) -> bool {
-    is_review_fix(issue) || is_dependency_unblocking(issue)
-}
-
 fn blocked_text_reason(issue: &Value) -> bool {
     let title = string_field(issue, "title").to_lowercase();
     let body = issue_body_text(issue);
-    TITLE_BLOCK_HINTS.iter().any(|h| title.contains(h))
-        || BODY_BLOCK_HINTS.iter().any(|h| body.contains(h))
+    TITLE_BLOCK_HINTS
+        .iter()
+        .any(|hint| contains_block_hint(&title, hint))
+        || BODY_BLOCK_HINTS
+            .iter()
+            .any(|hint| contains_block_hint(&body, hint))
+}
+
+fn contains_block_hint(text: &str, hint: &str) -> bool {
+    if hint.chars().all(|c| c.is_ascii_alphanumeric()) {
+        text.split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|word| word == hint)
+    } else {
+        text.contains(hint)
+    }
+}
+
+fn work_unit_split_required(issue: &Value) -> bool {
+    metadata_str(issue, "work_unit_state") == Some("split_required")
+        || issue.get("work_unit_state").and_then(Value::as_str) == Some("split_required")
 }
 
 fn issue_body_text(issue: &Value) -> String {
@@ -1146,5 +1141,23 @@ mod tests {
             "metadata": {}
         });
         assert_eq!(project_key_for(&issue), "pi-scheduled-router");
+    }
+
+    #[test]
+    fn blocked_text_fixture_keeps_unblocked_issue_eligible() {
+        let raw = include_str!("../testdata/blocked_text.snapshot.json");
+        let snapshot: Value = serde_json::from_str(raw).unwrap();
+        let actual = select_compact_from_snapshot(&snapshot).unwrap();
+        assert_eq!(actual["skipped_summary"]["blocked_text"], 1);
+        assert_eq!(actual["promotion_candidates"][0]["issue_key"], "AM-301");
+    }
+
+    #[test]
+    fn split_required_work_unit_is_skipped() {
+        let issue = json!({
+            "title": "Split this work",
+            "metadata": {"work_unit_state": "split_required"}
+        });
+        assert!(work_unit_split_required(&issue));
     }
 }
