@@ -187,6 +187,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/adapter-evidence-envelope/` — deterministic adapter evidence envelope manifest + IO schemas
 - `apps/adapter-evidence-traceability/` — deterministic adapter evidence traceability graph manifest + IO schemas
 - `apps/adapter-error-contract/` — shared adapter error boundary contract manifest + IO schemas
+- `apps/adapter-selection-preflight/` — deterministic adapter capability selection preflight manifest + IO schemas
 - `apps/public-0x-readiness/` — public 0.x readiness evidence gate manifest + IO schemas
 - `apps/public-0x-readiness-report/` — post-dogfood public 0.x readiness report manifest + IO schemas
 - `apps/public-0x-rollback-replay/` — deterministic rollback replay evidence manifest + IO schemas

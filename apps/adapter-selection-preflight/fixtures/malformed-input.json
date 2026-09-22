@@ -1,0 +1,5 @@
+{
+  "schema_version": "adapter-selection-preflight-input.v0",
+  "requirements": [{"name": "request.submit", "version": "1.0.0"}],
+  "candidates": [{"adapter_id": "broken", "priority": "highest", "capabilities": "not-an-array"}]
+}

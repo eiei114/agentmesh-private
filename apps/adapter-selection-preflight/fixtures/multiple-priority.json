@@ -1,0 +1,8 @@
+{
+  "schema_version": "adapter-selection-preflight-input.v0",
+  "requirements": [{"name": "request.submit", "version": "^1.0.0"}],
+  "candidates": [
+    {"adapter_id": "slow", "adapter_version": "1.0.0", "priority": 10, "capabilities": [{"name": "request.submit", "version": "1.2.0"}]},
+    {"adapter_id": "preferred", "adapter_version": "3.0.0", "priority": 20, "capabilities": [{"name": "request.submit", "version": "1.4.0"}]}
+  ]
+}
