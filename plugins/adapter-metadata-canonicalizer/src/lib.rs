@@ -14,9 +14,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Plugin/schema version exposed in compact output.
 pub const APP_VERSION: &str = "adapter-metadata-canonicalizer.v0";
+
+/// Plugin/schema version exposed by the deterministic capability negotiation binary.
+pub const ADAPTER_CAPABILITY_NEGOTIATION_VERSION: &str = "adapter-capability-negotiation.v0";
 const INPUT_SCHEMA_VERSION: &str = "adapter-metadata-canonicalizer-input.v0";
 const OUTPUT_SCHEMA_VERSION: &str = "adapter-metadata-canonicalizer-compact.v0";
 const REQUEST_SCHEMA_VERSION: &str = "agentmesh-request-metadata.v0";
+const CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION: &str = "adapter-capability-negotiation-input.v0";
+const CAPABILITY_NEGOTIATION_OUTPUT_SCHEMA_VERSION: &str =
+    "adapter-capability-negotiation-compact.v0";
+const CAPABILITY_CONTRACT_VERSION: &str = "agentmesh-adapter-capabilities.v0";
 
 /// Plugin/schema version exposed by the public 0.x readiness gate binary.
 pub const PUBLIC_0X_READINESS_VERSION: &str = "public-0x-readiness.v0";
@@ -189,6 +196,117 @@ impl ParityReportParts {
 }
 
 /// Compare opaque plugin input and return deterministic compact JSON.
+/// Negotiate a validated request summary against one adapter's declared capabilities.
+///
+/// Sets are normalized lexicographically and no request content, credentials, or execution
+/// metadata is copied into the result.
+pub fn negotiate_adapter_capabilities(value: &Value) -> Value {
+    let invalid = |code: &str, path: &str| {
+        json!({
+            "schema_version": CAPABILITY_NEGOTIATION_OUTPUT_SCHEMA_VERSION,
+            "app_version": ADAPTER_CAPABILITY_NEGOTIATION_VERSION,
+            "capability_contract_version": CAPABILITY_CONTRACT_VERSION,
+            "valid": false,
+            "status": "input_invalid",
+            "common_fields_supported": [],
+            "common_fields_unsupported": [],
+            "adapter_capabilities_supported": [],
+            "adapter_capabilities_unsupported": [],
+            "normalized_errors": [{"code": code, "path": path}],
+        })
+    };
+    if value.get("schema_version")
+        != Some(&Value::String(
+            CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION.into(),
+        ))
+    {
+        return invalid("invalid_schema", "$.schema_version");
+    }
+    let Some(request) = value.get("request_summary").and_then(Value::as_object) else {
+        return invalid("request_summary_missing", "$.request_summary");
+    };
+    let Some(adapter) = value.get("adapter_manifest").and_then(Value::as_object) else {
+        return invalid("adapter_manifest_missing", "$.adapter_manifest");
+    };
+    if request.get("schema_version") != Some(&Value::String("agentmesh-request-summary.v0".into()))
+    {
+        return invalid(
+            "request_schema_unsupported",
+            "$.request_summary.schema_version",
+        );
+    }
+    if adapter.get("capability_contract_version")
+        != Some(&Value::String(CAPABILITY_CONTRACT_VERSION.into()))
+    {
+        return invalid(
+            "capability_contract_unsupported",
+            "$.adapter_manifest.capability_contract_version",
+        );
+    }
+    let read_set = |object: &Map<String, Value>, key: &str| -> Option<BTreeSet<String>> {
+        object.get(key)?.as_array().map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+    };
+    let Some(requested_common) = read_set(request, "required_common_fields") else {
+        return invalid(
+            "capability_declaration_malformed",
+            "$.request_summary.required_common_fields",
+        );
+    };
+    let Some(requested_adapter) = read_set(request, "requested_adapter_capabilities") else {
+        return invalid(
+            "capability_declaration_malformed",
+            "$.request_summary.requested_adapter_capabilities",
+        );
+    };
+    let Some(common) = read_set(adapter, "common_fields") else {
+        return invalid(
+            "capability_declaration_malformed",
+            "$.adapter_manifest.common_fields",
+        );
+    };
+    let Some(adapter_caps) = read_set(adapter, "adapter_specific_capabilities") else {
+        return invalid(
+            "capability_declaration_malformed",
+            "$.adapter_manifest.adapter_specific_capabilities",
+        );
+    };
+    let supported_common: Vec<String> = requested_common.intersection(&common).cloned().collect();
+    let unsupported_common: Vec<String> = requested_common.difference(&common).cloned().collect();
+    let supported_adapter: Vec<String> = requested_adapter
+        .intersection(&adapter_caps)
+        .cloned()
+        .collect();
+    let unsupported_adapter: Vec<String> = requested_adapter
+        .difference(&adapter_caps)
+        .cloned()
+        .collect();
+    let status = if unsupported_common.is_empty() && unsupported_adapter.is_empty() {
+        "supported"
+    } else if supported_common.is_empty() && supported_adapter.is_empty() {
+        "unsupported"
+    } else {
+        "partially_supported"
+    };
+    json!({
+        "schema_version": CAPABILITY_NEGOTIATION_OUTPUT_SCHEMA_VERSION,
+        "app_version": ADAPTER_CAPABILITY_NEGOTIATION_VERSION,
+        "capability_contract_version": CAPABILITY_CONTRACT_VERSION,
+        "valid": true,
+        "status": status,
+        "common_fields_supported": supported_common,
+        "common_fields_unsupported": unsupported_common,
+        "adapter_capabilities_supported": supported_adapter,
+        "adapter_capabilities_unsupported": unsupported_adapter,
+        "normalized_errors": [],
+    })
+}
+
 pub fn canonicalize_metadata_input(value: &Value) -> Value {
     let input: Result<CanonicalizerInput, _> = serde_json::from_value(value.clone());
     let input = match input {
@@ -3920,6 +4038,76 @@ mod tests {
                 "{input_name} should match {expected_name}"
             );
         }
+    }
+
+    #[test]
+    fn capability_negotiation_is_sorted_and_classifies_support() {
+        let output = negotiate_adapter_capabilities(&json!({
+            "schema_version": CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION,
+            "request_summary": {
+                "schema_version": "agentmesh-request-summary.v0",
+                "request_id": "REQ-001",
+                "required_common_fields": ["status", "title"],
+                "requested_adapter_capabilities": ["comments", "labels"]
+            },
+            "adapter_manifest": {
+                "adapter_id": "markdown",
+                "capability_contract_version": CAPABILITY_CONTRACT_VERSION,
+                "common_fields": ["title"],
+                "adapter_specific_capabilities": ["labels"]
+            }
+        }));
+        assert_eq!(output["status"], "partially_supported");
+        assert_eq!(output["common_fields_supported"], json!(["title"]));
+        assert_eq!(output["common_fields_unsupported"], json!(["status"]));
+        assert_eq!(output["adapter_capabilities_supported"], json!(["labels"]));
+        assert_eq!(
+            output["adapter_capabilities_unsupported"],
+            json!(["comments"])
+        );
+    }
+
+    #[test]
+    fn capability_negotiation_fixtures_match_documented_payloads() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        for (input_name, expected_name) in [
+            (
+                "adapter_capability_negotiation_fully_supported_input.json",
+                "expected_adapter_capability_negotiation_fully_supported_payload.json",
+            ),
+            (
+                "adapter_capability_negotiation_partially_supported_input.json",
+                "expected_adapter_capability_negotiation_partially_supported_payload.json",
+            ),
+            (
+                "adapter_capability_negotiation_unsupported_input.json",
+                "expected_adapter_capability_negotiation_unsupported_payload.json",
+            ),
+        ] {
+            let input: Value =
+                serde_json::from_slice(&std::fs::read(root.join(input_name)).unwrap()).unwrap();
+            let expected: Value =
+                serde_json::from_slice(&std::fs::read(root.join(expected_name)).unwrap()).unwrap();
+            assert_eq!(
+                negotiate_adapter_capabilities(&input),
+                expected,
+                "{input_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn capability_negotiation_normalizes_invalid_declarations() {
+        let output = negotiate_adapter_capabilities(&json!({
+            "schema_version": CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION,
+            "request_summary": {},
+            "adapter_manifest": {}
+        }));
+        assert_eq!(output["status"], "input_invalid");
+        assert_eq!(
+            output["normalized_errors"][0]["code"],
+            "request_schema_unsupported"
+        );
     }
 
     #[test]
