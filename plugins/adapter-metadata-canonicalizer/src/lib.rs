@@ -244,13 +244,15 @@ pub fn negotiate_adapter_capabilities(value: &Value) -> Value {
         );
     }
     let read_set = |object: &Map<String, Value>, key: &str| -> Option<BTreeSet<String>> {
-        object.get(key)?.as_array().map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
+        let items = object.get(key)?.as_array()?;
+        let mut values = BTreeSet::new();
+        for item in items {
+            let value = item.as_str()?.trim();
+            if value.is_empty() || !values.insert(value.to_owned()) {
+                return None;
+            }
+        }
+        Some(values)
     };
     let Some(requested_common) = read_set(request, "required_common_fields") else {
         return invalid(
@@ -4065,6 +4067,43 @@ mod tests {
             output["adapter_capabilities_unsupported"],
             json!(["comments"])
         );
+    }
+
+    #[test]
+    fn capability_negotiation_rejects_malformed_capability_arrays() {
+        for (section, key) in [
+            ("request_summary", "required_common_fields"),
+            ("request_summary", "requested_adapter_capabilities"),
+            ("adapter_manifest", "common_fields"),
+            ("adapter_manifest", "adapter_specific_capabilities"),
+        ] {
+            for malformed in [json!([42]), json!([""]), json!(["title", "title"])] {
+                let mut input = json!({
+                    "schema_version": CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION,
+                    "request_summary": {
+                        "schema_version": "agentmesh-request-summary.v0",
+                        "request_id": "REQ-001",
+                        "required_common_fields": ["title"],
+                        "requested_adapter_capabilities": ["labels"]
+                    },
+                    "adapter_manifest": {
+                        "adapter_id": "markdown",
+                        "capability_contract_version": CAPABILITY_CONTRACT_VERSION,
+                        "common_fields": ["title"],
+                        "adapter_specific_capabilities": ["labels"]
+                    }
+                });
+                input[section][key] = malformed;
+
+                let output = negotiate_adapter_capabilities(&input);
+
+                assert_eq!(output["valid"], false, "{section}.{key}");
+                assert_eq!(
+                    output["normalized_errors"][0]["code"], "capability_declaration_malformed",
+                    "{section}.{key}"
+                );
+            }
+        }
     }
 
     #[test]
