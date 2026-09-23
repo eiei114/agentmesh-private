@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/adapter-capability-negotiation-compact-v0.schema.json",
+  "title": "Adapter Capability Negotiation Compact Output v0",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "app_version", "capability_contract_version", "valid", "status", "common_fields_supported", "common_fields_unsupported", "adapter_capabilities_supported", "adapter_capabilities_unsupported", "normalized_errors"],
+  "properties": {
+    "schema_version": { "const": "adapter-capability-negotiation-compact.v0" },
+    "app_version": { "const": "adapter-capability-negotiation.v0" },
+    "capability_contract_version": { "const": "agentmesh-adapter-capabilities.v0" },
+    "valid": { "type": "boolean" },
+    "status": { "enum": ["supported", "partially_supported", "unsupported", "input_invalid"] },
+    "common_fields_supported": { "$ref": "#/$defs/names" },
+    "common_fields_unsupported": { "$ref": "#/$defs/names" },
+    "adapter_capabilities_supported": { "$ref": "#/$defs/names" },
+    "adapter_capabilities_unsupported": { "$ref": "#/$defs/names" },
+    "normalized_errors": { "type": "array", "items": { "$ref": "#/$defs/error" } }
+  },
+  "$defs": {
+    "names": { "type": "array", "items": { "type": "string" } },
+    "error": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "path"],
+      "properties": {
+        "code": { "enum": ["invalid_schema", "request_summary_missing", "adapter_manifest_missing", "request_schema_unsupported", "capability_contract_unsupported", "capability_declaration_malformed"] },
+        "path": { "type": "string" }
+      }
+    }
+  }
+}
