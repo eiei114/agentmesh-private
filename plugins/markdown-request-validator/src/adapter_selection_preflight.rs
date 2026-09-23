@@ -25,6 +25,7 @@ pub fn select_adapter(value: &Value) -> Value {
             "$.schema_version",
             "schema_version is not supported",
         ));
+        return output(Vec::new(), None, diagnostics);
     }
     let requirements = match root.get("requirements") {
         Some(Value::Array(items)) if !items.is_empty() => items,
@@ -73,6 +74,7 @@ pub fn select_adapter(value: &Value) -> Value {
         }
     };
     let mut required = Vec::new();
+    let mut malformed_requirement = false;
     for (i, item) in requirements.iter().enumerate() {
         let Some(obj) = item.as_object() else {
             diagnostics.push(diagnostic(
@@ -80,6 +82,7 @@ pub fn select_adapter(value: &Value) -> Value {
                 &format!("$.requirements[{i}]"),
                 "requirement must be an object",
             ));
+            malformed_requirement = true;
             continue;
         };
         let Some(name) = nonempty(obj, "name") else {
@@ -88,6 +91,7 @@ pub fn select_adapter(value: &Value) -> Value {
                 &format!("$.requirements[{i}].name"),
                 "requirement name is required",
             ));
+            malformed_requirement = true;
             continue;
         };
         let Some(version) = nonempty(obj, "version") else {
@@ -96,9 +100,14 @@ pub fn select_adapter(value: &Value) -> Value {
                 &format!("$.requirements[{i}].version"),
                 "requirement version is required",
             ));
+            malformed_requirement = true;
             continue;
         };
         required.push((name.to_string(), version.to_string()));
+    }
+    if malformed_requirement {
+        diagnostics.sort_by_key(|item| item.to_string());
+        return output(Vec::new(), None, diagnostics);
     }
     let mut eligible = Vec::new();
     for (i, item) in candidates.iter().enumerate() {
@@ -173,13 +182,34 @@ pub fn select_adapter(value: &Value) -> Value {
         if malformed {
             continue;
         }
+        for field in ["common", "adapter_specific"] {
+            if let Some(value) = obj.get(field) {
+                if !value.is_object() {
+                    diagnostics.push(diagnostic(
+                        "malformed_manifest",
+                        &format!("{path}.{field}"),
+                        &format!("{field} must be an object"),
+                    ));
+                    malformed = true;
+                }
+            }
+        }
+        if malformed {
+            continue;
+        }
         let compatible = required.iter().all(|(name, wanted)| {
             offered
                 .iter()
                 .any(|(got, version)| got == name && compatible_version(wanted, version))
         });
         if compatible {
-            eligible.push(json!({"adapter_id": id, "adapter_version": version, "priority": priority, "common": canonical_object(obj.get("common").cloned().unwrap_or_else(|| json!({}))), "adapter_specific": canonical_object(obj.get("adapter_specific").cloned().unwrap_or_else(|| json!({})))}));
+            eligible.push(json!({
+                "adapter_id": id,
+                "adapter_version": version,
+                "priority": priority,
+                "common": canonical_object(obj.get("common").cloned().unwrap_or_else(|| json!({}))),
+                "adapter_specific": canonical_object(obj.get("adapter_specific").cloned().unwrap_or_else(|| json!({})))
+            }));
         } else {
             diagnostics.push(diagnostic(
                 "incompatible_capabilities",
@@ -291,5 +321,55 @@ mod tests {
     #[test]
     fn stable_bytes() {
         assert_eq!(select_adapter(&input()), select_adapter(&input()));
+    }
+
+    #[test]
+    fn unsupported_schema_version_cannot_select_a_candidate() {
+        let mut value = input();
+        value["schema_version"] = json!("unsupported.v0");
+
+        let result = select_adapter(&value);
+
+        assert_eq!(result["selection"], "no_selection");
+        assert!(result["eligible_candidates"].as_array().unwrap().is_empty());
+        assert_eq!(result["diagnostics"][0]["code"], "unknown_schema_version");
+    }
+
+    #[test]
+    fn malformed_requirement_cannot_select_a_candidate() {
+        let mut value = input();
+        value["requirements"][0] = json!({"name": "read"});
+
+        let result = select_adapter(&value);
+
+        assert_eq!(result["selection"], "no_selection");
+        assert!(result["eligible_candidates"].as_array().unwrap().is_empty());
+        assert!(result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["code"] == "malformed_requirement"));
+    }
+
+    #[test]
+    fn malformed_metadata_shapes_reject_candidates() {
+        for field in ["common", "adapter_specific"] {
+            let mut value = input();
+            value["candidates"] = json!([value["candidates"][0].clone()]);
+            value["candidates"][0][field] = json!("not-an-object");
+
+            let result = select_adapter(&value);
+
+            assert_eq!(result["selection"], "no_selection", "{field}");
+            assert!(result["eligible_candidates"].as_array().unwrap().is_empty());
+            assert!(
+                result["diagnostics"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|item| item["path"] == format!("$.candidates[0].{field}")),
+                "{field}"
+            );
+        }
     }
 }
