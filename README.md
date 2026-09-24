@@ -184,6 +184,7 @@ Apps / packaging (version-controlled, not `default-members`):
 - `apps/adapter-metadata-canonicalizer/` — adapter metadata comparison/canonicalization manifest + IO schemas
 - `apps/adapter-parity-report/` — deterministic adapter result parity report manifest + IO schemas
 - `apps/adapter-capability-negotiation/` — deterministic common and adapter-specific capability negotiation manifest + IO schemas
+- `apps/adapter-selection-decision-record/` — deterministic adapter selection decision record manifest + IO schemas
 - `apps/lane-run-ledger/` — deterministic execution-run ledger record + orphan classification manifest + IO schemas
 - `apps/adapter-evidence-envelope/` — deterministic adapter evidence envelope manifest + IO schemas
 - `apps/adapter-evidence-traceability/` — deterministic adapter evidence traceability graph manifest + IO schemas
