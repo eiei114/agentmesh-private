@@ -265,8 +265,8 @@ pub fn negotiate_adapter_capabilities(value: &Value) -> Value {
         let items = object.get(key)?.as_array()?;
         let mut values = BTreeSet::new();
         for item in items {
-            let value = item.as_str()?;
-            if value.trim().is_empty() || !values.insert(value.to_owned()) {
+            let value = item.as_str()?.trim();
+            if value.is_empty() || !values.insert(value.to_owned()) {
                 return None;
             }
         }
@@ -4088,46 +4088,40 @@ mod tests {
     }
 
     #[test]
-    fn capability_negotiation_fixtures_match_documented_payloads() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
-        for (input_name, expected_name) in [
-            (
-                "adapter_capability_negotiation_fully_supported_input.json",
-                "expected_adapter_capability_negotiation_fully_supported_payload.json",
-            ),
-            (
-                "adapter_capability_negotiation_partially_supported_input.json",
-                "expected_adapter_capability_negotiation_partially_supported_payload.json",
-            ),
-            (
-                "adapter_capability_negotiation_unsupported_input.json",
-                "expected_adapter_capability_negotiation_unsupported_payload.json",
-            ),
+    fn capability_negotiation_rejects_malformed_capability_arrays() {
+        for (section, key) in [
+            ("request_summary", "required_common_fields"),
+            ("request_summary", "requested_adapter_capabilities"),
+            ("adapter_manifest", "common_fields"),
+            ("adapter_manifest", "adapter_specific_capabilities"),
         ] {
-            let input: Value =
-                serde_json::from_slice(&std::fs::read(root.join(input_name)).unwrap()).unwrap();
-            let expected: Value =
-                serde_json::from_slice(&std::fs::read(root.join(expected_name)).unwrap()).unwrap();
-            assert_eq!(
-                negotiate_adapter_capabilities(&input),
-                expected,
-                "{input_name}"
-            );
-        }
-    }
+            for malformed in [json!([42]), json!([""]), json!(["title", "title"])] {
+                let mut input = json!({
+                    "schema_version": CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION,
+                    "request_summary": {
+                        "schema_version": "agentmesh-request-summary.v0",
+                        "request_id": "REQ-001",
+                        "required_common_fields": ["title"],
+                        "requested_adapter_capabilities": ["labels"]
+                    },
+                    "adapter_manifest": {
+                        "adapter_id": "markdown",
+                        "capability_contract_version": CAPABILITY_CONTRACT_VERSION,
+                        "common_fields": ["title"],
+                        "adapter_specific_capabilities": ["labels"]
+                    }
+                });
+                input[section][key] = malformed;
 
-    #[test]
-    fn capability_negotiation_normalizes_invalid_declarations() {
-        let output = negotiate_adapter_capabilities(&json!({
-            "schema_version": CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION,
-            "request_summary": {},
-            "adapter_manifest": {}
-        }));
-        assert_eq!(output["status"], "input_invalid");
-        assert_eq!(
-            output["normalized_errors"][0]["code"],
-            "request_schema_unsupported"
-        );
+                let output = negotiate_adapter_capabilities(&input);
+
+                assert_eq!(output["valid"], false, "{section}.{key}");
+                assert_eq!(
+                    output["normalized_errors"][0]["code"], "capability_declaration_malformed",
+                    "{section}.{key}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -4176,35 +4170,57 @@ mod tests {
         ))
         .expect("capability negotiation input schema is valid JSON");
         assert_eq!(schema["$defs"]["names"]["items"]["pattern"], "\\S");
+        assert_eq!(
+            schema["$defs"]["request_summary"]["properties"]["request_id"]["pattern"],
+            "\\S"
+        );
+        assert_eq!(
+            schema["$defs"]["adapter_manifest"]["properties"]["adapter_id"]["pattern"],
+            "\\S"
+        );
     }
 
     #[test]
-    fn capability_negotiation_rejects_malformed_capability_items() {
-        for malformed in [
-            json!(["title", 42]),
-            json!(["title", ""]),
-            json!(["title", "title"]),
+    fn capability_negotiation_fixtures_match_documented_payloads() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata");
+        for (input_name, expected_name) in [
+            (
+                "adapter_capability_negotiation_fully_supported_input.json",
+                "expected_adapter_capability_negotiation_fully_supported_payload.json",
+            ),
+            (
+                "adapter_capability_negotiation_partially_supported_input.json",
+                "expected_adapter_capability_negotiation_partially_supported_payload.json",
+            ),
+            (
+                "adapter_capability_negotiation_unsupported_input.json",
+                "expected_adapter_capability_negotiation_unsupported_payload.json",
+            ),
         ] {
-            let output = negotiate_adapter_capabilities(&json!({
-                "schema_version": CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION,
-                "request_summary": {
-                    "schema_version": "agentmesh-request-summary.v0",
-                    "required_common_fields": malformed,
-                    "requested_adapter_capabilities": []
-                },
-                "adapter_manifest": {
-                    "capability_contract_version": CAPABILITY_CONTRACT_VERSION,
-                    "common_fields": ["title"],
-                    "adapter_specific_capabilities": []
-                }
-            }));
-            assert_eq!(output["valid"], false);
-            assert_eq!(output["status"], "input_invalid");
+            let input: Value =
+                serde_json::from_slice(&std::fs::read(root.join(input_name)).unwrap()).unwrap();
+            let expected: Value =
+                serde_json::from_slice(&std::fs::read(root.join(expected_name)).unwrap()).unwrap();
             assert_eq!(
-                output["normalized_errors"][0]["code"],
-                "capability_declaration_malformed"
+                negotiate_adapter_capabilities(&input),
+                expected,
+                "{input_name}"
             );
         }
+    }
+
+    #[test]
+    fn capability_negotiation_normalizes_invalid_declarations() {
+        let output = negotiate_adapter_capabilities(&json!({
+            "schema_version": CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION,
+            "request_summary": {},
+            "adapter_manifest": {}
+        }));
+        assert_eq!(output["status"], "input_invalid");
+        assert_eq!(
+            output["normalized_errors"][0]["code"],
+            "request_schema_unsupported"
+        );
     }
 
     #[test]

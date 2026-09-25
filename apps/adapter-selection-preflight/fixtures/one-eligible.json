@@ -1,0 +1,5 @@
+{
+  "schema_version": "adapter-selection-preflight-input.v0",
+  "requirements": [{"name": "request.submit", "version": "1.0.0"}],
+  "candidates": [{"adapter_id": "markdown", "adapter_version": "2.1.0", "priority": 10, "capabilities": [{"name": "request.submit", "version": "1.0.0"}], "common": {"kind": "request"}, "adapter_specific": {"format": "markdown"}}]
+}

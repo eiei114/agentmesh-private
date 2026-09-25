@@ -759,6 +759,59 @@ mod tests {
     }
 
     #[test]
+    fn equivalent_requests_have_byte_identical_outputs() {
+        let first = json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "request": {
+                "title": "Stable request",
+                "request_kind": "app",
+                "issue_type": "AFK",
+                "status": "ready",
+                "project_key": "agentmesh-private",
+                "blocked_by": [],
+                "unblocks": []
+            }
+        });
+        let second = json!({
+            "request": {
+                "unblocks": [],
+                "project_key": "agentmesh-private",
+                "blocked_by": [],
+                "status": "ready",
+                "issue_type": "AFK",
+                "request_kind": "app",
+                "title": "Stable request"
+            },
+            "schema_version": INPUT_SCHEMA_VERSION
+        });
+
+        assert_eq!(
+            serde_json::to_vec(&adapt_request_input(&first)).unwrap(),
+            serde_json::to_vec(&adapt_request_input(&second)).unwrap()
+        );
+    }
+
+    #[test]
+    fn diagnostics_do_not_echo_sensitive_or_execution_metadata_values() {
+        let output = adapt_request_input(&json!({
+            "schema_version": INPUT_SCHEMA_VERSION,
+            "request": {
+                "title": "Do not echo",
+                "request_kind": "app",
+                "issue_type": "AFK",
+                "runner_token": "runner-secret-value"
+            },
+            "adapter": {
+                "passthrough": {"credential": "credential-secret-value"}
+            }
+        }));
+        let serialized = serde_json::to_string(&output).unwrap();
+
+        assert!(!serialized.contains("runner-secret-value"));
+        assert!(!serialized.contains("credential-secret-value"));
+    }
+
+    #[test]
     fn local_runner_payload_excludes_multica_readiness() {
         let output = adapt_request_input(&json!({
             "schema_version": INPUT_SCHEMA_VERSION,

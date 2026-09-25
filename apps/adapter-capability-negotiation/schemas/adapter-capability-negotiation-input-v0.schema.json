@@ -18,7 +18,7 @@
       "required": ["schema_version", "request_id", "required_common_fields", "requested_adapter_capabilities"],
       "properties": {
         "schema_version": { "const": "agentmesh-request-summary.v0" },
-        "request_id": { "type": "string", "minLength": 1 },
+        "request_id": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "required_common_fields": { "$ref": "#/$defs/names" },
         "requested_adapter_capabilities": { "$ref": "#/$defs/names" }
       }
@@ -27,7 +27,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["adapter_id", "capability_contract_version", "common_fields", "adapter_specific_capabilities"],
       "properties": {
-        "adapter_id": { "type": "string", "minLength": 1 },
+        "adapter_id": { "type": "string", "minLength": 1, "pattern": "\\S" },
         "capability_contract_version": { "const": "agentmesh-adapter-capabilities.v0" },
         "common_fields": { "$ref": "#/$defs/names" },
         "adapter_specific_capabilities": { "$ref": "#/$defs/names" }
