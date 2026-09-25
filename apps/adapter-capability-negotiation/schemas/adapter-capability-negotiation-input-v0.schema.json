@@ -12,7 +12,7 @@
     "adapter_manifest": { "$ref": "#/$defs/adapter_manifest" }
   },
   "$defs": {
-    "names": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "names": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "pattern": "\\S" } },
     "request_summary": {
       "type": "object", "additionalProperties": false,
       "required": ["schema_version", "request_id", "required_common_fields", "requested_adapter_capabilities"],

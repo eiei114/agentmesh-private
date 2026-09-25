@@ -243,6 +243,24 @@ pub fn negotiate_adapter_capabilities(value: &Value) -> Value {
             "$.adapter_manifest.capability_contract_version",
         );
     }
+    let has_nonempty_string = |object: &Map<String, Value>, key: &str| {
+        object
+            .get(key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+    };
+    if !has_nonempty_string(request, "request_id") {
+        return invalid(
+            "capability_declaration_malformed",
+            "$.request_summary.request_id",
+        );
+    }
+    if !has_nonempty_string(adapter, "adapter_id") {
+        return invalid(
+            "capability_declaration_malformed",
+            "$.adapter_manifest.adapter_id",
+        );
+    }
     let read_set = |object: &Map<String, Value>, key: &str| -> Option<BTreeSet<String>> {
         let items = object.get(key)?.as_array()?;
         let mut values = BTreeSet::new();
@@ -4110,6 +4128,54 @@ mod tests {
             output["normalized_errors"][0]["code"],
             "request_schema_unsupported"
         );
+    }
+
+    #[test]
+    fn capability_negotiation_requires_nonempty_request_and_adapter_ids() {
+        let valid = json!({
+            "schema_version": CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION,
+            "request_summary": {
+                "schema_version": "agentmesh-request-summary.v0",
+                "request_id": "REQ-001",
+                "required_common_fields": ["title"],
+                "requested_adapter_capabilities": []
+            },
+            "adapter_manifest": {
+                "adapter_id": "markdown",
+                "capability_contract_version": CAPABILITY_CONTRACT_VERSION,
+                "common_fields": ["title"],
+                "adapter_specific_capabilities": []
+            }
+        });
+        let mut invalid_request_id = valid.clone();
+        invalid_request_id["request_summary"]["request_id"] = json!("  ");
+        let mut missing_request_id = valid.clone();
+        missing_request_id["request_summary"]
+            .as_object_mut()
+            .unwrap()
+            .remove("request_id");
+        let mut invalid_adapter_id = valid.clone();
+        invalid_adapter_id["adapter_manifest"]["adapter_id"] = json!(42);
+
+        for (input, expected_path) in [
+            (invalid_request_id, "$.request_summary.request_id"),
+            (missing_request_id, "$.request_summary.request_id"),
+            (invalid_adapter_id, "$.adapter_manifest.adapter_id"),
+        ] {
+            let output = negotiate_adapter_capabilities(&input);
+            assert_eq!(output["valid"], false, "{expected_path}");
+            assert_eq!(output["status"], "input_invalid", "{expected_path}");
+            assert_eq!(output["normalized_errors"][0]["path"], expected_path);
+        }
+    }
+
+    #[test]
+    fn capability_negotiation_schema_rejects_whitespace_only_names() {
+        let schema: Value = serde_json::from_str(include_str!(
+            "../../../apps/adapter-capability-negotiation/schemas/adapter-capability-negotiation-input-v0.schema.json"
+        ))
+        .expect("capability negotiation input schema is valid JSON");
+        assert_eq!(schema["$defs"]["names"]["items"]["pattern"], "\\S");
     }
 
     #[test]
