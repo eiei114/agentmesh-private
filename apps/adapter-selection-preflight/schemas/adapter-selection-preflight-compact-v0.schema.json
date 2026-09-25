@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adapter-selection-preflight-compact.v0",
+  "title": "Adapter Selection Preflight Compact Output v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "app_version", "selection", "eligible_candidates", "selected_adapter", "diagnostics"],
+  "properties": {
+    "schema_version": { "const": "adapter-selection-preflight-compact.v0" },
+    "app_version": { "const": "adapter-selection-preflight.v0" },
+    "selection": { "enum": ["selected", "no_selection"] },
+    "eligible_candidates": { "type": "array", "items": { "$ref": "#/$defs/candidate" } },
+    "selected_adapter": { "anyOf": [{ "$ref": "#/$defs/candidate" }, { "type": "null" }] },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+  },
+  "$defs": {
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["adapter_id", "adapter_version", "priority", "common", "adapter_specific"],
+      "properties": {
+        "adapter_id": { "type": "string" }, "adapter_version": { "type": "string" }, "priority": { "type": "integer" },
+        "common": { "type": "object" }, "adapter_specific": { "type": "object" }
+      }
+    },
+    "diagnostic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "path", "message"],
+      "properties": { "code": { "type": "string" }, "path": { "type": "string" }, "message": { "type": "string" } }
+    }
+  }
+}
