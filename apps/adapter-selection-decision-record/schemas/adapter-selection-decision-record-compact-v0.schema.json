@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://agentmesh.local/schemas/adapter-selection-decision-record-compact-v0.schema.json",
+  "title":"Adapter Selection Decision Record v0",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","app_version","decision_rule_version","request","adapter_capability_references","candidates","outcome","normalized_diagnostics"],
+  "properties":{
+    "schema_version":{"const":"adapter-selection-decision-record-compact.v0"},"app_version":{"const":"adapter-selection-decision-record.v0"},"decision_rule_version":{"const":"adapter-selection-priority.v0"},
+    "request":{"type":"object","additionalProperties":false,"required":["request_id","required_common_fields","requested_adapter_capabilities"],"properties":{"request_id":{"type":"string"},"required_common_fields":{"type":"array","items":{"type":"string"}},"requested_adapter_capabilities":{"type":"array","items":{"type":"string"}}}},
+    "adapter_capability_references":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["adapter_id","capabilities"],"properties":{"adapter_id":{"type":"string"},"capabilities":{"type":"array","items":{"type":"string"}}}}},
+    "candidates":{"type":"object","additionalProperties":false,"required":["eligible","rejected","selected"],"properties":{"eligible":{"type":"array","items":{"type":"string"}},"rejected":{"type":"array"},"selected":{"type":["string","null"]}}},
+    "outcome":{"enum":["selected","no_selection"]},"normalized_diagnostics":{"type":"array","items":{"type":"object"}}
+  }
+}

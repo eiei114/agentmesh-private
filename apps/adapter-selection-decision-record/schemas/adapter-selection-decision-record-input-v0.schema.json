@@ -1,0 +1,19 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://agentmesh.local/schemas/adapter-selection-decision-record-input-v0.schema.json",
+  "title":"Adapter Selection Decision Record Input v0",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","request_requirements","adapter_manifests","selection_preflight"],
+  "properties":{
+    "schema_version":{"const":"adapter-selection-decision-record-input.v0"},
+    "request_requirements":{"$ref":"#/$defs/requirements"},
+    "adapter_manifests":{"type":"array","items":{"$ref":"#/$defs/manifest"}},
+    "selection_preflight":{"$ref":"#/$defs/preflight"}
+  },
+  "$defs":{
+    "names":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "requirements":{"type":"object","additionalProperties":false,"required":["request_id","required_common_fields","requested_adapter_capabilities"],"properties":{"request_id":{"type":"string","minLength":1},"required_common_fields":{"$ref":"#/$defs/names"},"requested_adapter_capabilities":{"$ref":"#/$defs/names"}}},
+    "manifest":{"type":"object","additionalProperties":false,"required":["adapter_id","capability_contract_version","common_fields","adapter_specific_capabilities"],"properties":{"adapter_id":{"type":"string","minLength":1},"capability_contract_version":{"const":"agentmesh-adapter-capabilities.v0"},"common_fields":{"$ref":"#/$defs/names"},"adapter_specific_capabilities":{"$ref":"#/$defs/names"}}},
+    "preflight":{"type":"object","additionalProperties":false,"required":["eligible_candidates","rejected_candidates","selected_adapter_id"],"properties":{"eligible_candidates":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},"rejected_candidates":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["adapter_id","reason"],"properties":{"adapter_id":{"type":"string","minLength":1},"reason":{"type":"string","minLength":1}}}},"selected_adapter_id":{"type":["string","null"]}}}
+  }
+}
