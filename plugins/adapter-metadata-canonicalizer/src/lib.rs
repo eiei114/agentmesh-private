@@ -244,13 +244,15 @@ pub fn negotiate_adapter_capabilities(value: &Value) -> Value {
         );
     }
     let read_set = |object: &Map<String, Value>, key: &str| -> Option<BTreeSet<String>> {
-        object.get(key)?.as_array().map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
+        let items = object.get(key)?.as_array()?;
+        let mut values = BTreeSet::new();
+        for item in items {
+            let value = item.as_str()?;
+            if value.trim().is_empty() || !values.insert(value.to_owned()) {
+                return None;
+            }
+        }
+        Some(values)
     };
     let Some(requested_common) = read_set(request, "required_common_fields") else {
         return invalid(
@@ -4108,6 +4110,35 @@ mod tests {
             output["normalized_errors"][0]["code"],
             "request_schema_unsupported"
         );
+    }
+
+    #[test]
+    fn capability_negotiation_rejects_malformed_capability_items() {
+        for malformed in [
+            json!(["title", 42]),
+            json!(["title", ""]),
+            json!(["title", "title"]),
+        ] {
+            let output = negotiate_adapter_capabilities(&json!({
+                "schema_version": CAPABILITY_NEGOTIATION_INPUT_SCHEMA_VERSION,
+                "request_summary": {
+                    "schema_version": "agentmesh-request-summary.v0",
+                    "required_common_fields": malformed,
+                    "requested_adapter_capabilities": []
+                },
+                "adapter_manifest": {
+                    "capability_contract_version": CAPABILITY_CONTRACT_VERSION,
+                    "common_fields": ["title"],
+                    "adapter_specific_capabilities": []
+                }
+            }));
+            assert_eq!(output["valid"], false);
+            assert_eq!(output["status"], "input_invalid");
+            assert_eq!(
+                output["normalized_errors"][0]["code"],
+                "capability_declaration_malformed"
+            );
+        }
     }
 
     #[test]
