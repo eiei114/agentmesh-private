@@ -110,6 +110,7 @@ pub fn select_adapter(value: &Value) -> Value {
         return output(Vec::new(), None, diagnostics);
     }
     let mut eligible = Vec::new();
+    let mut malformed_candidate = false;
     for (i, item) in candidates.iter().enumerate() {
         let path = format!("$.candidates[{i}]");
         let Some(obj) = item.as_object() else {
@@ -118,6 +119,7 @@ pub fn select_adapter(value: &Value) -> Value {
                 &path,
                 "manifest must be an object",
             ));
+            malformed_candidate = true;
             continue;
         };
         let Some(id) = nonempty(obj, "adapter_id") else {
@@ -126,6 +128,7 @@ pub fn select_adapter(value: &Value) -> Value {
                 &format!("{path}.adapter_id"),
                 "adapter_id is required",
             ));
+            malformed_candidate = true;
             continue;
         };
         let Some(version) = nonempty(obj, "adapter_version") else {
@@ -134,6 +137,7 @@ pub fn select_adapter(value: &Value) -> Value {
                 &format!("{path}.adapter_version"),
                 "adapter_version is required",
             ));
+            malformed_candidate = true;
             continue;
         };
         let priority = match obj.get("priority").and_then(Value::as_i64) {
@@ -144,6 +148,7 @@ pub fn select_adapter(value: &Value) -> Value {
                     &format!("{path}.priority"),
                     "priority must be an integer",
                 ));
+                malformed_candidate = true;
                 continue;
             }
         };
@@ -153,6 +158,7 @@ pub fn select_adapter(value: &Value) -> Value {
                 &format!("{path}.capabilities"),
                 "capabilities must be an array",
             ));
+            malformed_candidate = true;
             continue;
         };
         let mut offered = Vec::new();
@@ -164,6 +170,7 @@ pub fn select_adapter(value: &Value) -> Value {
                     &format!("{path}.capabilities[{j}]"),
                     "capability must be an object",
                 ));
+                malformed_candidate = true;
                 malformed = true;
                 continue;
             };
@@ -175,6 +182,7 @@ pub fn select_adapter(value: &Value) -> Value {
                         &format!("{path}.capabilities[{j}]"),
                         "capability name and version are required",
                     ));
+                    malformed_candidate = true;
                     malformed = true;
                 }
             }
@@ -190,6 +198,7 @@ pub fn select_adapter(value: &Value) -> Value {
                         &format!("{path}.{field}"),
                         &format!("{field} must be an object"),
                     ));
+                    malformed_candidate = true;
                     malformed = true;
                 }
             }
@@ -217,6 +226,10 @@ pub fn select_adapter(value: &Value) -> Value {
                 "manifest does not satisfy all requirements",
             ));
         }
+    }
+    if malformed_candidate {
+        diagnostics.sort_by_key(|item| item.to_string());
+        return output(Vec::new(), None, diagnostics);
     }
     eligible.sort_by(|a, b| {
         b["priority"]
@@ -371,5 +384,22 @@ mod tests {
                 "{field}"
             );
         }
+    }
+
+    #[test]
+    fn malformed_candidate_prevents_selecting_another_candidate() {
+        let mut value = input();
+        value["candidates"][0]["priority"] = json!(0);
+        value["candidates"][1]["capabilities"][0] = json!("malformed");
+
+        let result = select_adapter(&value);
+
+        assert_eq!(result["selection"], "no_selection");
+        assert!(result["eligible_candidates"].as_array().unwrap().is_empty());
+        assert!(result["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["code"] == "malformed_manifest"));
     }
 }
