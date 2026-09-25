@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://agentmesh.local/schemas/adapter-projection-compatibility-input-v0.schema.json",
+  "title":"Adapter Projection Compatibility Input v0",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","request_summary","selection_decision","adapter_manifest","adapter_projection"],
+  "properties":{
+    "schema_version":{"const":"adapter-projection-compatibility-input-v0"},
+    "request_summary":{"type":"object","additionalProperties":false,"required":["schema_version","request_id","request_digest"],"properties":{"schema_version":{"const":"agentmesh-request-summary.v0"},"request_id":{"type":"string","minLength":1},"request_digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}}},
+    "selection_decision":{"type":"object","additionalProperties":false,"required":["schema_version","outcome","request","candidates"],"properties":{"schema_version":{"const":"adapter-selection-decision-record-compact.v0"},"outcome":{"const":"selected"},"request":{"type":"object","required":["request_id"]},"candidates":{"type":"object","required":["selected"],"properties":{"selected":{"type":"string","minLength":1}}}}},
+    "adapter_manifest":{"type":"object","additionalProperties":false,"required":["schema_version","adapter_id","capability_contract_version"],"properties":{"schema_version":{"const":"adapter-capability-manifest.v0"},"adapter_id":{"type":"string","minLength":1},"capability_contract_version":{"const":"agentmesh-adapter-capabilities.v0"}}},
+    "adapter_projection":{"type":"object","additionalProperties":false,"required":["schema_version","projection_id","adapter_id","capability_contract_version","request_id","request_digest","projection_digest","common_fields","extensions"],"properties":{"schema_version":{"const":"adapter-projection.v0"},"projection_id":{"type":"string","minLength":1},"adapter_id":{"type":"string","minLength":1},"capability_contract_version":{"type":"string","minLength":1},"request_id":{"type":"string","minLength":1},"request_digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"projection_digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"common_fields":{"type":"object","additionalProperties":true},"extensions":{"type":"object","additionalProperties":true}}}
+  }
+}
