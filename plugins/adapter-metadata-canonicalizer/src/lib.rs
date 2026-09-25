@@ -322,9 +322,16 @@ const SELECTION_RULE_VERSION: &str = "adapter-selection-priority.v0";
 /// never discovers or executes an adapter; malformed and inconsistent input is
 /// represented as a deterministic `no_selection` record.
 pub fn build_adapter_selection_decision_record(value: &Value) -> Value {
+    let empty_request = || {
+        json!({
+            "request_id": "",
+            "required_common_fields": [],
+            "requested_adapter_capabilities": [],
+        })
+    };
     let invalid = |code: &str, path: &str| {
         selection_record(
-            Value::Null,
+            empty_request(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -391,7 +398,7 @@ pub fn build_adapter_selection_decision_record(value: &Value) -> Value {
     let mut diagnostics = Vec::new();
     for (index, manifest) in manifests.iter().enumerate() {
         let Some(manifest) = manifest.as_object() else {
-            diagnostics.push(json!({"code":"candidate_malformed", "path":format!("$.adapter_manifests[{index}")}));
+            diagnostics.push(json!({"code":"candidate_malformed", "path":format!("$.adapter_manifests[{index}]")}));
             continue;
         };
         let Some(adapter_id) = manifest.get("adapter_id").and_then(Value::as_str) else {
@@ -445,39 +452,33 @@ pub fn build_adapter_selection_decision_record(value: &Value) -> Value {
     };
     eligible.sort_unstable();
     eligible.dedup();
-    let mut selected_value = Value::Null;
-    let mut outcome = "no_selection";
-    if let Some(selected_id) = selected {
-        if eligible.contains(&selected_id) && candidate_ids.iter().any(|id| id == selected_id) {
-            selected_value = Value::String(selected_id.to_owned());
-            outcome = "selected";
-        } else {
-            diagnostics
-                .push(json!({"code":"inconsistent_selection", "selected_adapter_id":selected_id}));
-        }
-    }
-    if eligible
-        .iter()
-        .any(|id| !candidate_ids.iter().any(|candidate| candidate == id))
-    {
-        diagnostics.push(json!({"code":"inconsistent_eligible_candidates"}));
-    }
+    let mut rejected_malformed = false;
     let rejected_value = rejected
         .map(|items| {
-            let mut values = items
-                .iter()
-                .filter_map(|item| item.as_object())
-                .map(|item| {
-                    let mut copy = Map::new();
-                    if let Some(id) = item.get("adapter_id").and_then(Value::as_str) {
-                        copy.insert("adapter_id".into(), Value::String(id.into()));
-                    }
-                    if let Some(reason) = item.get("reason").and_then(Value::as_str) {
-                        copy.insert("reason".into(), Value::String(reason.into()));
-                    }
-                    Value::Object(copy)
-                })
-                .collect::<Vec<_>>();
+            let mut values = Vec::new();
+            for (index, item) in items.iter().enumerate() {
+                let Some(item) = item.as_object() else {
+                    rejected_malformed = true;
+                    diagnostics.push(json!({"code":"preflight_malformed", "path":format!("$.selection_preflight.rejected_candidates[{index}]")}));
+                    continue;
+                };
+                let Some(id) = item.get("adapter_id").and_then(Value::as_str) else {
+                    rejected_malformed = true;
+                    diagnostics.push(json!({"code":"preflight_malformed", "path":format!("$.selection_preflight.rejected_candidates[{index}].adapter_id")}));
+                    continue;
+                };
+                let Some(reason) = item.get("reason").and_then(Value::as_str) else {
+                    rejected_malformed = true;
+                    diagnostics.push(json!({"code":"preflight_malformed", "path":format!("$.selection_preflight.rejected_candidates[{index}].reason")}));
+                    continue;
+                };
+                if id.is_empty() || reason.is_empty() {
+                    rejected_malformed = true;
+                    diagnostics.push(json!({"code":"preflight_malformed", "path":format!("$.selection_preflight.rejected_candidates[{index}]")}));
+                    continue;
+                }
+                values.push(json!({"adapter_id": id, "reason": reason}));
+            }
             values.sort_by_key(|item| {
                 item.get("adapter_id")
                     .and_then(Value::as_str)
@@ -487,6 +488,40 @@ pub fn build_adapter_selection_decision_record(value: &Value) -> Value {
             values
         })
         .unwrap_or_default();
+    let rejected_ids: BTreeSet<&str> = rejected_value
+        .iter()
+        .filter_map(|item| item.get("adapter_id").and_then(Value::as_str))
+        .collect();
+    let mut consistent = diagnostics.is_empty() && !rejected_malformed;
+    if eligible
+        .iter()
+        .any(|id| !candidate_ids.iter().any(|candidate| candidate == id))
+    {
+        diagnostics.push(json!({"code":"inconsistent_eligible_candidates"}));
+        consistent = false;
+    }
+    if eligible.iter().any(|id| rejected_ids.contains(id)) {
+        diagnostics.push(json!({"code":"candidate_both_eligible_and_rejected"}));
+        consistent = false;
+    }
+    let mut selected_value = Value::Null;
+    let mut outcome = "no_selection";
+    if let Some(selected_id) = selected {
+        if consistent
+            && eligible.contains(&selected_id)
+            && candidate_ids.iter().any(|id| id == selected_id)
+        {
+            selected_value = Value::String(selected_id.to_owned());
+            outcome = "selected";
+        } else if consistent {
+            diagnostics
+                .push(json!({"code":"inconsistent_selection", "selected_adapter_id":selected_id}));
+        }
+    }
+    if rejected_malformed {
+        selected_value = Value::Null;
+        outcome = "no_selection";
+    }
     selection_record(
         json!({"request_id":request_id,"required_common_fields":required_common_fields,"requested_adapter_capabilities":requested_adapter_capabilities}),
         eligible
@@ -4169,6 +4204,13 @@ mod selection_decision_tests {
             output["normalized_diagnostics"][0]["code"],
             "inconsistent_selection"
         );
+    }
+
+    #[test]
+    fn malformed_input_request_stays_object_shaped() {
+        let output = build_adapter_selection_decision_record(&json!("not-an-object"));
+        assert_eq!(output["outcome"], "no_selection");
+        assert!(output["request"].is_object());
     }
 }
 
