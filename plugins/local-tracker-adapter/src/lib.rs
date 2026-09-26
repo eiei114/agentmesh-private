@@ -5,7 +5,7 @@
 //! Stable request fields stay under `canonical`; adapter-owned routing fields and
 //! passthrough extensions stay under `adapter`.
 
-use agentmesh_request_evidence::{adapter_evidence_digest, RequestEvidenceFields};
+use agentmesh_request_evidence::{adapter_evidence_digest, request_slug, RequestEvidenceFields};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -214,7 +214,7 @@ fn adapter_payload(fields: &RequestFields, extension: &Value) -> Value {
     let title = fields.title.as_deref().unwrap_or("untitled");
     json!({
         "tracker": LOCAL_TRACKER_VERSION,
-        "local_id": format!("local-taskfile://{project}/{}", slug(title)),
+        "local_id": format!("local-taskfile://{project}/{}", request_slug(title)),
         "state": fields.status.as_deref().unwrap_or("draft"),
         "extension": extension,
     })
@@ -224,7 +224,7 @@ fn tracker_ready_payload(fields: &RequestFields) -> Value {
     let project = fields.project_key.as_deref().unwrap_or("unassigned");
     let title = fields.title.as_deref().unwrap_or("untitled");
     json!({
-        "id": format!("local-taskfile://{project}/{}", slug(title)),
+        "id": format!("local-taskfile://{project}/{}", request_slug(title)),
         "title": fields.title,
         "kind": fields.issue_type,
         "project": fields.project_key,
@@ -336,31 +336,6 @@ fn strings(value: Value) -> Vec<String> {
     })
 }
 
-fn slug(title: &str) -> String {
-    let mut out = String::new();
-    let mut previous_dash = false;
-    for c in title.chars().flat_map(char::to_lowercase) {
-        if c.is_ascii_alphanumeric() {
-            out.push(c);
-            previous_dash = false;
-        } else if !previous_dash && !out.is_empty() {
-            out.push('-');
-            previous_dash = true;
-        }
-        if out.len() >= 64 {
-            break;
-        }
-    }
-    while out.ends_with('-') {
-        out.pop();
-    }
-    if out.is_empty() {
-        "untitled".to_string()
-    } else {
-        out
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,9 +408,9 @@ mod tests {
     #[test]
     fn slug_is_stable_and_ascii_only() {
         assert_eq!(
-            slug("Add a local tracker adapter app!"),
+            request_slug("Add a local tracker adapter app!"),
             "add-a-local-tracker-adapter-app"
         );
-        assert_eq!(slug("---"), "untitled");
+        assert_eq!(request_slug("---"), "untitled");
     }
 }

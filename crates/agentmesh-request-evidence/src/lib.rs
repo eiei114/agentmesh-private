@@ -11,6 +11,36 @@ pub const EVIDENCE_DIGEST_SCHEMA_VERSION: &str = "agentmesh-adapter-evidence-dig
 /// Stable request schema covered by this digest.
 pub const REQUEST_SCHEMA_VERSION: &str = "agentmesh-request.v0";
 
+/// Convert a request title into the bounded ASCII slug shared by local adapters.
+///
+/// The exact normalization is part of the adapter-neutral identity contract: Unicode
+/// case-folding is reduced to ASCII alphanumerics, runs of punctuation become one
+/// separator, and the result is capped at 64 bytes.
+pub fn request_slug(title: &str) -> String {
+    let mut out = String::new();
+    let mut previous_dash = false;
+    for character in title.chars().flat_map(char::to_lowercase) {
+        if character.is_ascii_alphanumeric() {
+            out.push(character);
+            previous_dash = false;
+        } else if !previous_dash && !out.is_empty() {
+            out.push('-');
+            previous_dash = true;
+        }
+        if out.len() >= 64 {
+            break;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "untitled".to_string()
+    } else {
+        out
+    }
+}
+
 /// Stable request fields that request materializers expose as evidence.
 #[derive(Debug, Default)]
 pub struct RequestEvidenceFields {
@@ -100,4 +130,17 @@ fn section(key: &str, rationale: &str, fields: Vec<Value>) -> Value {
 
 fn field(key: &str, value: Value, rationale: &str) -> Value {
     json!({"key": key, "value": value, "rationale": rationale})
+}
+
+#[cfg(test)]
+mod tests {
+    use super::request_slug;
+
+    #[test]
+    fn request_slug_is_bounded_and_deterministic() {
+        assert_eq!(request_slug("---"), "untitled");
+        assert_eq!(request_slug("  Repair: AgentMesh!  "), "repair-agentmesh");
+        assert_eq!(request_slug(&"a".repeat(80)).len(), 64);
+        assert_eq!(request_slug("日本語"), "untitled");
+    }
 }
