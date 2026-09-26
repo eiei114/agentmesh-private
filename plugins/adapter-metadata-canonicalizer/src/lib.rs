@@ -566,6 +566,265 @@ fn selection_record(
     json!({"schema_version":SELECTION_DECISION_OUTPUT_SCHEMA_VERSION,"app_version":ADAPTER_SELECTION_DECISION_RECORD_VERSION,"decision_rule_version":SELECTION_RULE_VERSION,"request":request,"adapter_capability_references":capability_references,"candidates":{"eligible":eligible,"rejected":rejected,"selected":selected},"outcome":outcome,"normalized_diagnostics":diagnostics})
 }
 
+/// Version exposed by the deterministic adapter projection compatibility App.
+pub const ADAPTER_PROJECTION_COMPATIBILITY_VERSION: &str = "adapter-projection-compatibility.v0";
+const PROJECTION_COMPATIBILITY_INPUT_SCHEMA_VERSION: &str =
+    "adapter-projection-compatibility-input.v0";
+const PROJECTION_COMPATIBILITY_OUTPUT_SCHEMA_VERSION: &str =
+    "adapter-projection-compatibility-compact.v0";
+const PROJECTION_COMPATIBILITY_CONTRACT_VERSION: &str =
+    "agentmesh-adapter-projection-compatibility.v0";
+
+/// Join a request summary, selection decision, capability manifest, and one projection
+/// without discovering, executing, or falling back to an adapter.
+pub fn build_adapter_projection_compatibility(value: &Value) -> Value {
+    let invalid = |diagnostics: Vec<Value>| {
+        projection_compatibility_record(
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            false,
+            diagnostics,
+        )
+    };
+    let Some(root) = value.as_object() else {
+        return invalid(vec![json!({"code":"input_malformed","path":"$"})]);
+    };
+    if root.get("schema_version")
+        != Some(&Value::String(
+            PROJECTION_COMPATIBILITY_INPUT_SCHEMA_VERSION.into(),
+        ))
+    {
+        return invalid(vec![
+            json!({"code":"invalid_schema","path":"$.schema_version"}),
+        ]);
+    }
+    let Some(request) = root.get("request_summary").and_then(Value::as_object) else {
+        return invalid(vec![
+            json!({"code":"request_summary_missing","path":"$.request_summary"}),
+        ]);
+    };
+    let Some(decision) = root.get("selection_decision").and_then(Value::as_object) else {
+        return invalid(vec![
+            json!({"code":"selection_decision_missing","path":"$.selection_decision"}),
+        ]);
+    };
+    let Some(manifest) = root.get("adapter_manifest").and_then(Value::as_object) else {
+        return invalid(vec![
+            json!({"code":"adapter_manifest_missing","path":"$.adapter_manifest"}),
+        ]);
+    };
+    let Some(projection) = root.get("adapter_projection").and_then(Value::as_object) else {
+        return invalid(vec![
+            json!({"code":"adapter_projection_missing","path":"$.adapter_projection"}),
+        ]);
+    };
+    let mut diagnostics = Vec::new();
+    let mut required_schema = |object: &Map<String, Value>, expected: &str, path: &str| {
+        if object.get("schema_version") != Some(&Value::String(expected.into())) {
+            diagnostics.push(json!({"code":"unsupported_schema","path":path}));
+        }
+    };
+    required_schema(
+        request,
+        "agentmesh-request-summary.v0",
+        "$.request_summary.schema_version",
+    );
+    required_schema(
+        decision,
+        "adapter-selection-decision-record-compact.v0",
+        "$.selection_decision.schema_version",
+    );
+    required_schema(
+        manifest,
+        "adapter-capability-manifest.v0",
+        "$.adapter_manifest.schema_version",
+    );
+    required_schema(
+        projection,
+        "adapter-projection.v0",
+        "$.adapter_projection.schema_version",
+    );
+    let mut string_at = |object: &Map<String, Value>, key: &str, path: &str| -> Option<String> {
+        match object
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+        {
+            Some(value) => Some(value.to_owned()),
+            None => {
+                diagnostics.push(json!({"code":"field_missing_or_malformed","path":path}));
+                None
+            }
+        }
+    };
+    let request_id = string_at(request, "request_id", "$.request_summary.request_id");
+    let request_digest = string_at(
+        request,
+        "request_digest",
+        "$.request_summary.request_digest",
+    );
+    let adapter_id = string_at(manifest, "adapter_id", "$.adapter_manifest.adapter_id");
+    let capability_version = string_at(
+        manifest,
+        "capability_contract_version",
+        "$.adapter_manifest.capability_contract_version",
+    );
+    let projection_id = string_at(
+        projection,
+        "projection_id",
+        "$.adapter_projection.projection_id",
+    );
+    let projection_adapter_id =
+        string_at(projection, "adapter_id", "$.adapter_projection.adapter_id");
+    let projection_capability = string_at(
+        projection,
+        "capability_contract_version",
+        "$.adapter_projection.capability_contract_version",
+    );
+    let projection_request_id =
+        string_at(projection, "request_id", "$.adapter_projection.request_id");
+    let projection_request_digest = string_at(
+        projection,
+        "request_digest",
+        "$.adapter_projection.request_digest",
+    );
+    let projection_digest = string_at(
+        projection,
+        "projection_digest",
+        "$.adapter_projection.projection_digest",
+    );
+    let selected = decision
+        .get("candidates")
+        .and_then(Value::as_object)
+        .and_then(|c| c.get("selected"))
+        .and_then(Value::as_str);
+    if decision.get("outcome") != Some(&Value::String("selected".into())) || selected.is_none() {
+        diagnostics
+            .push(json!({"code":"no_selection","path":"$.selection_decision.candidates.selected"}));
+    }
+    let decision_request_id = decision
+        .get("request")
+        .and_then(Value::as_object)
+        .and_then(|r| r.get("request_id"))
+        .and_then(Value::as_str);
+    if request_id.as_deref() != decision_request_id {
+        diagnostics.push(json!({"code":"request_identity_mismatch","path":"$.selection_decision.request.request_id"}));
+    }
+    if selected != adapter_id.as_deref() {
+        diagnostics.push(json!({"code":"selected_adapter_mismatch","path":"$.selection_decision.candidates.selected"}));
+    }
+    if projection_adapter_id != adapter_id {
+        diagnostics.push(
+            json!({"code":"projection_adapter_mismatch","path":"$.adapter_projection.adapter_id"}),
+        );
+    }
+    if projection_capability != capability_version {
+        diagnostics.push(json!({"code":"capability_version_mismatch","path":"$.adapter_projection.capability_contract_version"}));
+    }
+    if projection_request_id != request_id {
+        diagnostics.push(
+            json!({"code":"projection_request_mismatch","path":"$.adapter_projection.request_id"}),
+        );
+    }
+    if projection_request_digest != request_digest {
+        diagnostics.push(
+            json!({"code":"request_digest_mismatch","path":"$.adapter_projection.request_digest"}),
+        );
+    }
+    if let Some(digest) = request_digest.as_deref() {
+        let valid = digest.strip_prefix("sha256:").is_some_and(|hex| {
+            hex.len() == 64
+                && hex
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        });
+        if !valid {
+            diagnostics
+                .push(json!({"code":"digest_malformed","path":"$.request_summary.request_digest"}));
+        }
+    }
+    if let Some(digest) = projection_digest.as_deref() {
+        let valid = digest.strip_prefix("sha256:").is_some_and(|hex| {
+            hex.len() == 64
+                && hex
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        });
+        if !valid {
+            diagnostics.push(
+                json!({"code":"digest_malformed","path":"$.adapter_projection.projection_digest"}),
+            );
+        }
+    }
+    let common = projection
+        .get("common_fields")
+        .cloned()
+        .unwrap_or(Value::Object(Map::new()));
+    let extensions = projection
+        .get("extensions")
+        .cloned()
+        .unwrap_or(Value::Object(Map::new()));
+    if !common.is_object() {
+        diagnostics.push(
+            json!({"code":"common_fields_malformed","path":"$.adapter_projection.common_fields"}),
+        );
+    }
+    if !extensions.is_object() {
+        diagnostics
+            .push(json!({"code":"extensions_malformed","path":"$.adapter_projection.extensions"}));
+    }
+    if let Some(object) = extensions.as_object() {
+        for key in object.keys() {
+            let lower = key.to_ascii_lowercase();
+            if lower.contains("credential")
+                || lower.contains("secret")
+                || lower.contains("token")
+                || lower.contains("command")
+            {
+                diagnostics.push(json!({"code":"extension_field_forbidden","field":key}));
+            }
+        }
+    }
+    diagnostics.sort_by(|a, b| {
+        serde_json::to_string(a)
+            .unwrap()
+            .cmp(&serde_json::to_string(b).unwrap())
+    });
+    diagnostics.dedup();
+    let compatible = diagnostics.is_empty();
+    projection_compatibility_record(
+        request_digest.map(Value::String).unwrap_or(Value::Null),
+        projection_digest.map(Value::String).unwrap_or(Value::Null),
+        adapter_id.map(Value::String).unwrap_or(Value::Null),
+        capability_version.map(Value::String).unwrap_or(Value::Null),
+        projection_id.map(Value::String).unwrap_or(Value::Null),
+        if compatible { common } else { Value::Null },
+        if compatible { extensions } else { Value::Null },
+        compatible,
+        diagnostics,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn projection_compatibility_record(
+    request_digest: Value,
+    projection_digest: Value,
+    adapter_id: Value,
+    capability_version: Value,
+    projection_id: Value,
+    common_fields: Value,
+    extensions: Value,
+    compatible: bool,
+    diagnostics: Vec<Value>,
+) -> Value {
+    json!({"schema_version":PROJECTION_COMPATIBILITY_OUTPUT_SCHEMA_VERSION,"app_version":ADAPTER_PROJECTION_COMPATIBILITY_VERSION,"compatibility_contract_version":PROJECTION_COMPATIBILITY_CONTRACT_VERSION,"request_digest":request_digest,"projection_digest":projection_digest,"selected_adapter":adapter_id,"capability_contract_version":capability_version,"projection_id":projection_id,"compatible":compatible,"common_fields":common_fields,"extensions":extensions,"normalized_diagnostics":diagnostics})
+}
+
 pub fn canonicalize_metadata_input(value: &Value) -> Value {
     let input: Result<CanonicalizerInput, _> = serde_json::from_value(value.clone());
     let input = match input {
@@ -4236,6 +4495,44 @@ mod selection_decision_tests {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn projection_compatibility_is_deterministic_and_rejects_mismatch() {
+        let input = json!({
+            "schema_version": PROJECTION_COMPATIBILITY_INPUT_SCHEMA_VERSION,
+            "request_summary": {"schema_version":"agentmesh-request-summary.v0","request_id":"req-1","request_digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000"},
+            "selection_decision": {"schema_version":"adapter-selection-decision-record-compact.v0","outcome":"selected","request":{"request_id":"req-1"},"candidates":{"selected":"markdown"}},
+            "adapter_manifest": {"schema_version":"adapter-capability-manifest.v0","adapter_id":"markdown","capability_contract_version":"agentmesh-adapter-capabilities.v0"},
+            "adapter_projection": {"schema_version":"adapter-projection.v0","projection_id":"projection-1","adapter_id":"markdown","capability_contract_version":"agentmesh-adapter-capabilities.v0","request_id":"req-1","request_digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","projection_digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111","common_fields":{"title":"Example"},"extensions":{"markdown_path":"requests/example.md"}}
+        });
+        let first = build_adapter_projection_compatibility(&input);
+        let second = build_adapter_projection_compatibility(&input);
+        assert_eq!(first, second);
+        assert_eq!(first["compatible"], true);
+        assert_eq!(first["common_fields"]["title"], "Example");
+        let mut malformed_input = input.clone();
+        malformed_input["request_summary"]["request_digest"] =
+            json!("sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz");
+        malformed_input["adapter_projection"]["request_digest"] =
+            malformed_input["request_summary"]["request_digest"].clone();
+        let mut mismatch = input;
+        mismatch["adapter_projection"]["adapter_id"] = json!("other");
+        let output = build_adapter_projection_compatibility(&mismatch);
+        assert_eq!(output["compatible"], false);
+        assert_eq!(output["common_fields"], Value::Null);
+        assert_eq!(
+            output["normalized_diagnostics"][0]["code"],
+            "projection_adapter_mismatch"
+        );
+
+        let output = build_adapter_projection_compatibility(&malformed_input);
+        assert_eq!(output["compatible"], false);
+        assert!(output["normalized_diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "digest_malformed"));
+    }
 
     #[test]
     fn equal_stable_fields_are_promoted_and_extensions_are_preserved() {

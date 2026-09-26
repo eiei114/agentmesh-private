@@ -1,0 +1,11 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://agentmesh.local/schemas/adapter-projection-compatibility-compact-v0.schema.json",
+  "title":"Adapter Projection Compatibility Record v0",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","app_version","compatibility_contract_version","request_digest","projection_digest","selected_adapter","capability_contract_version","projection_id","compatible","common_fields","extensions","normalized_diagnostics"],
+  "properties":{
+    "schema_version":{"const":"adapter-projection-compatibility-compact.v0"},"app_version":{"const":"adapter-projection-compatibility.v0"},"compatibility_contract_version":{"const":"agentmesh-adapter-projection-compatibility.v0"},
+    "request_digest":{"type":["string","null"]},"projection_digest":{"type":["string","null"]},"selected_adapter":{"type":["string","null"]},"capability_contract_version":{"type":["string","null"]},"projection_id":{"type":["string","null"]},"compatible":{"type":"boolean"},"common_fields":{"type":["object","null"]},"extensions":{"type":["object","null"]},"normalized_diagnostics":{"type":"array","items":{"type":"object","additionalProperties":true}}
+  }
+}
