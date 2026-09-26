@@ -192,6 +192,7 @@ version = "0.1.0"
 dependencies = [
  "agentmesh-fixture-support",
  "agentmesh-proto",
+ "agentmesh-request-evidence",
  "serde_json",
 ]
 

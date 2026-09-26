@@ -5,6 +5,7 @@
 //! in a contract-defined order, while adapter-only metadata is preserved only in
 //! the runner envelope's `adapter_metadata.passthrough` object.
 
+use agentmesh_request_evidence::request_slug;
 use serde_json::{json, Map, Value};
 
 /// Plugin/schema version exposed in compact output.
@@ -580,7 +581,7 @@ fn canonical_payload(fields: &RequestFields) -> Value {
 
 fn local_runner_envelope(fields: &RequestFields, adapter_passthrough: Value) -> Value {
     let title = fields.title.as_deref().unwrap_or("untitled");
-    let title_slug = slug(title);
+    let title_slug = request_slug(title);
     let id = match fields.project_key.as_deref() {
         Some(project) => format!("local-runner://{project}/{title_slug}"),
         None => format!("local-runner:///{title_slug}"),
@@ -690,31 +691,6 @@ fn scalar(raw: &str) -> Value {
             |_| Value::String(trimmed.to_string()),
             |number| json!(number),
         ),
-    }
-}
-
-fn slug(title: &str) -> String {
-    let mut out = String::new();
-    let mut previous_dash = false;
-    for character in title.chars().flat_map(char::to_lowercase) {
-        if character.is_ascii_alphanumeric() {
-            out.push(character);
-            previous_dash = false;
-        } else if !previous_dash && !out.is_empty() {
-            out.push('-');
-            previous_dash = true;
-        }
-        if out.len() >= 64 {
-            break;
-        }
-    }
-    while out.ends_with('-') {
-        out.pop();
-    }
-    if out.is_empty() {
-        "untitled".to_string()
-    } else {
-        out
     }
 }
 
@@ -887,9 +863,9 @@ mod tests {
     #[test]
     fn slug_is_stable_and_ascii_only() {
         assert_eq!(
-            slug("Add a local-runner adapter compatibility App!"),
+            request_slug("Add a local-runner adapter compatibility App!"),
             "add-a-local-runner-adapter-compatibility-app"
         );
-        assert_eq!(slug("---"), "untitled");
+        assert_eq!(request_slug("---"), "untitled");
     }
 }
