@@ -737,13 +737,25 @@ pub fn build_adapter_projection_compatibility(value: &Value) -> Value {
         );
     }
     if let Some(digest) = request_digest.as_deref() {
-        if !digest.starts_with("sha256:") || digest.len() != 71 {
+        let valid = digest.strip_prefix("sha256:").is_some_and(|hex| {
+            hex.len() == 64
+                && hex
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        });
+        if !valid {
             diagnostics
                 .push(json!({"code":"digest_malformed","path":"$.request_summary.request_digest"}));
         }
     }
     if let Some(digest) = projection_digest.as_deref() {
-        if !digest.starts_with("sha256:") || digest.len() != 71 {
+        let valid = digest.strip_prefix("sha256:").is_some_and(|hex| {
+            hex.len() == 64
+                && hex
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        });
+        if !valid {
             diagnostics.push(
                 json!({"code":"digest_malformed","path":"$.adapter_projection.projection_digest"}),
             );
@@ -4498,6 +4510,11 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(first["compatible"], true);
         assert_eq!(first["common_fields"]["title"], "Example");
+        let mut malformed_input = input.clone();
+        malformed_input["request_summary"]["request_digest"] =
+            json!("sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz");
+        malformed_input["adapter_projection"]["request_digest"] =
+            malformed_input["request_summary"]["request_digest"].clone();
         let mut mismatch = input;
         mismatch["adapter_projection"]["adapter_id"] = json!("other");
         let output = build_adapter_projection_compatibility(&mismatch);
@@ -4507,6 +4524,14 @@ mod tests {
             output["normalized_diagnostics"][0]["code"],
             "projection_adapter_mismatch"
         );
+
+        let output = build_adapter_projection_compatibility(&malformed_input);
+        assert_eq!(output["compatible"], false);
+        assert!(output["normalized_diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|diagnostic| diagnostic["code"] == "digest_malformed"));
     }
 
     #[test]
