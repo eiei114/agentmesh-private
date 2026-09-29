@@ -54,7 +54,11 @@ pub(crate) fn sort_json_keys(value: Value) -> Value {
 
 /// Serialize JSON with lexicographically sorted object keys.
 pub(crate) fn canonical_json_bytes(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(&sort_json_keys(value.clone())).expect("serialize canonical json")
+    // serde_json's default Map is a BTreeMap, so object keys are already emitted
+    // lexicographically. Avoid cloning and recursively rebuilding the whole value
+    // on this hot path; `sort_json_keys` remains available for callers that need
+    // an explicitly normalized Value.
+    serde_json::to_vec(value).expect("serialize canonical json")
 }
 
 /// Compact JSON string for Markdown evidence blocks.
@@ -99,8 +103,11 @@ mod tests {
 
     #[test]
     fn canonical_json_bytes_matches_sorted_key_order() {
-        let bytes = canonical_json_bytes(&json!({"z": 1, "a": 2}));
-        assert_eq!(String::from_utf8(bytes).unwrap(), r#"{"a":2,"z":1}"#);
+        let bytes = canonical_json_bytes(&json!({"z": 1, "a": {"d": 2, "c": 3}}));
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            r#"{"a":{"c":3,"d":2},"z":1}"#
+        );
     }
 
     #[test]
