@@ -319,6 +319,19 @@ ad-hoc Git command sequence.
 - post-repair repo metadata: `current_branch=agent/codex-release-engineer/39eaa8ca`, `current_head=c77e3f79cecc83ca52c65df0da3eed3e1ad3a973`, `branch=main`, `head=c77e3f79cecc83ca52c65df0da3eed3e1ad3a973`, `ahead=0`, `behind=0`, `dirty_count=0`
 - post-repair check: `repair_action=check_only`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 
+## DOT-2048 execution record
+
+- request_id: `DOT-2048`
+- source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-09-28-main.md`
+- derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-09-28-main.md`
+- audited branch: `main`
+- preserved local state before repair: `refs/heads/main=d4d8d31f50ba1fa4cbf2d1586094ae9816061adc`, `refs/remotes/origin/main=345b8208d6e2dffaf88d1b36478c204048324a44`, `before_ahead=0`, `before_behind=13`, `dirty_count=0`
+- pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=13`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
+- repair run: `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
+- repair path: `refs/heads/main` was not checked out in any worktree, so the helper created a temporary worktree, fast-forwarded `main` with `--ff-only`, and removed the temporary worktree afterward.
+- post-repair check: `repair_action=check_only`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
+- preserved working state: the issue worktree remained clean throughout; no uncommitted changes were lost.
+
 Release tags, package publishing, assets, secrets, permissions, production actions,
 and Multica authority changes are intentionally out of scope for this repair.
 
