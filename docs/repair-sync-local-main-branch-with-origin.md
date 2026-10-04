@@ -332,6 +332,17 @@ ad-hoc Git command sequence.
 - post-repair check: `repair_action=check_only`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 - preserved working state: the issue worktree remained clean throughout; no uncommitted changes were lost.
 
+## DOT-2114 execution record
+
+- request_id: `DOT-2114`
+- audited branch: `main`
+- preserved local state before repair: `refs/heads/main=345b8208d6e2dffaf88d1b36478c204048324a44`, `refs/remotes/origin/main=2f2599e6b9d0bc70c6e1db53fcd8ecc1adc6610b`, `before_ahead=0`, `before_behind=2`, `dirty_count=0`
+- pre-repair check: `repair_action=check_only`, `after_behind=2`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`
+- repair run: `repair_action=fast_forward_temporary_worktree`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`
+- repair path: `refs/heads/main` was not checked out in a worktree, so the helper used a coordinated temporary worktree and removed it after the fast-forward.
+- post-repair check: `repair_action=check_only`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
+- preserved working state: the issue worktree remained clean; no local changes were discarded.
+
 Release tags, package publishing, assets, secrets, permissions, production actions,
 and Multica authority changes are intentionally out of scope for this repair.
 
