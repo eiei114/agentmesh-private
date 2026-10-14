@@ -1,4 +1,5 @@
 //! Deterministic, tool-neutral adapter capability selection preflight.
+use crate::adapter_compact_helpers::sort_json_keys;
 use serde_json::{json, Map, Value};
 
 pub const VERSION: &str = "adapter-selection-preflight.v0";
@@ -216,8 +217,8 @@ pub fn select_adapter(value: &Value) -> Value {
                 "adapter_id": id,
                 "adapter_version": version,
                 "priority": priority,
-                "common": canonical_object(obj.get("common").cloned().unwrap_or_else(|| json!({}))),
-                "adapter_specific": canonical_object(obj.get("adapter_specific").cloned().unwrap_or_else(|| json!({})))
+                "common": sort_json_keys(obj.get("common").cloned().unwrap_or_else(|| json!({}))),
+                "adapter_specific": sort_json_keys(obj.get("adapter_specific").cloned().unwrap_or_else(|| json!({})))
             }));
         } else {
             diagnostics.push(diagnostic(
@@ -283,23 +284,6 @@ fn compatible_version(wanted: &str, offered: &str) -> bool {
         _ => false,
     }
 }
-fn canonical_object(value: Value) -> Value {
-    match value {
-        Value::Object(object) => {
-            let mut entries: Vec<_> = object.into_iter().collect();
-            entries.sort_by(|a, b| a.0.cmp(&b.0));
-            Value::Object(
-                entries
-                    .into_iter()
-                    .map(|(key, value)| (key, canonical_object(value)))
-                    .collect(),
-            )
-        }
-        Value::Array(items) => Value::Array(items.into_iter().map(canonical_object).collect()),
-        other => other,
-    }
-}
-
 fn nonempty<'a>(obj: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
     obj.get(key)
         .and_then(Value::as_str)
@@ -334,6 +318,23 @@ mod tests {
     #[test]
     fn stable_bytes() {
         assert_eq!(select_adapter(&input()), select_adapter(&input()));
+    }
+
+    #[test]
+    fn canonical_metadata_is_sorted_recursively_without_reordering_arrays() {
+        let mut value = input();
+        value["candidates"] = json!([value["candidates"][0].clone()]);
+        value["candidates"][0]["common"] =
+            json!({"z": {"b": 2, "a": 1}, "a": [{"y": 2, "x": 1}, {"b": 2, "a": 1}]});
+
+        let result = select_adapter(&value);
+        let common = &result["eligible_candidates"][0]["common"];
+
+        assert_eq!(result["selection"], "selected");
+        assert_eq!(
+            serde_json::to_string(common).unwrap(),
+            r#"{"a":[{"x":1,"y":2},{"a":1,"b":2}],"z":{"a":1,"b":2}}"#
+        );
     }
 
     #[test]
