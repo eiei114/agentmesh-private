@@ -1,0 +1,5 @@
+schema_version = "agentmesh-toolchain-pin.v0"
+tag = "v0.2.0-dev.5"
+commit_sha = "d5bb606142e858313652778c90c9770a3687c38d"
+target = "aarch64-apple-darwin"
+release_manifest_sha256 = "b7abcd030e0dd34a7bf0a1377e20e5be8fbd605b3f3c3e91f249d1b73881003a"
