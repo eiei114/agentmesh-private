@@ -3095,8 +3095,9 @@ fn diagnostic_sort_key(value: &Value) -> (String, String, String, String) {
 }
 
 fn digest_value(value: &Value) -> String {
-    let bytes =
-        serde_json::to_vec(&canonical_json(value)).expect("canonical digest input serializes");
+    // serde_json's default Map is a BTreeMap, so serialization already emits
+    // lexicographically ordered keys without rebuilding the full value tree.
+    let bytes = serde_json::to_vec(value).expect("canonical digest input serializes");
     sha256_hex(&bytes)
 }
 
@@ -4423,7 +4424,8 @@ fn rollback_replay_compact(bundle: Option<Value>, issues: Vec<Value>) -> Value {
 }
 
 fn sha256_json(value: &Value) -> String {
-    let bytes = serde_json::to_vec(&canonical_json(value)).expect("canonical JSON serializes");
+    // Match digest_value while avoiding a recursive clone just to sort keys.
+    let bytes = serde_json::to_vec(value).expect("canonical JSON serializes");
     hex::encode(Sha256::digest(bytes))
 }
 
@@ -5177,9 +5179,14 @@ mod tests {
 
     #[test]
     fn adapter_evidence_digest_uses_canonical_object_order() {
+        let input: Value = serde_json::from_str(r#"{"z":{"y":2,"x":1},"a":3}"#).unwrap();
+        let canonical_bytes = br#"{"a":3,"z":{"x":1,"y":2}}"#;
+
+        assert_eq!(serde_json::to_vec(&input).unwrap(), canonical_bytes);
+        assert_eq!(digest_value(&input), sha256_hex(canonical_bytes));
         assert_eq!(
-            digest_value(&json!({"b": 1, "a": {"d": 2, "c": 3}})),
-            digest_value(&json!({"a": {"c": 3, "d": 2}, "b": 1}))
+            sha256_json(&input),
+            hex::encode(Sha256::digest(canonical_bytes))
         );
     }
 
