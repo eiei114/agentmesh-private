@@ -1,0 +1,5 @@
+schema_version = "agentmesh-toolchain-pin.v0"
+tag = "v0.2.0-dev.5"
+commit_sha = "d5bb606142e858313652778c90c9770a3687c38d"
+target = "x86_64-pc-windows-msvc"
+release_manifest_sha256 = "2e154ec1461da304cf824ecc76b4cfd6cd435a3310940496b9b1af115999aae6"
