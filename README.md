@@ -115,9 +115,11 @@ CI uploads immutable zip/tar bundles containing:
 Verify:
 
 ```bash
-# After extracting an artifact bundle
+# From the repository root, after extracting the matching binaries here
 python scripts/verify_artifact_manifest.py ./manifest.json
-./agentmesh run --plugin ./agentmesh-fixture-echo --input ./examples/echo-input.json --sidecar-dir ./.agentmesh/runs
+plugin="$(pwd)/agentmesh-fixture-echo"
+if [ -f "${plugin}.exe" ]; then plugin="${plugin}.exe"; fi
+./agentmesh run --plugin "$plugin" --input ./examples/echo-input.json --sidecar-dir ./.agentmesh/runs
 ```
 
 Rollback: choose a previous known-good workflow artifact by immutable name + manifest hashes. There is no mutable `latest` dependency. Source rollback is `git revert`.
