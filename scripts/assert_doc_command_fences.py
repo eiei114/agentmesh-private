@@ -6,11 +6,23 @@ runnable: the shell passes ``\\n`` to the CLI as an argument and the program
 exits with ``unexpected argument '\\n' found``. Documentation drift of that
 shape is invisible to Markdown renderers, so assert it here.
 
-CommonMark accepts `` ``` `` and ``~~~`` as fence delimiters, requires an opener
-run of at least three characters, and closes it only with the same character in
-a run at least as long that carries no info string. Scanning only exactly three
-backticks would silently skip a ``~~~bash`` block or a ```` ````bash ```` block,
-so every delimiter length is captured here.
+The scan follows the CommonMark fenced-code-block rules that decide whether a
+line is a fence at all:
+
+* an opener is a run of three or more backticks or tildes, indented at most
+  three columns past the content start of its container;
+* a block is closed only by a line using the same delimiter character with a
+  run at least as long and no info string;
+* block quotes (``>``) and list items (``-``, ``*``, ``+``, ``1.``) are
+  containers, so their prefixes are removed before the fence check and the
+  indentation limit applies relative to the container;
+* four or more columns past the container make an indented code block, not a
+  fence, so such a line neither opens a shell block nor closes one.
+
+Without the container handling a ``~~~bash`` block or a quoted/list shell
+example would be skipped silently, and a four-space-indented `` ```bash ``
+example would be reported although Markdown renders it as an indented code
+block.
 """
 
 from __future__ import annotations
@@ -20,7 +32,10 @@ import sys
 from pathlib import Path
 
 SHELL_LANGUAGES = frozenset({"bash", "sh", "shell", "zsh", "console"})
-FENCE_OPEN_RE = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
+FENCE_RE = re.compile(r"(?P<fence>`{3,}|~{3,})(?P<info>.*)$", re.DOTALL)
+QUOTE_MARKER_RE = re.compile(r"^ {0,3}>[ \t]?")
+LIST_MARKER_RE = re.compile(r"^(?P<marker>[-*+]|\d{1,9}[.)])(?P<gap>[ \t]+|$)")
+MAX_FENCE_INDENT = 3
 
 
 class Fence:
@@ -28,32 +43,81 @@ class Fence:
 
     __slots__ = ("character", "length", "language")
 
-    def __init__(self, fence: str, info: str) -> None:
-        self.character = fence[0]
-        self.length = len(fence)
+    def __init__(self, delimiter: str, info: str) -> None:
+        self.character = delimiter[0]
+        self.length = len(delimiter)
         stripped = info.strip()
         self.language = stripped.split()[0].lower() if stripped else ""
 
-    def closes_with(self, line: str) -> bool:
-        match = FENCE_OPEN_RE.match(line)
+    def closes_with(self, content: str, indent: int) -> bool:
+        """Return whether ``content`` closes this block."""
+        if indent > MAX_FENCE_INDENT:
+            return False
+        match = FENCE_RE.match(content)
         if match is None or match.group("info").strip():
             return False
-        candidate = match.group("fence")
-        return candidate[0] == self.character and len(candidate) >= self.length
+        delimiter = match.group("fence")
+        return delimiter[0] == self.character and len(delimiter) >= self.length
 
 
-def parse_fence(line: str) -> Fence | None:
-    """Return the fence opened by ``line``, or ``None`` if it opens none."""
-    match = FENCE_OPEN_RE.match(line)
+def parse_fence(content: str, indent: int) -> Fence | None:
+    """Return the fence opened by ``content``, or ``None`` if it opens none."""
+    if indent > MAX_FENCE_INDENT:
+        return None
+    match = FENCE_RE.match(content)
     if match is None:
         return None
-    fence = match.group("fence")
+    delimiter = match.group("fence")
     info = match.group("info")
     # A backtick fence's info string may not contain a backtick (CommonMark),
     # so inline code such as `` `a` `` is not mistaken for a fence.
-    if fence[0] == "`" and "`" in info:
+    if delimiter[0] == "`" and "`" in info:
         return None
-    return Fence(fence, info)
+    return Fence(delimiter, info)
+
+
+def line_context(line: str, list_indents: list[int]) -> tuple[str | None, int]:
+    """Strip the block-quote and list-item prefixes from ``line``.
+
+    ``list_indents`` holds the content column of each open list item and is
+    updated in place. Returns ``(content, indent)`` where ``indent`` is the
+    column of ``content`` measured from the innermost container's content
+    start, or ``(None, 0)`` for a blank line.
+    """
+    column = 0
+    rest = line
+    while True:
+        match = QUOTE_MARKER_RE.match(rest)
+        if match is None:
+            break
+        column += match.end()
+        rest = rest[match.end() :]
+
+    if not rest.strip():
+        return None, 0
+
+    lead = len(rest) - len(rest.lstrip(" "))
+    # A non-blank line that dedents past an open list item ends that item.
+    while list_indents and column + lead < list_indents[-1]:
+        list_indents.pop()
+    column += lead
+    rest = rest[lead:]
+
+    marker = LIST_MARKER_RE.match(rest)
+    if marker is not None:
+        gap = marker.group("gap")
+        # CommonMark: a gap wider than four columns belongs to an indented
+        # code block inside the item, so only one column counts as content.
+        width = 1 if len(gap) > 4 or not gap else len(gap)
+        list_indents.append(column + len(marker.group("marker")) + width)
+        column += marker.end()
+        rest = rest[marker.end() :]
+        lead = len(rest) - len(rest.lstrip(" "))
+        column += lead
+        rest = rest[lead:]
+
+    base = list_indents[-1] if list_indents else 0
+    return rest, max(column - base, 0)
 
 
 def repo_root() -> Path:
@@ -69,16 +133,25 @@ def documented_markdown_files(root: Path) -> list[Path]:
 
 
 def iter_fences(text: str):
-    """Yield ``(line_number, language, line)`` for each line inside a fence."""
+    """Yield ``(line_number, language, content)`` for each line in a fence."""
+    list_indents: list[int] = []
     fence: Fence | None = None
     for number, line in enumerate(text.splitlines(), 1):
         if fence is not None:
-            if fence.closes_with(line):
+            # Fence content is literal text, so containers are measured on a
+            # scratch copy and the real open-item state is left untouched.
+            content, indent = line_context(line, list(list_indents))
+            if content is None:
+                continue
+            if fence.closes_with(content, indent):
                 fence = None
                 continue
-            yield number, fence.language, line
+            yield number, fence.language, content
             continue
-        fence = parse_fence(line)
+        content, indent = line_context(line, list_indents)
+        if content is None:
+            continue
+        fence = parse_fence(content, indent)
 
 
 def find_escaped_newline_lines(path: Path) -> list[tuple[int, str]]:

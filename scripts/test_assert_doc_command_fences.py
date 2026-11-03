@@ -166,6 +166,62 @@ class DocCommandFenceTests(unittest.TestCase):
             "docs/app.md:2",
         )
 
+    # --- container indentation and prefixes --------------------------------
+
+    def test_fence_indented_three_spaces_is_still_a_fence(self) -> None:
+        self.assert_rejected(
+            "   ```bash\n   agentmesh app run \\n  --input in.json\n   ```\n",
+            "docs/app.md:2",
+        )
+
+    def test_four_space_indented_block_is_not_a_shell_fence(self) -> None:
+        # CommonMark renders this as an indented code block, not a fence, so a
+        # literal \n there is not a broken shell example.
+        self.assert_accepted(
+            "text\n\n    ```bash\n    agentmesh app run \\n\n    ```\n"
+        )
+
+    def test_four_space_indented_closer_does_not_close_top_level_fence(
+        self,
+    ) -> None:
+        # The indented ``` is content, so the second command is still inside
+        # the shell fence and its literal \n must be reported.
+        self.assert_rejected(
+            "```bash\nagentmesh app validate --manifest a.toml\n"
+            "    ```\nagentmesh app run \\n  --input in.json\n```\n",
+            "docs/app.md:4",
+        )
+
+    def test_block_quoted_shell_fence_is_rejected(self) -> None:
+        self.assert_rejected(
+            "> ```bash\n> agentmesh app run \\n  --input in.json\n> ```\n",
+            "docs/app.md:2",
+        )
+
+    def test_list_item_shell_fence_is_rejected(self) -> None:
+        self.assert_rejected(
+            "1. Step one\n\n   ```bash\n   agentmesh app run \\n   ```\n",
+            "docs/app.md:4",
+        )
+
+    def test_block_quoted_list_fence_is_rejected(self) -> None:
+        self.assert_rejected(
+            "> - quoted step\n>\n>   ```bash\n>   agentmesh app run \\n>   ```\n",
+            "docs/app.md:4",
+        )
+
+    def test_list_item_shell_fence_is_accepted_when_runnable(self) -> None:
+        self.assert_accepted(
+            "1. Step one\n\n   ```bash\n   agentmesh app run --input in.json\n   ```\n"
+        )
+
+    def test_dedented_fence_after_list_closes_list_container(self) -> None:
+        self.assert_rejected(
+            "1. Step one\n\n   ```text\n   note\n   ```\n\n"
+            "```bash\nagentmesh app run \\n  --input in.json\n```\n",
+            "docs/app.md:8",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
