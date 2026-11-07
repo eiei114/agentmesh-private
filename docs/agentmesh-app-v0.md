@@ -468,8 +468,16 @@ Development smoke:
 
 ```bash
 cargo build -p agentmesh-cli -p agentmesh-markdown-request-validator --bins
-agentmesh app validate \n  --manifest apps/markdown-adapter-replay-fixture/agentmesh-app.toml \n  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
-agentmesh app run \n  --manifest apps/markdown-adapter-replay-fixture/agentmesh-app.toml \n  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \n  --input plugins/markdown-request-validator/testdata/markdown_adapter_replay_fixture_success_input.json \n  --sidecar-dir .agentmesh/runs \n  --mode development \n  --dev-plugin /absolute/path/to/target/debug/agentmesh-markdown-adapter-replay-fixture
+agentmesh app validate \
+  --manifest apps/markdown-adapter-replay-fixture/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml
+agentmesh app run \
+  --manifest apps/markdown-adapter-replay-fixture/agentmesh-app.toml \
+  --toolchain-pin toolchains/agentmesh-pin.v0.example.toml \
+  --input plugins/markdown-request-validator/testdata/markdown_adapter_replay_fixture_success_input.json \
+  --sidecar-dir .agentmesh/runs \
+  --mode development \
+  --dev-plugin /absolute/path/to/target/debug/agentmesh-markdown-adapter-replay-fixture
 ```
 
 See `docs/markdown-adapter-replay-fixture-v0.md` for fixture scenarios and the expected compact JSON shape.
