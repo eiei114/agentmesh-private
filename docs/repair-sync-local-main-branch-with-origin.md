@@ -1,6 +1,6 @@
 # Repair request: sync local main branch with origin
 
-Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555, DOT-1578, DOT-1615, DOT-1641, DOT-1703, DOT-1733, DOT-1742, DOT-1789, DOT-1823, DOT-1841, DOT-1865
+Multica Issues: DOT-974, DOT-1379, DOT-1394, DOT-1411, DOT-1450, DOT-1466, DOT-1506, DOT-1517, DOT-1555, DOT-1578, DOT-1615, DOT-1641, DOT-1703, DOT-1733, DOT-1742, DOT-1789, DOT-1823, DOT-1841, DOT-1865, DOT-3455
 
 ## Failure code
 
@@ -39,6 +39,33 @@ python scripts/repair_sync_local_main_with_origin.py --check
 
 `--check` compares the existing `refs/heads/main` and `refs/remotes/origin/main`
 refs without running `git fetch` or changing any refs.
+
+## Uncommitted local changes
+
+The helper classifies every uncommitted local change against the paths the
+incoming commits touch, instead of refusing the whole repair whenever the
+worktree is dirty:
+
+- `local_changes=none` — nothing uncommitted; the fast-forward proceeds as before.
+- `local_changes=preserved` — local changes exist only on paths the incoming
+  commits leave alone. The helper records their count and paths, fast-forwards,
+  and re-reads those paths afterwards to prove their content is unchanged. A
+  worktree fast-forward then reports
+  `repair_action=fast_forward_worktree_preserving_local_changes`, and the
+  temporary-worktree path still reports `fast_forward_temporary_worktree` because
+  the other worktree is not touched at all. Nothing is stashed, reset, or
+  discarded.
+- `local_changes=collision` — at least one local path is also changed by the
+  incoming commits. The helper reports `repair_action=refused_local_changes_collide`
+  plus `collision_paths`, leaves `refs/heads/main` where it was, and explains what
+  to move, commit, or stash. Git itself would abort here, and an ignored local file
+  would be overwritten silently, so the helper treats that case as a collision too.
+
+The `request_action` line keeps its existing contract: `seed_app_requests`
+requires an aligned refs **and** a clean worktree, so a repair that preserved local
+changes still prints `request_action=repair_first` together with
+`worktree_state=dirty`. That is a statement about the checkout, not about the sync:
+`repo_main_behind=absent` and `repo_main_aligned=yes` are what clears the drift.
 
 ## PR evidence checklist
 
@@ -342,6 +369,25 @@ ad-hoc Git command sequence.
 - repair path: `refs/heads/main` was not checked out in a worktree, so the helper used a coordinated temporary worktree and removed it after the fast-forward.
 - post-repair check: `repair_action=check_only`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `request_action=seed_app_requests`
 - preserved working state: the issue worktree remained clean; no local changes were discarded.
+
+## DOT-3455 execution record
+
+- request_id: `DOT-3455`
+- executed_at: `2026-11-09` (JST)
+- source request: `4_Project/OSS/agentmesh-private/Requests/Repair/2026-11-09-re-synchronize-the-local-agentmesh-maintenance-main-bran.md`
+- derived issue: `4_Project/OSS/agentmesh-private/Issues/2026-11-09-re-synchronize-the-local-agentmesh-maintenance-main-bran.md`
+- dedupe key: `agentmesh-private:4_Project/OSS/agentmesh-private/Issues/2026-11-09-re-synchronize-the-local-agentmesh-maintenance-main-bran.md`
+- stable scope: `agentmesh:repair:repo_main_behind:v18`
+- request status: `ready_for_multica=true`, `status=ready`
+- audited branch: `main`
+- preserved local state before repair: `refs/heads/main=ecfbe29720ba2b37b57aeac18da25dae92a70bf7`, `refs/remotes/origin/main=db0dc8bd59266fdcf029676d9a76e368bfdc27b6`, `before_ahead=0`, `before_behind=22`, `dirty_count=6` (3 modified tracked files, 1 untracked directory, 1 untracked `__pycache__`, 1 untracked toolchain pin, plus ignored `.agentmesh/`, `.pi/`, `.ralph/`, `dist/`, `target/`). This is the first recurrence where the maintenance worktree itself had uncommitted changes, so the historical dirty-worktree refusal would have blocked the sync again.
+- pre-repair check: `repair_action=check_only`, `before_ahead=0`, `before_behind=22`, `after_behind=22`, `repo_main_behind=present`, `repo_main_aligned=no`, `request_action=repair_first`, `local_changes=preserved`, `preserved_local_count=798`
+- repair run: `before_ahead=0`, `before_behind=22`, `repair_action=fast_forward_worktree_preserving_local_changes`, `after_local=db0dc8bd59266fdcf029676d9a76e368bfdc27b6`, `after_ahead=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `local_changes=preserved`, `worktree_state=dirty`
+- repair path: `refs/heads/main` **was** checked out in this maintenance worktree, so the helper took the worktree path instead of the temporary-worktree path. It classified all local changes against the 72 paths the incoming 22 commits touch, found no overlap, snapshotted the three modified tracked files by SHA-256, ran `git merge --ff-only origin/main`, and re-read those paths to confirm the digests were identical. Nothing was stashed, reset, checked out, or force-pushed; the previous main tip stays reachable through `HEAD@{1}`.
+- post-repair check: `repair_action=check_only`, `before_behind=0`, `after_behind=0`, `repo_main_behind=absent`, `repo_main_aligned=yes`, `local_changes=preserved`, `worktree_state=dirty`, `request_action=repair_first` (the worktree is legitimately still dirty; the sync itself is complete)
+- post-repair maintenance inspector: `repair_candidates=[]`, `repo.ahead=0`, `repo.behind=0`, `request_action=seed_app_request`, `reason=daily_app_request_missing` — the `repo_main_behind` candidate this scope tracked is gone.
+- preserved content check after repair: `crates/agentmesh-evidence/src/discovery.rs=58147c6e5915b51ef7c67ce2df3243bad3ab0192bf175bcf4482d5ab2f0534d4`, `crates/agentmesh-host/src/process.rs=3871ee97513c9312bf6306d394d87f03f0fb4a5bb0e92f608cd65f81e1044501`, `toolchains/agentmesh-v0.2.0-dev.2.x86_64-pc-windows-msvc.toml=506966e7899cd646e49c9062ca103215969614a531cd48e2b35777c7ad78ccda`, `toolchains/agentmesh-v0.2.0-dev.5.x86_64-pc-windows-msvc.toml=b88b80e6fed94165e01ba6357d95b3bf5008349d69dc1d72c34943617bd49236` — byte-identical to the pre-repair hashes, and `git stash list` is empty.
+- helper change: the previous helper refused any worktree with uncommitted changes (`dirty_count != 0`) even when none of those paths were touched by the incoming commits, which is why this drift kept re-triggering the repair-first branch. The helper now classifies local changes into `preserved` / `collision`, refuses only real overlaps, reports both cases in the existing key=value report, and verifies preserved content after the fast-forward.
 
 Release tags, package publishing, assets, secrets, permissions, production actions,
 and Multica authority changes are intentionally out of scope for this repair.

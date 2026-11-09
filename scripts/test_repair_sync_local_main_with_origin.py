@@ -40,11 +40,11 @@ def configure_user(repo: Path) -> None:
     run(["git", "config", "user.name", "AgentMesh Test"], repo)
 
 
-def commit_file(repo: Path, relative_path: str, content: str, message: str) -> None:
+def commit_file(repo: Path, relative_path: str, content: str, message: str, *, force: bool = False) -> None:
     path = repo / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    run(["git", "add", relative_path], repo)
+    run(["git", "add", *(["-f"] if force else []), relative_path], repo)
     run(["git", "commit", "-m", message], repo)
 
 
@@ -59,6 +59,8 @@ class RepairSyncTests(unittest.TestCase):
         run(["git", "init", "--initial-branch=main", str(seed)], tmp_path)
         configure_user(seed)
         commit_file(seed, "README.md", "initial\n", "initial")
+        commit_file(seed, "NOTES.md", "notes\n", "notes")
+        commit_file(seed, ".gitignore", "ignored/\n", "ignore directory")
         run(["git", "remote", "add", "origin", str(remote)], seed)
         run(["git", "push", "-u", "origin", "main"], seed)
 
@@ -193,6 +195,65 @@ with repair.repair_lock(repo, "main"):
             self.assertIn("dirty_count=1", result.stdout)
             self.assertIn("repo_main_aligned=yes", result.stdout)
             self.assertIn("request_action=repair_first", result.stdout)
+
+    def test_fast_forward_preserves_local_changes_outside_the_incoming_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp), remote_ahead=True)
+            local_change = "notes\nlocal-only\n"
+            (repo / "NOTES.md").write_text(local_change, encoding="utf-8")
+            scratch = repo / "scratch.txt"
+            scratch.write_text("untracked\n", encoding="utf-8")
+
+            result = self.run_script(repo)
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("repair_action=fast_forward_worktree_preserving_local_changes", result.stdout)
+            self.assertIn("local_changes=preserved", result.stdout)
+            self.assertIn("preserved_local_paths=NOTES.md,scratch.txt", result.stdout)
+            self.assertIn("after_behind=0", result.stdout)
+            self.assertIn("repo_main_behind=absent", result.stdout)
+            self.assertIn("repo_main_aligned=yes", result.stdout)
+            self.assertEqual((repo / "NOTES.md").read_text(encoding="utf-8"), local_change)
+            self.assertEqual(scratch.read_text(encoding="utf-8"), "untracked\n")
+            self.assertIn("remote advance", (repo / "README.md").read_text(encoding="utf-8"))
+
+    def test_fast_forward_keeps_main_when_a_local_change_collides_with_a_new_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp), remote_ahead=True)
+            upstream = Path(tmp) / "upstream"
+            commit_file(upstream, "new.md", "upstream\n", "upstream adds new.md")
+            run(["git", "push", "origin", "main"], upstream)
+            (repo / "new.md").write_text("local\n", encoding="utf-8")
+            before_sha = run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip()
+
+            result = self.run_script(repo)
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("new.md", result.stderr)
+            self.assertEqual(
+                run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip(), before_sha
+            )
+            self.assertEqual((repo / "new.md").read_text(encoding="utf-8"), "local\n")
+
+    def test_fast_forward_keeps_main_when_an_ignored_file_would_be_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp), remote_ahead=True)
+            upstream = Path(tmp) / "upstream"
+            commit_file(upstream, "ignored/data.txt", "upstream\n", "upstream adds ignored file", force=True)
+            run(["git", "push", "origin", "main"], upstream)
+            local_only = repo / "ignored" / "data.txt"
+            local_only.parent.mkdir(parents=True, exist_ok=True)
+            local_only.write_text("local-ignored\n", encoding="utf-8")
+            before_sha = run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip()
+
+            result = self.run_script(repo)
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("ignored/data.txt", result.stderr)
+            self.assertEqual(
+                run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip(), before_sha
+            )
+            self.assertEqual(local_only.read_text(encoding="utf-8"), "local-ignored\n")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ when a new issue worktree starts from the remote branch.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -19,7 +20,7 @@ import sys
 import tempfile
 import uuid
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
@@ -34,12 +35,40 @@ class RepairError(RuntimeError):
     """Raised when the local main ref cannot be safely repaired."""
 
 
+PRESERVED_PATH_LIMIT = 10
+
+
 @dataclass(frozen=True)
 class Divergence:
     local_sha: str
     remote_sha: str
     ahead: int
     behind: int
+
+
+@dataclass(frozen=True)
+class LocalChanges:
+    """Worktree changes, split by whether the incoming commits touch them."""
+
+    preserved: tuple[str, ...] = ()
+    preserved_tracked: tuple[str, ...] = ()
+    colliding: tuple[str, ...] = ()
+
+    @property
+    def action(self) -> str:
+        if self.colliding:
+            return "collision"
+        if self.preserved:
+            return "preserved"
+        return "none"
+
+
+class CollisionError(RepairError):
+    """Raised when local changes sit on paths the incoming commits also change."""
+
+    def __init__(self, message: str, changes: LocalChanges) -> None:
+        super().__init__(message)
+        self.changes = changes
 
 
 def run_git(repo: Path, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -271,6 +300,87 @@ def dirty_count(repo: Path) -> int:
     return len(output.splitlines())
 
 
+def split_paths(output: str) -> set[str]:
+    """Split a NUL-separated Git path listing into worktree-relative paths."""
+
+    return {path for path in output.split("\0") if path}
+
+
+def worktree_changes(repo: Path) -> dict[str, str]:
+    """Return worktree-relative path to porcelain status for every local change."""
+
+    output = run_git(
+        repo, ["status", "--porcelain", "-z", "--untracked-files=all", "--no-renames"]
+    ).stdout
+    changes: dict[str, str] = {}
+    for record in output.split("\0"):
+        if not record:
+            continue
+        changes[record[3:]] = record[:2]
+    return changes
+
+
+def incoming_paths(repo: Path, branch: str, remote: str) -> tuple[set[str], set[str]]:
+    """Return the changed and newly created paths a fast-forward would apply."""
+
+    range_spec = f"{branch}..{remote}/{branch}"
+    changed = split_paths(
+        run_git(repo, ["diff", "--name-only", "-z", "--no-renames", range_spec]).stdout
+    )
+    added = split_paths(
+        run_git(
+            repo,
+            ["diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", range_spec],
+        ).stdout
+    )
+    return changed, added
+
+
+def local_changes(repo: Path, branch: str, remote: str, *, detect_collisions: bool = True) -> LocalChanges:
+    """Classify local worktree changes against the paths the fast-forward touches.
+
+    A fast-forward keeps local modifications that the incoming commits do not
+    touch, and Git aborts on its own when a modified or untracked path overlaps.
+    Ignored files are the exception: Git silently overwrites one when an incoming
+    commit creates the same tracked path, so their on-disk presence is treated as
+    a collision instead.
+    """
+
+    changed, added = incoming_paths(repo, branch, remote)
+    changes = worktree_changes(repo)
+    colliding: list[str] = []
+    if detect_collisions:
+        colliding.extend(sorted(path for path in changes if path in changed))
+        colliding.extend(
+            sorted(path for path in added if path not in changes and os.path.lexists(repo / path))
+        )
+    colliding_set = set(colliding)
+    preserved = tuple(sorted(path for path in changes if path not in colliding_set))
+    preserved_tracked = tuple(path for path in preserved if changes[path] != "??")
+    return LocalChanges(
+        preserved=preserved, preserved_tracked=preserved_tracked, colliding=tuple(colliding)
+    )
+
+
+def preserved_state(repo: Path, changes: LocalChanges) -> dict[str, str]:
+    """Return a comparable snapshot of the local paths a fast-forward must keep.
+
+    Tracked modifications are compared by content digest; untracked and ignored
+    entries by presence only, so a large local build directory is not rehashed.
+    """
+
+    snapshot: dict[str, str] = {}
+    for path in changes.preserved_tracked:
+        try:
+            snapshot[path] = hashlib.sha256((repo / path).read_bytes()).hexdigest()
+        except FileNotFoundError:
+            snapshot[path] = "missing"
+    for path in changes.preserved:
+        if path not in changes.preserved_tracked:
+            snapshot[path] = "present" if os.path.lexists(repo / path) else "missing"
+    return snapshot
+
+
 def current_branch(repo: Path) -> str:
     return git_stdout(repo, ["rev-parse", "--abbrev-ref", "HEAD"])
 
@@ -372,13 +482,11 @@ def temporary_branch_worktree(repo: Path, branch: str) -> Iterator[Path]:
         shutil.rmtree(temp_root, ignore_errors=True)
 
 
-def fast_forward(repo: Path, branch: str, remote: str, before: Divergence) -> str:
+def fast_forward(repo: Path, branch: str, remote: str, before: Divergence) -> tuple[str, LocalChanges]:
     if before.ahead != 0:
         raise RepairError(
             f"refs/heads/{branch} is ahead of {remote}/{branch}; refusing to rewrite local commits"
         )
-    if before.behind == 0:
-        return "already_aligned"
 
     ancestor = run_git(repo, ["merge-base", "--is-ancestor", branch, f"{remote}/{branch}"], check=False)
     if ancestor.returncode != 0:
@@ -386,25 +494,55 @@ def fast_forward(repo: Path, branch: str, remote: str, before: Divergence) -> st
 
     branch_ref = f"refs/heads/{branch}"
     checked_out = checked_out_worktree(repo, branch_ref)
+    current = checked_out == repo.resolve()
+    changes = local_changes(repo, branch, remote, detect_collisions=current)
+    if before.behind == 0:
+        return "already_aligned", changes
     if checked_out is None:
+        # The fast-forward lands in a separate worktree, so the current
+        # worktree's changes cannot collide with the incoming paths.
         with temporary_branch_worktree(repo, branch) as worktree:
             run_git(worktree, ["merge", "--ff-only", f"{remote}/{branch}"])
-        return "fast_forward_temporary_worktree"
-    if checked_out != repo.resolve():
+        return "fast_forward_temporary_worktree", changes
+    if not current:
         raise RepairError(
             f"{branch_ref} is checked out in another worktree; run this command from that worktree"
         )
-    if dirty_count(repo) != 0:
-        raise RepairError(f"{branch_ref} worktree is dirty; commit or stash changes before syncing")
+    if changes.colliding:
+        raise CollisionError(
+            f"{branch_ref} has local changes at paths that {remote}/{branch} also changes; "
+            "commit, stash, or move them and rerun: " + ", ".join(changes.colliding),
+            changes,
+        )
+    before_snapshot = preserved_state(repo, changes)
     run_git(repo, ["merge", "--ff-only", f"{remote}/{branch}"])
-    return "fast_forward_worktree"
+    after_snapshot = preserved_state(repo, changes)
+    if before_snapshot != after_snapshot:
+        lost = sorted(
+            path for path, state in before_snapshot.items() if after_snapshot.get(path) != state
+        )
+        raise RepairError(
+            f"fast-forward moved refs/heads/{branch} but changed preserved local paths: "
+            + ", ".join(lost)
+        )
+    if changes.preserved:
+        return "fast_forward_worktree_preserving_local_changes", changes
+    return "fast_forward_worktree", changes
 
 
 def request_ready(repo: Path, after: Divergence) -> bool:
     return after.ahead == 0 and after.behind == 0 and dirty_count(repo) == 0
 
 
-def print_report(repo: Path, branch: str, remote: str, before: Divergence, after: Divergence, action: str) -> None:
+def print_report(
+    repo: Path,
+    branch: str,
+    remote: str,
+    before: Divergence,
+    after: Divergence,
+    action: str,
+    changes: LocalChanges,
+) -> None:
     aligned = after.ahead == 0 and after.behind == 0
     current_dirty_count = dirty_count(repo)
     clean = current_dirty_count == 0
@@ -426,6 +564,16 @@ def print_report(repo: Path, branch: str, remote: str, before: Divergence, after
     print(f"after_behind={after.behind}")
     print(f"repo_main_behind={'present' if after.behind else 'absent'}")
     print(f"repo_main_aligned={'yes' if aligned else 'no'}")
+    print(f"local_changes={changes.action}")
+    if changes.preserved:
+        print(f"preserved_local_count={len(changes.preserved)}")
+        if len(changes.preserved) <= PRESERVED_PATH_LIMIT:
+            print(f"preserved_local_paths={','.join(changes.preserved)}")
+        else:
+            print("preserved_local_paths=omitted:too_many")
+    if changes.colliding:
+        print(f"collision_paths={','.join(changes.colliding)}")
+    print(f"worktree_state={'clean' if clean else 'dirty'}")
     print(f"request_action={'seed_app_requests' if aligned and clean else 'repair_first'}")
 
 
@@ -446,20 +594,30 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    repo: Path | None = None
+    before: Divergence | None = None
     try:
         repo = resolve_repo(Path(args.repo))
-        if args.check:
-            before = divergence(repo, args.branch, args.remote)
-            action = "check_only"
-            after = divergence(repo, args.branch, args.remote)
-        else:
-            with repair_lock(repo, args.branch):
+        with repair_lock(repo, args.branch) if not args.check else nullcontext():
+            if not args.check:
                 fetch_remote_branch(repo, args.branch, args.remote)
-                before = divergence(repo, args.branch, args.remote)
-                action = fast_forward(repo, args.branch, args.remote, before)
-                after = divergence(repo, args.branch, args.remote)
-        print_report(repo, args.branch, args.remote, before, after, action)
+            before = divergence(repo, args.branch, args.remote)
+            if args.check:
+                changes = local_changes(repo, args.branch, args.remote)
+                action = "check_only"
+            else:
+                action, changes = fast_forward(repo, args.branch, args.remote, before)
+            after = divergence(repo, args.branch, args.remote)
+        print_report(repo, args.branch, args.remote, before, after, action, changes)
         return 0 if request_ready(repo, after) else 1
+    except CollisionError as error:
+        assert repo is not None and before is not None
+        after = divergence(repo, args.branch, args.remote)
+        print_report(
+            repo, args.branch, args.remote, before, after, "refused_local_changes_collide", error.changes
+        )
+        print(f"error={error}", file=sys.stderr)
+        return 1
     except RepairError as error:
         print(f"error={error}", file=sys.stderr)
         return 1
