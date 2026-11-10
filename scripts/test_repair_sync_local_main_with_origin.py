@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import errno
 import importlib.util
 import os
 import shutil
@@ -451,7 +452,14 @@ with repair.repair_lock(repo, "main"):
             tmp_path = Path(tmp)
             repo = self.make_repo(tmp_path, checkout_work_branch=True)
             name = b"\xff-undecodable.txt"
-            fd = os.open(os.fsencode(str(repo)) + b"/" + name, os.O_CREAT | os.O_WRONLY, 0o644)
+            try:
+                fd = os.open(os.fsencode(str(repo)) + b"/" + name, os.O_CREAT | os.O_WRONLY, 0o644)
+            except OSError as error:
+                if error.errno != errno.EILSEQ:
+                    raise
+                # APFS and HFS+ refuse path names that are not valid UTF-8, so
+                # this filesystem cannot hold the probe at all.
+                self.skipTest(f"this filesystem rejects undecodable path name bytes: {error}")
             try:
                 os.write(fd, b"payload\n")
             finally:
