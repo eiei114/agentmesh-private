@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import errno
 import importlib.util
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -40,12 +43,71 @@ def configure_user(repo: Path) -> None:
     run(["git", "config", "user.name", "AgentMesh Test"], repo)
 
 
-def commit_file(repo: Path, relative_path: str, content: str, message: str) -> None:
+def commit_file(repo: Path, relative_path: str, content: str, message: str, *, force: bool = False) -> None:
     path = repo / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    run(["git", "add", relative_path], repo)
+    run(["git", "add", *(["-f"] if force else []), relative_path], repo)
     run(["git", "commit", "-m", message], repo)
+
+
+def make_upstream(
+    tmp_path: Path,
+    commit_paths: dict[str, str],
+    message: str,
+    *,
+    remove_paths: tuple[str, ...] = (),
+) -> Path:
+    upstream = tmp_path / "upstream"
+    if not upstream.exists():
+        run(["git", "clone", str(tmp_path / "remote.git"), str(upstream)], tmp_path)
+        configure_user(upstream)
+    for relative_path in remove_paths:
+        entry = upstream / relative_path
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    for relative_path, content in commit_paths.items():
+        path = upstream / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    run(["git", "add", "--force", "-A", *commit_paths, *remove_paths], upstream)
+    run(["git", "commit", "-m", message], upstream)
+    run(["git", "push", "origin", "main"], upstream)
+    return upstream
+
+
+def add_submodule(repo: Path, tmp_path: Path) -> None:
+    submodule_remote = tmp_path / "submodule.git"
+    submodule_seed = tmp_path / "submodule-seed"
+    run(["git", "init", "--bare", "--initial-branch=main", str(submodule_remote)], tmp_path)
+    run(["git", "init", "--initial-branch=main", str(submodule_seed)], tmp_path)
+    configure_user(submodule_seed)
+    (submodule_seed / "file.txt").write_text("submodule initial\n", encoding="utf-8")
+    run(["git", "add", "file.txt"], submodule_seed)
+    run(["git", "commit", "-m", "submodule seed"], submodule_seed)
+    run(["git", "remote", "add", "origin", str(submodule_remote)], submodule_seed)
+    run(["git", "push", "-u", "origin", "main"], submodule_seed)
+    run(
+        ["git", "-c", "protocol.file.allow=always", "submodule", "add", str(submodule_remote), "mod"],
+        repo,
+    )
+    run(["git", "commit", "-m", "add submodule"], repo)
+    run(["git", "push", "origin", "main"], repo)
+
+
+def advance_upstream(tmp_path: Path, relative_path: str, content: str, message: str) -> None:
+    upstream = tmp_path / "upstream"
+    if not upstream.exists():
+        run(["git", "clone", str(tmp_path / "remote.git"), str(upstream)], tmp_path)
+        configure_user(upstream)
+    path = upstream / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    run(["git", "add", relative_path], upstream)
+    run(["git", "commit", "-m", message], upstream)
+    run(["git", "push", "origin", "main"], upstream)
 
 
 class RepairSyncTests(unittest.TestCase):
@@ -59,6 +121,8 @@ class RepairSyncTests(unittest.TestCase):
         run(["git", "init", "--initial-branch=main", str(seed)], tmp_path)
         configure_user(seed)
         commit_file(seed, "README.md", "initial\n", "initial")
+        commit_file(seed, "NOTES.md", "notes\n", "notes")
+        commit_file(seed, ".gitignore", "ignored/\n", "ignore directory")
         run(["git", "remote", "add", "origin", str(remote)], seed)
         run(["git", "push", "-u", "origin", "main"], seed)
 
@@ -193,6 +257,229 @@ with repair.repair_lock(repo, "main"):
             self.assertIn("dirty_count=1", result.stdout)
             self.assertIn("repo_main_aligned=yes", result.stdout)
             self.assertIn("request_action=repair_first", result.stdout)
+
+    def test_fast_forward_preserves_local_changes_outside_the_incoming_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp), remote_ahead=True)
+            local_change = "notes\nlocal-only\n"
+            (repo / "NOTES.md").write_text(local_change, encoding="utf-8")
+            scratch = repo / "scratch.txt"
+            scratch.write_text("untracked\n", encoding="utf-8")
+
+            result = self.run_script(repo)
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("repair_action=fast_forward_worktree_preserving_local_changes", result.stdout)
+            self.assertIn("local_changes=preserved", result.stdout)
+            self.assertIn("preserved_local_paths=NOTES.md,scratch.txt", result.stdout)
+            self.assertIn("after_behind=0", result.stdout)
+            self.assertIn("repo_main_behind=absent", result.stdout)
+            self.assertIn("repo_main_aligned=yes", result.stdout)
+            self.assertEqual((repo / "NOTES.md").read_text(encoding="utf-8"), local_change)
+            self.assertEqual(scratch.read_text(encoding="utf-8"), "untracked\n")
+            self.assertIn("remote advance", (repo / "README.md").read_text(encoding="utf-8"))
+
+    def test_fast_forward_keeps_main_when_a_local_change_collides_with_a_new_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp), remote_ahead=True)
+            upstream = Path(tmp) / "upstream"
+            commit_file(upstream, "new.md", "upstream\n", "upstream adds new.md")
+            run(["git", "push", "origin", "main"], upstream)
+            (repo / "new.md").write_text("local\n", encoding="utf-8")
+            before_sha = run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip()
+
+            result = self.run_script(repo)
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("new.md", result.stderr)
+            self.assertEqual(
+                run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip(), before_sha
+            )
+            self.assertEqual((repo / "new.md").read_text(encoding="utf-8"), "local\n")
+
+    def test_fast_forward_keeps_main_when_an_ignored_file_would_be_overwritten(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp), remote_ahead=True)
+            upstream = Path(tmp) / "upstream"
+            commit_file(upstream, "ignored/data.txt", "upstream\n", "upstream adds ignored file", force=True)
+            run(["git", "push", "origin", "main"], upstream)
+            local_only = repo / "ignored" / "data.txt"
+            local_only.parent.mkdir(parents=True, exist_ok=True)
+            local_only.write_text("local-ignored\n", encoding="utf-8")
+            before_sha = run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip()
+
+            result = self.run_script(repo)
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("ignored/data.txt", result.stderr)
+            self.assertEqual(
+                run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip(), before_sha
+            )
+            self.assertEqual(local_only.read_text(encoding="utf-8"), "local-ignored\n")
+
+    def test_fast_forward_keeps_main_when_an_ignored_file_blocks_an_incoming_directory(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = self.make_repo(tmp_path, remote_ahead=True)
+            make_upstream(
+                tmp_path,
+                {"ignored/data.txt": "upstream\n"},
+                "upstream adds ignored directory",
+            )
+            # The fixture .gitignore holds `ignored/`, which only matches a
+            # directory, so the blocking file must be ignored through exclude
+            # to reproduce the silent-overwrite case at all.
+            with (repo / ".git" / "info" / "exclude").open("a", encoding="utf-8") as exclude:
+                exclude.write("/ignored\n")
+            blocking_file = repo / "ignored"
+            blocking_file.write_text("local-ignored-payload\n", encoding="utf-8")
+            self.assertEqual(run(["git", "status", "--porcelain"], repo).stdout.strip(), "")
+            before_sha = run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip()
+
+            result = self.run_script(repo)
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("repair_action=refused_local_changes_collide", result.stdout)
+            self.assertIn("local_changes=collision", result.stdout)
+            self.assertIn("collision_paths=ignored", result.stdout)
+            self.assertEqual(
+                run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip(), before_sha
+            )
+            self.assertTrue(blocking_file.is_file())
+            self.assertEqual(blocking_file.read_text(encoding="utf-8"), "local-ignored-payload\n")
+
+    def test_fast_forward_allows_a_tracked_file_replaced_by_an_incoming_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = self.make_repo(tmp_path)
+            tracked_file = repo / "cache"
+            tracked_file.write_text("tracked\n", encoding="utf-8")
+            run(["git", "add", "cache"], repo)
+            run(["git", "commit", "-m", "track cache file"], repo)
+            run(["git", "push", "origin", "main"], repo)
+            make_upstream(
+                tmp_path,
+                {"cache/data.txt": "upstream\n"},
+                "upstream replaces cache file with a directory",
+                remove_paths=("cache",),
+            )
+
+            result = self.run_script(repo)
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("repair_action=fast_forward_worktree", result.stdout)
+            self.assertIn("local_changes=none", result.stdout)
+            self.assertNotIn("collision_paths", result.stdout)
+            self.assertEqual((repo / "cache" / "data.txt").read_text(encoding="utf-8"), "upstream\n")
+            self.assertEqual(
+                run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip(),
+                run(["git", "rev-parse", "refs/remotes/origin/main"], repo).stdout.strip(),
+            )
+
+    def test_fast_forward_preserves_a_modified_symlink_by_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = self.make_repo(tmp_path)
+            link = repo / "link"
+            try:
+                link.symlink_to("NOTES.md")
+            except (OSError, NotImplementedError):
+                self.skipTest("symlinks are not supported in this environment")
+            if not (link.is_symlink() and os.readlink(link) == "NOTES.md"):
+                self.skipTest("this Git checkout stores symlinks as plain files")
+            run(["git", "add", "link"], repo)
+            run(["git", "commit", "-m", "track symlink"], repo)
+            run(["git", "push", "origin", "main"], repo)
+            link.unlink()
+            link.symlink_to("README.md")
+            make_upstream(tmp_path, {"README.md": "initial\nremote advance\n"}, "remote advance")
+
+            result = self.run_script(repo)
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("repair_action=fast_forward_worktree_preserving_local_changes", result.stdout)
+            self.assertIn("local_changes=preserved", result.stdout)
+            self.assertNotIn("changed preserved local paths", result.stderr)
+            self.assertEqual(os.readlink(link), "README.md")
+            self.assertEqual(
+                run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip(),
+                run(["git", "rev-parse", "refs/remotes/origin/main"], repo).stdout.strip(),
+            )
+
+    def test_fast_forward_preserves_a_dirty_submodule_without_reading_it_as_a_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = self.make_repo(tmp_path)
+            add_submodule(repo, tmp_path)
+            advance_upstream(tmp_path, "README.md", "initial\nremote advance\n", "remote advance")
+            (repo / "mod" / "file.txt").write_text("submodule local change\n", encoding="utf-8")
+
+            result = self.run_script(repo)
+
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertNotIn("changed preserved local paths", result.stderr)
+            self.assertIn("repair_action=fast_forward_worktree_preserving_local_changes", result.stdout)
+            self.assertIn("preserved_local_paths=mod", result.stdout)
+            self.assertEqual(
+                (repo / "mod" / "file.txt").read_text(encoding="utf-8"), "submodule local change\n"
+            )
+            self.assertEqual(
+                run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip(),
+                run(["git", "rev-parse", "refs/remotes/origin/main"], repo).stdout.strip(),
+            )
+            self.assertEqual(run(["git", "status", "--porcelain"], repo).stdout.strip(), "M mod")
+
+    def test_check_reports_no_collision_when_the_repair_uses_a_separate_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = self.make_repo(tmp_path, remote_ahead=True, checkout_work_branch=True)
+            make_upstream(tmp_path, {"new.md": "upstream\n"}, "upstream adds new.md")
+            local_new = repo / "new.md"
+            local_new.write_text("local\n", encoding="utf-8")
+            # --check never fetches, so origin/main must be current here or
+            # the incoming set stays empty and this test proves nothing.
+            run(["git", "fetch", "origin"], repo)
+
+            check_result = self.run_script(repo, "--check")
+
+            self.assertIn("repair_action=check_only", check_result.stdout)
+            self.assertIn("local_changes=preserved", check_result.stdout)
+            self.assertIn("preserved_local_paths=new.md", check_result.stdout)
+            self.assertNotIn("collision_paths", check_result.stdout)
+
+            repair_result = self.run_script(repo)
+
+            self.assertIn("repair_action=fast_forward_temporary_worktree", repair_result.stdout)
+            self.assertIn("local_changes=preserved", repair_result.stdout)
+            self.assertEqual(local_new.read_text(encoding="utf-8"), "local\n")
+
+    @unittest.skipIf(os.name == "nt", "POSIX pathnames can carry arbitrary bytes")
+    def test_non_utf8_pathname_is_reported_instead_of_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            repo = self.make_repo(tmp_path, checkout_work_branch=True)
+            name = b"\xff-undecodable.txt"
+            try:
+                fd = os.open(os.fsencode(str(repo)) + b"/" + name, os.O_CREAT | os.O_WRONLY, 0o644)
+            except OSError as error:
+                if error.errno != errno.EILSEQ:
+                    raise
+                # APFS and HFS+ refuse path names that are not valid UTF-8, so
+                # this filesystem cannot hold the probe at all.
+                self.skipTest(f"this filesystem rejects undecodable path name bytes: {error}")
+            try:
+                os.write(fd, b"payload\n")
+            finally:
+                os.close(fd)
+
+            result = self.run_script(repo, "--check")
+
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("local_changes=preserved", result.stdout)
+            self.assertIn("\\xff-undecodable.txt", result.stdout)
 
 
 if __name__ == "__main__":
