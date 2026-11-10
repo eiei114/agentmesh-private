@@ -49,17 +49,28 @@ worktree is dirty:
 - `local_changes=none` — nothing uncommitted; the fast-forward proceeds as before.
 - `local_changes=preserved` — local changes exist only on paths the incoming
   commits leave alone. The helper records their count and paths, fast-forwards,
-  and re-reads those paths afterwards to prove their content is unchanged. A
-  worktree fast-forward then reports
-  `repair_action=fast_forward_worktree_preserving_local_changes`, and the
-  temporary-worktree path still reports `fast_forward_temporary_worktree` because
-  the other worktree is not touched at all. Nothing is stashed, reset, or
-  discarded.
+  and then compares a before/after snapshot of those paths. What is compared
+  depends on the path class: a modified tracked file by its content digest, a
+  modified tracked symlink by its link target (never by the bytes of its target),
+  a modified submodule by its recorded commit and its own `git status` output
+  (never by reading the directory), and an untracked or ignored entry by presence
+  only, so a large local build directory is not rehashed. A worktree fast-forward
+  then reports `repair_action=fast_forward_worktree_preserving_local_changes`.
+  The temporary-worktree path reports `fast_forward_temporary_worktree` and takes
+  no snapshot at all: the update lands in a pristine checkout of that branch, so
+  nothing in this worktree is touched and there is nothing to verify. Nothing is
+  stashed, reset, or discarded on either path.
 - `local_changes=collision` — at least one local path is also changed by the
   incoming commits. The helper reports `repair_action=refused_local_changes_collide`
   plus `collision_paths`, leaves `refs/heads/main` where it was, and explains what
-  to move, commit, or stash. Git itself would abort here, and an ignored local file
-  would be overwritten silently, so the helper treats that case as a collision too.
+  to move, commit, or stash. Git itself would abort for a tracked or untracked
+  overlap, but two ignored cases are silent: an ignored local file at a path the
+  incoming commits add, and an ignored local file (or any other non-directory
+  entry) that blocks an incoming directory. Git replaces both without a warning,
+  so the helper checks every incoming path and its ancestors on disk and treats
+  those as collisions too. The same worktree check drives `--check`, so a
+  pre-repair inspection never reports a collision that the repair path would not
+  honour.
 
 The `request_action` line keeps its existing contract: `seed_app_requests`
 requires an aligned refs **and** a clean worktree, so a repair that preserved local

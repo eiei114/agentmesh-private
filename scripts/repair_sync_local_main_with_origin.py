@@ -15,6 +15,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,25 @@ class RepairError(RuntimeError):
 
 
 PRESERVED_PATH_LIMIT = 10
+GITLINK_MODE = "160000"
+
+
+def display_text(text: str) -> str:
+    """Render Git output for reports without losing undecodable pathname bytes.
+
+    Git path output is decoded with ``surrogateescape`` so arbitrary POSIX
+    pathname bytes survive parsing. Surrogates cannot be printed on every
+    console, so they are turned back into the original bytes and rendered as
+    ``\\xNN`` escapes; valid text is returned unchanged.
+    """
+
+    if not text:
+        return text
+    try:
+        raw = text.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:
+        return text.encode("utf-8", "backslashreplace").decode("utf-8", "backslashreplace")
+    return raw.decode("utf-8", "backslashreplace")
 
 
 @dataclass(frozen=True)
@@ -78,9 +98,14 @@ def run_git(repo: Path, args: list[str], *, check: bool = True) -> subprocess.Co
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        # NUL-delimited path output can carry arbitrary bytes on POSIX; strict
+        # UTF-8 decoding raises (or silently loses the capture) instead of
+        # reporting. Escaping happens only when a path is printed.
+        encoding="utf-8",
+        errors="surrogateescape",
     )
     if check and result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
+        detail = display_text((result.stderr or result.stdout).strip())
         raise RepairError(f"git {' '.join(args)} failed: {detail}")
     return result
 
@@ -336,14 +361,83 @@ def incoming_paths(repo: Path, branch: str, remote: str) -> tuple[set[str], set[
     return changed, added
 
 
+def tracked_paths(repo: Path, revision: str) -> dict[str, str]:
+    """Return path -> Git file mode for every path tracked in revision."""
+
+    output = run_git(repo, ["ls-tree", "-r", "-z", "--full-tree", revision]).stdout
+    tracked: dict[str, str] = {}
+    for record in output.split("\0"):
+        if not record:
+            continue
+        meta, _, path = record.partition("\t")
+        parts = meta.split()
+        if path and len(parts) >= 3:
+            tracked[path] = parts[0]
+    return tracked
+
+
+def ancestor_components(path: str) -> Iterator[str]:
+    """Yield every proper directory ancestor of a repository-relative path."""
+
+    parts = path.split("/")
+    for index in range(1, len(parts)):
+        yield "/".join(parts[:index])
+
+
+def is_directory(path: Path) -> bool:
+    """Return True only for a real directory entry, never a symlink to one."""
+
+    try:
+        return stat.S_ISDIR(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
+def blocking_collisions(
+    repo: Path, changed: set[str], added: set[str], changes: dict[str, str]
+) -> set[str]:
+    """Return the local entries Git would overwrite without reporting them.
+
+    Two cases are invisible in `git status` because the local entry is ignored:
+    an already-existing file at an incoming path, and a non-directory entry that
+    blocks an incoming directory. Git replaces both silently on a fast-forward,
+    and for the second case `os.path.lexists(repo / incoming_path)` is false
+    whenever the blocking entry is an ancestor, so the ancestors are walked
+    explicitly instead of only comparing exact paths.
+    """
+
+    tracked = tracked_paths(repo, "HEAD")
+    blocking: set[str] = set()
+    for path in changed | added:
+        if path in changes or path in tracked:
+            # A tracked path is Git's own business: it either merges cleanly or
+            # aborts with its own error instead of discarding anything.
+            continue
+        if os.path.lexists(repo / path):
+            blocking.add(path)
+    for path in changed | added:
+        for ancestor in ancestor_components(path):
+            candidate = repo / ancestor
+            if not os.path.lexists(candidate) or is_directory(candidate):
+                continue
+            if ancestor in tracked:
+                # Git owns this entry, so the incoming commit replacing it with
+                # a directory carries its own deletion entry, and a locally
+                # modified or deleted ancestor already collides above.
+                continue
+            blocking.add(ancestor)
+    return blocking
+
+
 def local_changes(repo: Path, branch: str, remote: str, *, detect_collisions: bool = True) -> LocalChanges:
     """Classify local worktree changes against the paths the fast-forward touches.
 
     A fast-forward keeps local modifications that the incoming commits do not
     touch, and Git aborts on its own when a modified or untracked path overlaps.
-    Ignored files are the exception: Git silently overwrites one when an incoming
-    commit creates the same tracked path, so their on-disk presence is treated as
-    a collision instead.
+    Ignored entries are the exception: Git silently overwrites them when an
+    incoming commit creates the same path, or when a local non-directory entry
+    blocks an incoming directory, so those are detected from the filesystem and
+    treated as collisions too.
     """
 
     changed, added = incoming_paths(repo, branch, remote)
@@ -351,9 +445,7 @@ def local_changes(repo: Path, branch: str, remote: str, *, detect_collisions: bo
     colliding: list[str] = []
     if detect_collisions:
         colliding.extend(sorted(path for path in changes if path in changed))
-        colliding.extend(
-            sorted(path for path in added if path not in changes and os.path.lexists(repo / path))
-        )
+        colliding.extend(sorted(blocking_collisions(repo, changed, added, changes)))
     colliding_set = set(colliding)
     preserved = tuple(sorted(path for path in changes if path not in colliding_set))
     preserved_tracked = tuple(path for path in preserved if changes[path] != "??")
@@ -362,19 +454,65 @@ def local_changes(repo: Path, branch: str, remote: str, *, detect_collisions: bo
     )
 
 
+def submodule_state(repo: Path, path: str) -> str:
+    """Return a snapshot of a submodule entry without reading it as a file."""
+
+    directory = repo / path
+    recorded = run_git(repo, ["rev-parse", f"HEAD:{path}"], check=False).stdout.strip() or "unknown"
+    head = run_git(repo, ["-C", str(directory), "rev-parse", "HEAD"], check=False).stdout.strip() or "unknown"
+    status = run_git(
+        repo,
+        ["-C", str(directory), "status", "--porcelain", "-z", "--untracked-files=all"],
+        check=False,
+    ).stdout
+    dirty_digest = hashlib.sha256(status.encode("utf-8", "surrogateescape")).hexdigest()
+    return f"submodule:recorded={recorded}:head={head}:status={dirty_digest}"
+
+
+def is_submodule(repo: Path, path: str, tracked: dict[str, str]) -> bool:
+    """Return True when path is a gitlink, whatever its worktree gitdir layout."""
+
+    if tracked.get(path) == GITLINK_MODE:
+        return True
+    return os.path.lexists(repo / path / ".git")
+
+
+def local_path_state(repo: Path, path: str, tracked: dict[str, str]) -> str:
+    """Return a comparable snapshot of one preserved local path.
+
+    Symlinks are recorded by link target, never by the bytes of their target,
+    and submodules by their recorded commit plus their own dirty state, never by
+    reading a directory.
+    """
+
+    entry = repo / path
+    try:
+        if not os.path.lexists(entry):
+            return "missing"
+        if is_submodule(repo, path, tracked):
+            return submodule_state(repo, path)
+        if entry.is_symlink():
+            return "symlink:" + os.readlink(entry)
+        if is_directory(entry):
+            return "directory"
+        return "file:" + hashlib.sha256(entry.read_bytes()).hexdigest()
+    except OSError as error:
+        return f"unreadable:{error.__class__.__name__}"
+
+
 def preserved_state(repo: Path, changes: LocalChanges) -> dict[str, str]:
     """Return a comparable snapshot of the local paths a fast-forward must keep.
 
-    Tracked modifications are compared by content digest; untracked and ignored
-    entries by presence only, so a large local build directory is not rehashed.
+    Tracked modifications are compared by content digest (or by link target for
+    symlinks and by recorded commit plus dirty state for submodules); untracked
+    and ignored entries by presence only, so a large local build directory is
+    not rehashed.
     """
 
+    tracked = tracked_paths(repo, "HEAD")
     snapshot: dict[str, str] = {}
     for path in changes.preserved_tracked:
-        try:
-            snapshot[path] = hashlib.sha256((repo / path).read_bytes()).hexdigest()
-        except FileNotFoundError:
-            snapshot[path] = "missing"
+        snapshot[path] = local_path_state(repo, path, tracked)
     for path in changes.preserved:
         if path not in changes.preserved_tracked:
             snapshot[path] = "present" if os.path.lexists(repo / path) else "missing"
@@ -455,7 +593,7 @@ def temporary_branch_worktree(repo: Path, branch: str) -> Iterator[Path]:
     if added.returncode != 0:
         shutil.rmtree(temp_root, ignore_errors=True)
         run_git(repo, ["worktree", "prune"], check=False)
-        detail = (added.stderr or added.stdout).strip()
+        detail = display_text((added.stderr or added.stdout).strip())
         raise RepairError(
             f"could not create coordinated temporary worktree for refs/heads/{branch}; "
             f"the branch may have been checked out concurrently: {detail}"
@@ -470,7 +608,7 @@ def temporary_branch_worktree(repo: Path, branch: str) -> Iterator[Path]:
     finally:
         removed = run_git(repo, ["worktree", "remove", "--force", str(worktree)], check=False)
         if removed.returncode != 0:
-            cleanup_error = (removed.stderr or removed.stdout).strip()
+            cleanup_error = display_text((removed.stderr or removed.stdout).strip())
             shutil.rmtree(temp_root, ignore_errors=True)
             run_git(repo, ["worktree", "prune"], check=False)
             if operation_error is not None:
@@ -493,6 +631,9 @@ def fast_forward(repo: Path, branch: str, remote: str, before: Divergence) -> tu
         raise RepairError(f"refs/heads/{branch} is not a fast-forward ancestor of {remote}/{branch}")
 
     branch_ref = f"refs/heads/{branch}"
+    # Inspect the checkout once: collision detection must describe the same
+    # worktree the update will actually touch, and a concurrent `git worktree
+    # add` between two inspections would desynchronise those two answers.
     checked_out = checked_out_worktree(repo, branch_ref)
     current = checked_out == repo.resolve()
     changes = local_changes(repo, branch, remote, detect_collisions=current)
@@ -500,7 +641,9 @@ def fast_forward(repo: Path, branch: str, remote: str, before: Divergence) -> tu
         return "already_aligned", changes
     if checked_out is None:
         # The fast-forward lands in a separate worktree, so the current
-        # worktree's changes cannot collide with the incoming paths.
+        # worktree's changes cannot collide with the incoming paths. The
+        # temporary worktree holds a pristine checkout, so nothing local to
+        # this worktree is snapshotted or verified on this path.
         with temporary_branch_worktree(repo, branch) as worktree:
             run_git(worktree, ["merge", "--ff-only", f"{remote}/{branch}"])
         return "fast_forward_temporary_worktree", changes
@@ -523,7 +666,7 @@ def fast_forward(repo: Path, branch: str, remote: str, before: Divergence) -> tu
         )
         raise RepairError(
             f"fast-forward moved refs/heads/{branch} but changed preserved local paths: "
-            + ", ".join(lost)
+            + display_text(", ".join(lost))
         )
     if changes.preserved:
         return "fast_forward_worktree_preserving_local_changes", changes
@@ -568,11 +711,11 @@ def print_report(
     if changes.preserved:
         print(f"preserved_local_count={len(changes.preserved)}")
         if len(changes.preserved) <= PRESERVED_PATH_LIMIT:
-            print(f"preserved_local_paths={','.join(changes.preserved)}")
+            print("preserved_local_paths=" + display_text(",".join(changes.preserved)))
         else:
             print("preserved_local_paths=omitted:too_many")
     if changes.colliding:
-        print(f"collision_paths={','.join(changes.colliding)}")
+        print("collision_paths=" + display_text(",".join(changes.colliding)))
     print(f"worktree_state={'clean' if clean else 'dirty'}")
     print(f"request_action={'seed_app_requests' if aligned and clean else 'repair_first'}")
 
@@ -592,6 +735,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def branch_is_current_worktree(repo: Path, branch: str) -> bool:
+    """Return True when the branch under repair is checked out in this worktree.
+
+    Collision detection must match the path that will actually apply the
+    fast-forward: a worktree update only ever collides here, while the
+    temporary-worktree path cannot touch this worktree's local state at all.
+    """
+
+    return checked_out_worktree(repo, f"refs/heads/{branch}") == repo.resolve()
+
+
 def main() -> int:
     args = parse_args()
     repo: Path | None = None
@@ -603,7 +757,12 @@ def main() -> int:
                 fetch_remote_branch(repo, args.branch, args.remote)
             before = divergence(repo, args.branch, args.remote)
             if args.check:
-                changes = local_changes(repo, args.branch, args.remote)
+                changes = local_changes(
+                    repo,
+                    args.branch,
+                    args.remote,
+                    detect_collisions=branch_is_current_worktree(repo, args.branch),
+                )
                 action = "check_only"
             else:
                 action, changes = fast_forward(repo, args.branch, args.remote, before)
@@ -616,10 +775,10 @@ def main() -> int:
         print_report(
             repo, args.branch, args.remote, before, after, "refused_local_changes_collide", error.changes
         )
-        print(f"error={error}", file=sys.stderr)
+        print(f"error={display_text(str(error))}", file=sys.stderr)
         return 1
     except RepairError as error:
-        print(f"error={error}", file=sys.stderr)
+        print(f"error={display_text(str(error))}", file=sys.stderr)
         return 1
 
 
