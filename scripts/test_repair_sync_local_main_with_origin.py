@@ -328,8 +328,14 @@ with repair.repair_lock(repo, "main"):
                 {"ignored/data.txt": "upstream\n"},
                 "upstream adds ignored directory",
             )
+            # The fixture .gitignore holds `ignored/`, which only matches a
+            # directory, so the blocking file must be ignored through exclude
+            # to reproduce the silent-overwrite case at all.
+            with (repo / ".git" / "info" / "exclude").open("a", encoding="utf-8") as exclude:
+                exclude.write("/ignored\n")
             blocking_file = repo / "ignored"
             blocking_file.write_text("local-ignored-payload\n", encoding="utf-8")
+            self.assertEqual(run(["git", "status", "--porcelain"], repo).stdout.strip(), "")
             before_sha = run(["git", "rev-parse", "refs/heads/main"], repo).stdout.strip()
 
             result = self.run_script(repo)
@@ -432,6 +438,9 @@ with repair.repair_lock(repo, "main"):
             make_upstream(tmp_path, {"new.md": "upstream\n"}, "upstream adds new.md")
             local_new = repo / "new.md"
             local_new.write_text("local\n", encoding="utf-8")
+            # --check never fetches, so origin/main must be current here or
+            # the incoming set stays empty and this test proves nothing.
+            run(["git", "fetch", "origin"], repo)
 
             check_result = self.run_script(repo, "--check")
 
