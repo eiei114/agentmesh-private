@@ -1,0 +1,27 @@
+{
+  "schema_version": "request-markdown-renderer-input.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "summary": {
+    "valid": true,
+    "canonical": {
+      "title": "Add a canonical request Markdown renderer App",
+      "request_kind": "app",
+      "issue_type": "AFK",
+      "status": "ready",
+      "project_key": "agentmesh-private",
+      "source_prd": "synthetic://requests/request-markdown-renderer",
+      "source_roadmap": "synthetic://roadmaps/agentmesh-private",
+      "blocked_by": [],
+      "unblocks": [],
+      "sequence_index": 1,
+      "sequence_total": 1
+    },
+    "sections": {
+      "What to build": "Render one canonical summary.",
+      "Acceptance criteria": "- [ ] Round-trip digest matches.",
+      "Blocked by": "- None.",
+      "User stories covered": "- As a maintainer.",
+      "Notes": "- Missing source_design on purpose."
+    }
+  }
+}

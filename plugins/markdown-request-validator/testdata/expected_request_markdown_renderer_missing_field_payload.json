@@ -1,0 +1,60 @@
+{
+  "content_hashes": null,
+  "diagnostic_count": 0,
+  "diagnostics": [],
+  "error_count": 1,
+  "errors": [
+    {
+      "category": "missing_field",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_RENDERER_FIELD_REQUIRED",
+      "message": "request field source_design is required",
+      "path": "$.summary.canonical.source_design",
+      "remediation_hint": "Add the missing contract field before rendering a canonical request document.",
+      "severity": "error"
+    }
+  ],
+  "markdown": null,
+  "renderer_version": "request-markdown-renderer.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "request_slug": null,
+  "round_trip": null,
+  "schema_version": "request-markdown-renderer-compact.v0",
+  "serialization": {
+    "bullet_style": "dash-space; acceptance requirements render as - [ ] or - [x]",
+    "empty_section_placeholder": "- none",
+    "format": "canonical_request_markdown",
+    "frontmatter_field_order": [
+      "title",
+      "request_kind",
+      "issue_type",
+      "status",
+      "project_key",
+      "source_prd",
+      "source_design",
+      "source_roadmap",
+      "blocked_by",
+      "unblocks",
+      "sequence_index",
+      "sequence_total"
+    ],
+    "line_endings": "LF",
+    "object_key_order": "lexicographic",
+    "required_sections": [
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "section_order": [
+      "Parent",
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "whitespace": "trim line edges; collapse inline whitespace; one canonical heading block per section"
+  },
+  "valid": false
+}

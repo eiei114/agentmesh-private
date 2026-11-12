@@ -1,0 +1,34 @@
+{
+  "schema_version": "request-markdown-renderer-input.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "summary": {
+    "valid": true,
+    "canonical": {
+      "title": "Add a canonical request Markdown renderer App",
+      "request_kind": "app",
+      "issue_type": "AFK",
+      "status": "ready",
+      "project_key": "agentmesh-private",
+      "source_prd": "synthetic://requests/request-markdown-renderer",
+      "source_design": "synthetic://docs/agentmesh-request-operations-v1",
+      "source_roadmap": "synthetic://roadmaps/agentmesh-private",
+      "blocked_by": [],
+      "unblocks": [],
+      "sequence_index": 1,
+      "sequence_total": 1,
+      "multica_issue_id": "DOT-0000",
+      "sidecar_path": "ignored/never/rendered"
+    },
+    "sections": {
+      "What to build": "Render one canonical summary and drop adapter extras.",
+      "Acceptance criteria": "- [ ] Adapter-owned fields stay diagnostics.",
+      "Blocked by": "- None.",
+      "User stories covered": "- As a non-Multica adapter maintainer.",
+      "Notes": "- Tracker identifiers are never rendered."
+    }
+  },
+  "adapter_extras": {
+    "tracker_assignee": "agent",
+    "raw_log_path": "ignored/raw.log"
+  }
+}

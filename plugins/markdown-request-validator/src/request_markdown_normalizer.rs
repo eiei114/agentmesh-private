@@ -19,7 +19,7 @@ const REQUEST_SCHEMA_VERSION: &str = "agentmesh-request.v0";
 const MAX_MARKDOWN_BYTES: usize = 64 * 1024;
 const SLUG_MAX_CHARS: usize = 80;
 const ACCEPTED_REQUEST_KINDS: &[&str] = &["app", "repair"];
-const CANONICAL_FRONTMATTER_ORDER: &[&str] = &[
+pub(crate) const CANONICAL_FRONTMATTER_ORDER: &[&str] = &[
     "title",
     "request_kind",
     "issue_type",
@@ -33,7 +33,7 @@ const CANONICAL_FRONTMATTER_ORDER: &[&str] = &[
     "sequence_index",
     "sequence_total",
 ];
-const CANONICAL_SECTION_ORDER: &[&str] = &[
+pub(crate) const CANONICAL_SECTION_ORDER: &[&str] = &[
     "Parent",
     "What to build",
     "Acceptance criteria",
@@ -41,7 +41,7 @@ const CANONICAL_SECTION_ORDER: &[&str] = &[
     "User stories covered",
     "Notes",
 ];
-const REQUIRED_SECTIONS: &[&str] = &[
+pub(crate) const REQUIRED_SECTIONS: &[&str] = &[
     "What to build",
     "Acceptance criteria",
     "Blocked by",
@@ -103,6 +103,70 @@ struct ParsedDocument {
     fields: Map<String, Value>,
     sections: Vec<CanonicalSection>,
     requirements: Vec<Requirement>,
+}
+
+/// Canonical document built from an already-parsed request summary.
+///
+/// The projection is the same canonical projection `request-markdown-normalizer`
+/// exposes, and `markdown` is the byte-stable canonical source document emitted by
+/// the shared canonical Markdown writer, so a renderer App and the normalizer App
+/// cannot drift apart.
+#[derive(Debug, Clone)]
+pub(crate) struct CanonicalRequestDocument {
+    /// Canonical projection value, including fields, sections, requirements, and digest inputs.
+    pub(crate) projection: Value,
+    /// Canonical `agentmesh-request.v0` Markdown document with LF line endings.
+    pub(crate) markdown: String,
+}
+
+/// Build a canonical request document from frontmatter fields and canonical section body lines.
+///
+/// Returns sorted normalized error records when the summary cannot form a valid canonical
+/// projection; no partial document is returned in that case.
+pub(crate) fn canonical_document_from_summary(
+    fields: Map<String, Value>,
+    section_bodies: &BTreeMap<&'static str, Vec<String>>,
+) -> Result<CanonicalRequestDocument, Vec<Value>> {
+    let mut errors = Vec::new();
+    validate_fields(&fields, &mut errors);
+    let (sections, requirements) = canonical_sections(section_bodies, &mut errors);
+    if !errors.is_empty() {
+        return Err(sorted_error_values(errors));
+    }
+    let parsed = ParsedDocument {
+        fields,
+        sections,
+        requirements,
+    };
+    let projection = projection(&parsed);
+    let markdown = projection
+        .get("normalized_markdown")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    Ok(CanonicalRequestDocument {
+        projection,
+        markdown,
+    })
+}
+
+/// Re-enter one rendered request Markdown document through the canonical parser.
+pub(crate) fn reenter_canonical_markdown(markdown: &str) -> Value {
+    normalize_request_markdown(&json!({
+        "schema_version": INPUT_SCHEMA_VERSION,
+        "request_schema_version": REQUEST_SCHEMA_VERSION,
+        "markdown": markdown,
+    }))
+}
+
+fn sorted_error_values(mut errors: Vec<ErrorRecord>) -> Vec<Value> {
+    errors.sort_by(|left, right| {
+        left.code
+            .cmp(right.code)
+            .then_with(|| left.path.cmp(&right.path))
+            .then_with(|| left.message.cmp(&right.message))
+    });
+    errors.iter().map(ErrorRecord::value).collect()
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -697,15 +761,9 @@ fn requirement_lines(requirements: &[Requirement]) -> Vec<String> {
         .collect()
 }
 
-fn compact(parsed: Option<ParsedDocument>, mut errors: Vec<ErrorRecord>) -> Value {
-    errors.sort_by(|left, right| {
-        left.code
-            .cmp(right.code)
-            .then_with(|| left.path.cmp(&right.path))
-            .then_with(|| left.message.cmp(&right.message))
-    });
+fn compact(parsed: Option<ParsedDocument>, errors: Vec<ErrorRecord>) -> Value {
     let valid = errors.is_empty();
-    let errors_json: Vec<Value> = errors.iter().map(ErrorRecord::value).collect();
+    let errors_json = sorted_error_values(errors);
     let projection = parsed.as_ref().filter(|_| valid).map(projection);
     let request_slug = projection
         .as_ref()

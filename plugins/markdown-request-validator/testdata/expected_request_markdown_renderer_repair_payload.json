@@ -1,0 +1,61 @@
+{
+  "content_hashes": {
+    "algorithm": "sha256",
+    "input_canonical_sha256": "sha256:60af9b1724abfd84771c36d947ecc28d279e0c68daa08394675178e9db96c37b",
+    "markdown_sha256": "sha256:e0146e4092f5d64ec8dbf61fd605da221436658fd13f7231eb734d2f103ec36a"
+  },
+  "diagnostic_count": 0,
+  "diagnostics": [],
+  "error_count": 0,
+  "errors": [],
+  "markdown": "---\ntitle: \"Repair daily AgentMesh autopilot failure\"\nrequest_kind: \"repair\"\nissue_type: \"AFK\"\nstatus: \"ready\"\nproject_key: \"agentmesh-private\"\nsource_prd: \"synthetic://requests/repair/daily-autopilot-failure\"\nsource_design: \"synthetic://docs/agentmesh-request-operations-v1\"\nsource_roadmap: \"synthetic://roadmaps/agentmesh-private\"\nblocked_by: []\nunblocks: []\nsequence_index: 2\nsequence_total: 2\n---\n\n# Repair daily AgentMesh autopilot failure\n\n## What to build\n\nRepair the bounded daily autopilot failure path.\n\n## Acceptance criteria\n\n- [x] Keep the repair inside one PR.\n- [ ] Reproduce the failure once.\n\n## Blocked by\n\n- None.\n\n## User stories covered\n\n- As a maintenance owner, I can repair one failure per run.\n\n## Notes\n\n- Request kind: `repair`\n",
+  "renderer_version": "request-markdown-renderer.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "request_slug": "repair-daily-agentmesh-autopilot-failure",
+  "round_trip": {
+    "input_canonical_sha256": "sha256:60af9b1724abfd84771c36d947ecc28d279e0c68daa08394675178e9db96c37b",
+    "mismatch_count": 0,
+    "mismatches": [],
+    "rendered_canonical_sha256": "sha256:60af9b1724abfd84771c36d947ecc28d279e0c68daa08394675178e9db96c37b",
+    "status": "match"
+  },
+  "schema_version": "request-markdown-renderer-compact.v0",
+  "serialization": {
+    "bullet_style": "dash-space; acceptance requirements render as - [ ] or - [x]",
+    "empty_section_placeholder": "- none",
+    "format": "canonical_request_markdown",
+    "frontmatter_field_order": [
+      "title",
+      "request_kind",
+      "issue_type",
+      "status",
+      "project_key",
+      "source_prd",
+      "source_design",
+      "source_roadmap",
+      "blocked_by",
+      "unblocks",
+      "sequence_index",
+      "sequence_total"
+    ],
+    "line_endings": "LF",
+    "object_key_order": "lexicographic",
+    "required_sections": [
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "section_order": [
+      "Parent",
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "whitespace": "trim line edges; collapse inline whitespace; one canonical heading block per section"
+  },
+  "valid": true
+}

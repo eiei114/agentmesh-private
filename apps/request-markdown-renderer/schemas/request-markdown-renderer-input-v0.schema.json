@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-markdown-renderer-input-v0.schema.json",
+  "title": "Request Markdown Renderer Input v0",
+  "description": "Tool-neutral input for rendering one validated canonical agentmesh-request.v0 summary back into canonical request Markdown with a deterministic round-trip digest check. The App accepts no filesystem paths, tracker identifiers, credentials, or free-form command strings.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "summary"],
+  "properties": {
+    "schema_version": { "const": "request-markdown-renderer-input.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "adapter_extras": {
+      "type": "object",
+      "description": "Adapter-owned extras reported as bounded diagnostics. These values never reach the rendered canonical source document.",
+      "maxProperties": 32
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "description": "One validated canonical request summary retained from the pinned request parser or its fingerprint manifest.",
+      "additionalProperties": false,
+      "required": ["valid", "canonical"],
+      "properties": {
+        "valid": {
+          "type": "boolean",
+          "description": "The renderer renders only summaries the canonical parser accepted. False is a deterministic failure with no Markdown output."
+        },
+        "canonical": { "$ref": "#/$defs/canonical_fields" },
+        "sections": {
+          "anyOf": [
+            {
+              "type": "array",
+              "maxItems": 16,
+              "items": { "$ref": "#/$defs/section_entry" }
+            },
+            {
+              "type": "object",
+              "description": "Map of canonical section heading to section body.",
+              "maxProperties": 16,
+              "additionalProperties": { "type": "string", "maxLength": 16384 }
+            }
+          ]
+        }
+      }
+    },
+    "section_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["heading", "body"],
+      "properties": {
+        "heading": { "$ref": "#/$defs/section_heading" },
+        "body": { "type": "string", "maxLength": 16384 }
+      }
+    },
+    "section_heading": {
+      "enum": [
+        "Parent",
+        "What to build",
+        "Acceptance criteria",
+        "Blocked by",
+        "User stories covered",
+        "Notes"
+      ]
+    },
+    "canonical_fields": {
+      "type": "object",
+      "description": "Canonical request frontmatter fields. Non-canonical keys are reported as diagnostics and are not rendered.",
+      "required": [
+        "title",
+        "request_kind",
+        "issue_type",
+        "status",
+        "project_key",
+        "source_prd",
+        "source_design",
+        "source_roadmap",
+        "blocked_by",
+        "unblocks",
+        "sequence_index",
+        "sequence_total"
+      ],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "request_kind": { "enum": ["app", "repair"] },
+        "issue_type": { "type": "string", "minLength": 1 },
+        "ready_for_multica": {
+          "type": "boolean",
+          "description": "Source compatibility hint. Reported as a diagnostic and never rendered into the canonical document."
+        },
+        "status": { "type": "string", "minLength": 1 },
+        "project_key": { "type": "string", "minLength": 1 },
+        "source_prd": { "type": "string", "minLength": 1 },
+        "source_design": { "type": "string", "minLength": 1 },
+        "source_roadmap": { "type": "string", "minLength": 1 },
+        "blocked_by": { "type": "array", "maxItems": 64, "items": { "type": "string", "minLength": 1 } },
+        "unblocks": { "type": "array", "maxItems": 64, "items": { "type": "string", "minLength": 1 } },
+        "sequence_index": { "type": "integer", "minimum": 1 },
+        "sequence_total": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
