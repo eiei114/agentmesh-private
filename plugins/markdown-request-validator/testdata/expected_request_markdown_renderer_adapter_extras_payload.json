@@ -1,0 +1,86 @@
+{
+  "content_hashes": {
+    "algorithm": "sha256",
+    "input_canonical_sha256": "sha256:1d1586923617c00a9a26b63ecf9936243d904c47fadb2c935fa3653e929ad67e",
+    "markdown_sha256": "sha256:e3b4ecba864c43ea65d9125976ef3c8ad9c57208203c103c7a421865bab31493"
+  },
+  "diagnostic_count": 4,
+  "diagnostics": [
+    {
+      "category": "adapter_owned_field",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_RENDERER_ADAPTER_OWNED_FIELD",
+      "message": "adapter-owned field \"raw_log_path\" is reported and never rendered",
+      "path": "$.adapter_extras.raw_log_path"
+    },
+    {
+      "category": "adapter_owned_field",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_RENDERER_ADAPTER_OWNED_FIELD",
+      "message": "adapter-owned field \"tracker_assignee\" is reported and never rendered",
+      "path": "$.adapter_extras.tracker_assignee"
+    },
+    {
+      "category": "adapter_owned_field",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_RENDERER_ADAPTER_OWNED_FIELD",
+      "message": "field \"multica_issue_id\" is adapter-owned and is never rendered into the canonical source",
+      "path": "$.summary.canonical.multica_issue_id"
+    },
+    {
+      "category": "adapter_owned_field",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_RENDERER_ADAPTER_OWNED_FIELD",
+      "message": "field \"sidecar_path\" is adapter-owned and is never rendered into the canonical source",
+      "path": "$.summary.canonical.sidecar_path"
+    }
+  ],
+  "error_count": 0,
+  "errors": [],
+  "markdown": "---\ntitle: \"Add a canonical request Markdown renderer App\"\nrequest_kind: \"app\"\nissue_type: \"AFK\"\nstatus: \"ready\"\nproject_key: \"agentmesh-private\"\nsource_prd: \"synthetic://requests/request-markdown-renderer\"\nsource_design: \"synthetic://docs/agentmesh-request-operations-v1\"\nsource_roadmap: \"synthetic://roadmaps/agentmesh-private\"\nblocked_by: []\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---\n\n# Add a canonical request Markdown renderer App\n\n## What to build\n\nRender one canonical summary and drop adapter extras.\n\n## Acceptance criteria\n\n- [ ] Adapter-owned fields stay diagnostics.\n\n## Blocked by\n\n- None.\n\n## User stories covered\n\n- As a non-Multica adapter maintainer.\n\n## Notes\n\n- Tracker identifiers are never rendered.\n",
+  "renderer_version": "request-markdown-renderer.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "request_slug": "add-a-canonical-request-markdown-renderer-app",
+  "round_trip": {
+    "input_canonical_sha256": "sha256:1d1586923617c00a9a26b63ecf9936243d904c47fadb2c935fa3653e929ad67e",
+    "mismatch_count": 0,
+    "mismatches": [],
+    "rendered_canonical_sha256": "sha256:1d1586923617c00a9a26b63ecf9936243d904c47fadb2c935fa3653e929ad67e",
+    "status": "match"
+  },
+  "schema_version": "request-markdown-renderer-compact.v0",
+  "serialization": {
+    "bullet_style": "dash-space; acceptance requirements render as - [ ] or - [x]",
+    "empty_section_placeholder": "- none",
+    "format": "canonical_request_markdown",
+    "frontmatter_field_order": [
+      "title",
+      "request_kind",
+      "issue_type",
+      "status",
+      "project_key",
+      "source_prd",
+      "source_design",
+      "source_roadmap",
+      "blocked_by",
+      "unblocks",
+      "sequence_index",
+      "sequence_total"
+    ],
+    "line_endings": "LF",
+    "object_key_order": "lexicographic",
+    "required_sections": [
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "section_order": [
+      "Parent",
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "whitespace": "trim line edges; collapse inline whitespace; one canonical heading block per section"
+  },
+  "valid": true
+}

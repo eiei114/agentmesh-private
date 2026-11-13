@@ -1,0 +1,68 @@
+{
+  "content_hashes": {
+    "algorithm": "sha256",
+    "input_canonical_sha256": "sha256:63c4d80a6660975b841b17b52db686e626667cf2e2e26f7c63518fb7f7dcaff3",
+    "markdown_sha256": "sha256:05b0fb01fb452d9ceebe871f0453d429ca3dfe0c06a3177b623970958e2af158"
+  },
+  "diagnostic_count": 1,
+  "diagnostics": [
+    {
+      "category": "non_canonical_field",
+      "code": "AGENTMESH_REQUEST_MARKDOWN_RENDERER_NON_CANONICAL_FIELD",
+      "message": "field \"ready_for_multica\" is a source compatibility hint and is not part of the rendered canonical document",
+      "path": "$.summary.canonical.ready_for_multica"
+    }
+  ],
+  "error_count": 0,
+  "errors": [],
+  "markdown": "---\ntitle: \"Add a canonical request Markdown renderer App\"\nrequest_kind: \"app\"\nissue_type: \"AFK\"\nstatus: \"ready\"\nproject_key: \"agentmesh-private\"\nsource_prd: \"synthetic://requests/request-markdown-renderer\"\nsource_design: \"synthetic://docs/agentmesh-request-operations-v1\"\nsource_roadmap: \"synthetic://roadmaps/agentmesh-private\"\nblocked_by: []\nunblocks: []\nsequence_index: 1\nsequence_total: 1\n---\n\n# Add a canonical request Markdown renderer App\n\n## Parent\n\n- Request: synthetic://requests/request-markdown-renderer\n- Design: synthetic://docs/agentmesh-request-operations-v1\n\n## What to build\n\nRender one validated canonical request summary back into canonical agentmesh-request.v0 Markdown.\n\n## Acceptance criteria\n\n- [ ] Prove the round-trip digest.\n- [x] Render stable frontmatter key order.\n- [ ] Report adapter-owned extras as diagnostics.\n\n## Blocked by\n\n- None - can start immediately.\n\n## User stories covered\n\n- As a non-Multica adapter maintainer, I can regenerate request sources without hand-written frontmatter.\n\n## Notes\n\nRequest kind: `app`\n- Same scope: `agentmesh:app:request-markdown-renderer-roundtrip`\n",
+  "renderer_version": "request-markdown-renderer.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "request_slug": "add-a-canonical-request-markdown-renderer-app",
+  "round_trip": {
+    "input_canonical_sha256": "sha256:63c4d80a6660975b841b17b52db686e626667cf2e2e26f7c63518fb7f7dcaff3",
+    "mismatch_count": 0,
+    "mismatches": [],
+    "rendered_canonical_sha256": "sha256:63c4d80a6660975b841b17b52db686e626667cf2e2e26f7c63518fb7f7dcaff3",
+    "status": "match"
+  },
+  "schema_version": "request-markdown-renderer-compact.v0",
+  "serialization": {
+    "bullet_style": "dash-space; acceptance requirements render as - [ ] or - [x]",
+    "empty_section_placeholder": "- none",
+    "format": "canonical_request_markdown",
+    "frontmatter_field_order": [
+      "title",
+      "request_kind",
+      "issue_type",
+      "status",
+      "project_key",
+      "source_prd",
+      "source_design",
+      "source_roadmap",
+      "blocked_by",
+      "unblocks",
+      "sequence_index",
+      "sequence_total"
+    ],
+    "line_endings": "LF",
+    "object_key_order": "lexicographic",
+    "required_sections": [
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "section_order": [
+      "Parent",
+      "What to build",
+      "Acceptance criteria",
+      "Blocked by",
+      "User stories covered",
+      "Notes"
+    ],
+    "whitespace": "trim line edges; collapse inline whitespace; one canonical heading block per section"
+  },
+  "valid": true
+}

@@ -620,7 +620,11 @@ console.log(JSON.stringify({results:[]}));
             namespace: "test".into(),
             sensitivity_ceiling: "internal".into(),
             max_sources: 3,
-            timeout_ms: 5_000,
+            // Shared CI runners can exceed a short discovery budget with cold
+            // node spawns; an expired discovery reports qmd_timeout instead of
+            // the qmd_protocol_error this test asserts. 30s matches the
+            // contract hard_timeout used by the other compile_fusion cases.
+            timeout_ms: 30_000,
             decision_scope: agentmesh_evidence::DecisionScope::Current,
             mode: EvidenceMode::QmdOnly,
         },

@@ -1,0 +1,48 @@
+{
+  "schema_version": "request-markdown-renderer-input.v0",
+  "request_schema_version": "agentmesh-request.v0",
+  "summary": {
+    "valid": true,
+    "canonical": {
+      "title": "Add a canonical request Markdown renderer App",
+      "request_kind": "app",
+      "issue_type": "AFK",
+      "ready_for_multica": true,
+      "status": "ready",
+      "project_key": "agentmesh-private",
+      "source_prd": "synthetic://requests/request-markdown-renderer",
+      "source_design": "synthetic://docs/agentmesh-request-operations-v1",
+      "source_roadmap": "synthetic://roadmaps/agentmesh-private",
+      "blocked_by": [],
+      "unblocks": [],
+      "sequence_index": 1,
+      "sequence_total": 1
+    },
+    "sections": [
+      {
+        "heading": "Parent",
+        "body": "- Request: synthetic://requests/request-markdown-renderer\n- Design: synthetic://docs/agentmesh-request-operations-v1"
+      },
+      {
+        "heading": "Notes",
+        "body": "Request kind: `app`\n- Same scope: `agentmesh:app:request-markdown-renderer-roundtrip`"
+      },
+      {
+        "heading": "Acceptance criteria",
+        "body": "- [x] Render stable frontmatter key order.\n- [ ] Prove the round-trip digest.\n- [ ] Report adapter-owned extras as diagnostics."
+      },
+      {
+        "heading": "What to build",
+        "body": "Render one validated canonical request summary back into canonical\nagentmesh-request.v0 Markdown."
+      },
+      {
+        "heading": "Blocked by",
+        "body": "- None - can start immediately."
+      },
+      {
+        "heading": "User stories covered",
+        "body": "- As a non-Multica adapter maintainer, I can regenerate request sources without hand-written frontmatter."
+      }
+    ]
+  }
+}

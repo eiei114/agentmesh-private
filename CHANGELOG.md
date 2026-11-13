@@ -18,6 +18,7 @@ All notable changes to this private Phase 0 workspace are documented here.
 - Phase 1.0 shadow-mode Multica selector adapter skeleton (`plugins/multica-selector-shadow`): opaque `agentmesh.run` input/payload, recorded offline fixtures, named shadow compact-shape compare, host roundtrip with audit sidecar. No production cutover.
 - Markdown request validator App (`apps/markdown-request-validator/`, `plugins/markdown-request-validator/`): tool-neutral manifest + deterministic compact payload validation without Multica credentials.
 - Adapter metadata canonicalizer App (`apps/adapter-metadata-canonicalizer/`, `plugins/adapter-metadata-canonicalizer/`): deterministic cross-adapter metadata drift report, canonical stable-field subset, and preserved adapter-specific extensions.
+- Canonical request Markdown renderer App (`apps/request-markdown-renderer/`, `plugins/markdown-request-validator/src/request_markdown_renderer.rs`): renders one validated canonical request summary back into canonical `agentmesh-request.v0` Markdown with LF endings, canonical frontmatter/section order, and an explicit round-trip canonical digests status; adapter-owned extras are reported as bounded diagnostics and never rendered.
 
 ### Changed
 

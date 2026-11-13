@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.local/schemas/request-markdown-renderer-compact-v0.schema.json",
+  "title": "Request Markdown Renderer Compact Output v0",
+  "description": "Deterministic canonical request Markdown output with an explicit round-trip digest status and bounded adapter-owned diagnostics. Failures never return partial Markdown.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "renderer_version",
+    "request_schema_version",
+    "valid",
+    "serialization",
+    "request_slug",
+    "markdown",
+    "content_hashes",
+    "round_trip",
+    "diagnostic_count",
+    "diagnostics",
+    "error_count",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": { "const": "request-markdown-renderer-compact.v0" },
+    "renderer_version": { "const": "request-markdown-renderer.v0" },
+    "request_schema_version": { "const": "agentmesh-request.v0" },
+    "valid": { "type": "boolean" },
+    "serialization": { "$ref": "#/$defs/serialization" },
+    "request_slug": { "type": ["string", "null"] },
+    "markdown": { "type": ["string", "null"] },
+    "content_hashes": { "anyOf": [{ "$ref": "#/$defs/content_hashes" }, { "type": "null" }] },
+    "round_trip": { "anyOf": [{ "$ref": "#/$defs/round_trip" }, { "type": "null" }] },
+    "diagnostic_count": { "type": "integer", "minimum": 0 },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic_record" } },
+    "error_count": { "type": "integer", "minimum": 0 },
+    "errors": { "type": "array", "items": { "$ref": "#/$defs/error_record" } }
+  },
+  "$defs": {
+    "serialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "object_key_order",
+        "frontmatter_field_order",
+        "section_order",
+        "required_sections",
+        "bullet_style",
+        "line_endings",
+        "whitespace",
+        "empty_section_placeholder"
+      ],
+      "properties": {
+        "format": { "const": "canonical_request_markdown" },
+        "object_key_order": { "const": "lexicographic" },
+        "frontmatter_field_order": { "const": ["title", "request_kind", "issue_type", "status", "project_key", "source_prd", "source_design", "source_roadmap", "blocked_by", "unblocks", "sequence_index", "sequence_total"] },
+        "section_order": { "const": ["Parent", "What to build", "Acceptance criteria", "Blocked by", "User stories covered", "Notes"] },
+        "required_sections": { "const": ["What to build", "Acceptance criteria", "Blocked by", "User stories covered", "Notes"] },
+        "bullet_style": { "type": "string", "minLength": 1 },
+        "line_endings": { "const": "LF" },
+        "whitespace": { "type": "string", "minLength": 1 },
+        "empty_section_placeholder": { "const": "- none" }
+      }
+    },
+    "content_hashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "markdown_sha256", "input_canonical_sha256"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "markdown_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "input_canonical_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "round_trip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "input_canonical_sha256",
+        "rendered_canonical_sha256",
+        "mismatch_count",
+        "mismatches"
+      ],
+      "properties": {
+        "status": { "enum": ["match", "mismatch"] },
+        "input_canonical_sha256": { "type": ["string", "null"] },
+        "rendered_canonical_sha256": { "type": ["string", "null"] },
+        "mismatch_count": { "type": "integer", "minimum": 0 },
+        "mismatches": { "type": "array", "items": { "$ref": "#/$defs/mismatch_record" } }
+      }
+    },
+    "mismatch_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "path", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_DIGEST_MISMATCH",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_FIELD_MISMATCH",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_SECTION_MISMATCH",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_REQUIREMENT_MISMATCH",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_SLUG_MISMATCH",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_RENDER_UNPARSEABLE",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_RENDER_PARSER_ERRORS"
+          ]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "diagnostic_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category", "path", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_ADAPTER_OWNED_FIELD",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_NON_CANONICAL_FIELD",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_NESTED_HEADING",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_DIAGNOSTICS_TRUNCATED"
+          ]
+        },
+        "category": {
+          "enum": [
+            "adapter_owned_field",
+            "non_canonical_field",
+            "non_canonical_body",
+            "bounded_diagnostics"
+          ]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "error_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "category", "severity", "path", "message", "remediation_hint"],
+      "properties": {
+        "code": {
+          "enum": [
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_INPUT_INVALID",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_FIELD_REQUIRED",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_FIELD_INVALID",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_SUMMARY_INVALID",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_SUMMARY_MALFORMED",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_SECTION_REQUIRED",
+            "AGENTMESH_REQUEST_MARKDOWN_RENDERER_SECTION_UNSUPPORTED"
+          ]
+        },
+        "category": {
+          "enum": [
+            "input_schema_invalid",
+            "missing_field",
+            "invalid_field_value",
+            "invalid_summary",
+            "malformed_summary",
+            "missing_section",
+            "unsupported_section_structure"
+          ]
+        },
+        "severity": { "const": "error" },
+        "path": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "remediation_hint": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
